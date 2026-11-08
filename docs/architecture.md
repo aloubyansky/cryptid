@@ -98,7 +98,7 @@ Values merge at control-flow joins; static and instance fields reach a fixpoint 
 
 ### Detection
 
-`Detector` indexes the root rules by method name. For each call site it pre-checks the owner's supertypes against the rule's owner types, then calls `MethodMatcher.matchKeys`. On a match it builds a store tree as sonar-cryptography's engine does from source:
+`RuleTable` indexes the root rules by method name and owner type. For each call site, `Detector` looks up the rules for the call's name and its owner or, for rules that don't match exact types only, the owner's supertypes; the rule's `MethodMatcher.matchKeys` then decides, including parameter types. On a match it builds a store tree as sonar-cryptography's engine does from source:
 
 - the rule's action factory sets the store's action, e.g. the algorithm name implied by the constructor;
 - each constant of a detectable argument goes through the parameter's value factory into the store, or into a child store when the parameter has `shouldBeMovedUnder`;
@@ -139,6 +139,7 @@ sonar-cryptography's engine was written for sonar-java's syntax trees. These are
 | `Loc`, and the marker `org.sonar.plugins.java.api.tree.Tree` | sonar-java's `Tree`, as an empty interface of our own | Two lambdas in the `JcaGCMParameterSpec` rules cast to `Tree`; everything else is generic. |
 | `Translation` | extends `ITranslator`; `IContextTranslation`, `IBundle`, `IValue`, `IDetectionContext`, `DetectionLocation`, `Reorganizer`, `IReorganizerRule`, `Enricher`, `INode` | Rules, translators and reorganizer rules are loaded reflectively because their signatures mention sonar-java types; the class names are compile-time constants, which tree-shaking follows. |
 | `Types` | `IType` | supertype predicates for `MethodMatcher`, from class files |
+| `RuleTable` | `MethodMatcher`, `DetectionRule`, `MethodDetectionRule` | reads each root rule's method names and owner types to index it |
 | `BytecodeScanner` | `CBOMOutputFile`, `INode`, `DetectionStore` | nodes to a CycloneDX BOM per artifact |
 | `Analyzer`, `AVal`, `CallSite`, `CallIndex`, `JarCache` | none | the analysis core uses only the classfile backport |
 

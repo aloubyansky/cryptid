@@ -12,7 +12,6 @@ import com.ibm.engine.rule.MethodDetectionRule;
 import com.ibm.engine.rule.Parameter;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -76,8 +75,8 @@ final class Detector {
     private final String locationPrefix;
     /** Resolves values passed in from callers; {@code null} to resolve within methods only. */
     private final CallIndex callIndex;
-    /** Root rules by method name; {@link MethodMatcher#ANY} for rules matching any name. */
-    private final Map<String, List<IDetectionRule<Loc>>> rulesByMethod = new HashMap<>();
+    /** Root rules by method name and owner type. */
+    private final RuleTable rootTable;
 
     /**
      * @param rootRules the root detection rules
@@ -92,14 +91,7 @@ final class Detector {
         this.rootRules = rootRules;
         this.types = types;
         this.locationPrefix = locationPrefix.isEmpty() ? "" : locationPrefix + "/";
-        for (IDetectionRule<Loc> rule : rootRules) {
-            final MethodMatcher<Loc> m = matcher(rule);
-            if (m != null) {
-                for (String name : m.getMethodNamesSerializable()) {
-                    rulesByMethod.computeIfAbsent(name, k -> new ArrayList<>()).add(rule);
-                }
-            }
-        }
+        this.rootTable = new RuleTable(rootRules);
     }
 
     Detector(List<IDetectionRule<Loc>> rootRules, Types types) {
@@ -111,7 +103,7 @@ final class Detector {
         final List<Finding> findings = new ArrayList<>();
         for (CallSite cs : method.calls()) {
             for (IDetectionRule<Loc> rule : candidates(cs)) {
-                if (matches(rule, cs)) {
+                if (matchesKeys(rule, cs)) {
                     for (DetectionStore<Object, Loc, Object, Object> store : variants(rule, cs, method, ctx)) {
                         findings.add(new Finding(Loc.of(cs), cs, store));
                     }
@@ -189,26 +181,12 @@ final class Detector {
         return arg.consts();
     }
 
-    /** The root rules that may match a call site, by its method name. */
+    /**
+     * The root rules that may match a call site by method name and owner type, which passes the
+     * same check as {@link #ownerMayMatch}; their matchers decide.
+     */
     private List<IDetectionRule<Loc>> candidates(CallSite cs) {
-        final List<IDetectionRule<Loc>> byName = rulesByMethod.getOrDefault(cs.name, List.of());
-        final List<IDetectionRule<Loc>> any = rulesByMethod.getOrDefault(MethodMatcher.ANY, List.of());
-        if (any.isEmpty()) {
-            return byName;
-        }
-        final List<IDetectionRule<Loc>> all = new ArrayList<>(byName);
-        all.addAll(any);
-        return all;
-    }
-
-    private static MethodMatcher<Loc> matcher(IDetectionRule<Loc> rule) {
-        if (rule instanceof DetectionRule<Loc> dr) {
-            return dr.matchers();
-        }
-        if (rule instanceof MethodDetectionRule<Loc> mr) {
-            return mr.matchers();
-        }
-        return null;
+        return rootTable.candidates(cs.name, cs.owner.replace('/', '.'), types.supertypeNames(cs.owner));
     }
 
     /**
@@ -220,26 +198,27 @@ final class Detector {
      */
     boolean mayDetect(Analyzer.MethodResult method) {
         for (CallSite cs : method.calls()) {
-            for (IDetectionRule<Loc> rule : candidates(cs)) {
-                if (ownerMayMatch(rule, cs)) {
-                    return true;
-                }
+            if (!candidates(cs).isEmpty()) {
+                return true;
             }
         }
         return false;
     }
 
+    /** Whether a rule matches a call site: the owner pre-check, then the rule's matcher. */
     private boolean matches(IDetectionRule<Loc> rule, CallSite cs) {
-        if (!ownerMayMatch(rule, cs)) {
-            return false;
-        }
-        return matcher(rule).matchKeys(
+        return ownerMayMatch(rule, cs) && matchesKeys(rule, cs);
+    }
+
+    /** Whether the rule's matcher accepts the call's owner, name and parameter types. */
+    private boolean matchesKeys(IDetectionRule<Loc> rule, CallSite cs) {
+        return RuleTable.matcher(rule).matchKeys(
                 types.ofClass(cs.owner, rule.shouldMatchExactTypes()), cs.name, types.ofParameters(cs.descriptor));
     }
 
     /** A cheap pre-check of the call's owner type against the rule's, before its matcher runs. */
     private boolean ownerMayMatch(IDetectionRule<Loc> rule, CallSite cs) {
-        final MethodMatcher<Loc> matcher = matcher(rule);
+        final MethodMatcher<Loc> matcher = RuleTable.matcher(rule);
         if (matcher == null) {
             return false;
         }
