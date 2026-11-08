@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>org.acme</groupId>
+    <artifactId>cbom-generator</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+
+    <properties>
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
+        <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
+        <quarkus.platform.version>3.40.1</quarkus.platform.version>
+
+        <quarkus-maven-resolver.version>0.0.5</quarkus-maven-resolver.version>
+        <!-- sonar-cryptography's rules, CBOM model, translation and output (Apache-2.0); not published
+             to Maven Central: build https://github.com/cbomkit/sonar-cryptography locally or configure
+             the GitHub Packages repository below with a read:packages token -->
+        <sonar-cryptography.version>1.7.0</sonar-cryptography.version>
+        <sonar-plugin-api.version>13.11.0.4459</sonar-plugin-api.version>
+        <sonar-analyzer-commons.version>2.18.0.3393</sonar-analyzer-commons.version>
+        <packageurl.version>1.5.0</packageurl.version>
+        <bouncycastle.version>1.85</bouncycastle.version>
+
+        <compiler-plugin.version>3.14.0</compiler-plugin.version>
+        <surefire-plugin.version>3.5.3</surefire-plugin.version>
+    </properties>
+
+    <repositories>
+        <!-- com.ibm:* sonar-cryptography modules are published here;
+             requires a <server><id>github</id> entry in settings.xml -->
+        <repository>
+            <id>github</id>
+            <url>https://maven.pkg.github.com/cbomkit/sonar-cryptography</url>
+        </repository>
+    </repositories>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>${quarkus.platform.group-id}</groupId>
+                <artifactId>${quarkus.platform.artifact-id}</artifactId>
+                <version>${quarkus.platform.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-picocli</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkiverse.mavenresolver</groupId>
+            <artifactId>quarkus-maven-resolver</artifactId>
+            <version>${quarkus-maven-resolver.version}</version>
+        </dependency>
+        <dependency>
+            <!-- Java detection rules and translators, plus engine (rule/value model), mapper, enricher,
+                 rules (issue formatting) and output (CycloneDX) transitively -->
+            <groupId>com.ibm</groupId>
+            <artifactId>java</artifactId>
+            <version>${sonar-cryptography.version}</version>
+            <exclusions>
+                <!-- SonarSource analyzers under the Sonar Source-Available License (SSALv1); the
+                     bytecode engine replaces them. sonar-cryptography's parent pom adds them to
+                     every module. -->
+                <exclusion>
+                    <groupId>org.sonarsource.java</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.sonarsource.python</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.sonarsource.go</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+                <!-- build-time formatter and the C# parser stack, not used at runtime -->
+                <exclusion>
+                    <groupId>com.google.googlejavaformat</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.github.fynnth</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.antlr</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <!-- LGPL-3.0; sonar-cryptography's MethodMatcher uses its SetUtils -->
+            <groupId>org.sonarsource.analyzer-commons</groupId>
+            <artifactId>sonar-analyzer-commons</artifactId>
+            <version>${sonar-analyzer-commons.version}</version>
+        </dependency>
+        <dependency>
+            <!-- LGPL-3.0; compile-only, for the InputFile type in sonar-cryptography's IScanContext -->
+            <groupId>org.sonarsource.api.plugin</groupId>
+            <artifactId>sonar-plugin-api</artifactId>
+            <version>${sonar-plugin-api.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <!-- java.lang.classfile backport, for the bytecode analysis; version managed by Quarkus -->
+            <groupId>io.smallrye.classfile</groupId>
+            <artifactId>jdk-classfile-backport</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.package-url</groupId>
+            <artifactId>packageurl-java</artifactId>
+            <version>${packageurl.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- compiling sonar-cryptography's fixtures in FixtureConformanceTest; the version its tests use -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcutil-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>${quarkus.platform.group-id}</groupId>
+                <artifactId>quarkus-maven-plugin</artifactId>
+                <version>${quarkus.platform.version}</version>
+                <extensions>true</extensions>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>build</goal>
+                            <goal>generate-code</goal>
+                            <goal>generate-code-tests</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>${compiler-plugin.version}</version>
+                <configuration>
+                    <parameters>true</parameters>
+                </configuration>
+            </plugin>
+            <plugin>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${surefire-plugin.version}</version>
+                <configuration>
+                    <systemPropertyVariables>
+                        <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
