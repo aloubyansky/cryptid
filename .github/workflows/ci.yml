@@ -31,10 +31,10 @@ jobs:
       matrix:
         java: [17, 21]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Java 21 for building sonar-cryptography
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
@@ -42,7 +42,7 @@ jobs:
 
       - name: Restore sonar-cryptography
         id: sonar-cryptography
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.m2/repository/com/ibm
           key: sonar-cryptography-${{ env.SONAR_CRYPTOGRAPHY_VERSION }}
@@ -56,7 +56,7 @@ jobs:
             -DskipTests -Dspotless.skip -Dcheckstyle.skip -Dcyclonedx.skip
 
       - name: Set up Java ${{ matrix.java }}
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
@@ -69,7 +69,7 @@ jobs:
 
       - name: Upload the JAR
         if: matrix.java == 21
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cryptid
           path: target/cryptid.jar
