@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Set;
 import org.cyclonedx.model.Component;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -46,7 +47,7 @@ class SampleSbomIT {
         assertEquals("pkg:maven/org.acme/sample-app@1.0.0?type=jar",
                 cbom.bom().getMetadata().getComponent().getPurl());
         assertTrue(cbom.assets().size() >= 200, "crypto assets: " + cbom.assets().size());
-        assertEquals(java.util.Set.of(BCPROV, CODEC), cbom.assetsByComponent().keySet());
+        assertEquals(Set.of(BCPROV, CODEC), cbom.assetsByComponent().keySet());
 
         // an algorithm chosen by a constructor, in a JAR without line tables: no line
         final Component aes = cbom.find("AES", "org.bouncycastle/bcprov-jdk18on/1.78.1/org/bouncycastle/crypto/engines/AESEngine.java")

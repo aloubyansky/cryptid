@@ -46,9 +46,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Stream;
 
 /**
@@ -106,14 +109,14 @@ public final class Analyzer {
     Map<String, CallIndex.ClassInfo> classInfos() {
         final Map<String, CallIndex.ClassInfo> result = new HashMap<>();
         for (ClassModel cm : classes) {
-            final java.util.Set<String> methods = new java.util.HashSet<>();
+            final Set<String> methods = new HashSet<>();
             for (MethodModel mm : cm.methods()) {
                 methods.add(mm.methodName().stringValue() + mm.methodType().stringValue());
             }
             result.put(cm.thisClass().asInternalName(), new CallIndex.ClassInfo(
                     cm.superclass().map(c -> c.asInternalName()).orElse(null),
                     cm.interfaces().stream().map(c -> c.asInternalName()).toList(),
-                    java.util.Set.copyOf(methods)));
+                    Set.copyOf(methods)));
         }
         return result;
     }
@@ -129,7 +132,7 @@ public final class Analyzer {
         analyzedClasses.add(cm.thisClass().asInternalName());
     }
 
-    private final java.util.Set<String> analyzedClasses = new java.util.HashSet<>();
+    private final Set<String> analyzedClasses = new HashSet<>();
 
     /** Methods whose bytecode couldn't be interpreted, e.g. because of malformed code. */
     int failedMethods;
@@ -506,8 +509,8 @@ public final class Analyzer {
                 case "toUpperCase", "toLowerCase", "trim", "intern", "toString" -> {
                     if (args.length == 0 || cs.name.startsWith("to") && args.length == 1) {
                         final String v = switch (cs.name) {
-                            case "toUpperCase" -> str.toUpperCase(java.util.Locale.ROOT);
-                            case "toLowerCase" -> str.toLowerCase(java.util.Locale.ROOT);
+                            case "toUpperCase" -> str.toUpperCase(Locale.ROOT);
+                            case "toLowerCase" -> str.toLowerCase(Locale.ROOT);
                             case "trim" -> str.trim();
                             default -> str;
                         };

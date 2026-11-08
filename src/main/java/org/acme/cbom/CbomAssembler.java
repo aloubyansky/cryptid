@@ -1,16 +1,26 @@
 package org.acme.cbom;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.MapperFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.ibm.engine.rule.IDetectionRule;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Pattern;
 import org.cyclonedx.Version;
 import org.cyclonedx.exception.GeneratorException;
 import org.cyclonedx.generators.BomGeneratorFactory;
@@ -18,6 +28,7 @@ import org.cyclonedx.model.Bom;
 import org.cyclonedx.model.Component;
 import org.cyclonedx.model.Dependency;
 import org.cyclonedx.model.Metadata;
+import org.cyclonedx.model.component.evidence.Occurrence;
 import org.cyclonedx.model.metadata.ToolInformation;
 import org.cyclonedx.parsers.JsonParser;
 import org.jboss.logging.Logger;
@@ -70,40 +81,52 @@ public class CbomAssembler {
         // component bom-ref -> its link to crypto assets; one entry per component
         final Map<String, Dependency> links = new LinkedHashMap<>();
         // artifact path -> components, for attributing assets by occurrence location
-        final Map<String, List<MavenComponent>> byPath = new java.util.HashMap<>();
+        final Map<String, List<MavenComponent>> byPath = new HashMap<>();
         groups.forEach(g -> byPath.put(g.get(0).artifactPath(), g));
         final JsonParser parser = new JsonParser();
-        final java.util.Set<String> seen = new java.util.HashSet<>();
+        // occurrence key -> bom-ref of the asset kept for it
+        final Map<String, String> seen = new HashMap<>();
+        // asset -> asset dependencies, by bom-ref of the depending asset
+        final Map<String, Dependency> assetLinks = new LinkedHashMap<>();
         long findings = 0;
         for (List<MavenComponent> group : groups) {
             final Optional<Bom> part = parse(parser, group.get(0).cbomFile(workDir));
-            final List<Component> assets = part.map(b -> b.getComponents() == null ? List.<Component>of() : b.getComponents())
-                    .orElse(List.of());
+            final List<Component> assets = new ArrayList<>(part.map(b -> b.getComponents() == null ? List.<Component>of() : b.getComponents())
+                    .orElse(List.of()));
+            // sonar-cryptography's output orders assets by a hash of random bom-refs: sort them, so
+            // that which of two duplicates is kept is the same in every run
+            assets.sort(Comparator.comparing(CbomAssembler::sortKey));
             if (assets.isEmpty()) {
                 continue;
             }
-            if (part.get().getDependencies() != null) {
-                part.get().getDependencies().forEach(bom::addDependency);
-            }
+            // bom-refs of this part's assets: kept ones map to themselves, duplicates to the kept asset
+            final Map<String, String> refs = new HashMap<>();
             for (Component asset : assets) {
-                // the same occurrence can come from several artifacts, e.g. a wrapper shaded into
-                // another JAR resolving the same callers: keep the first
+                // the same asset at the same occurrence can come from several artifacts, e.g. a
+                // wrapper shaded into another JAR resolving the same callers: keep the first
                 if (asset.getEvidence() != null && asset.getEvidence().getOccurrences() != null) {
-                    final List<org.cyclonedx.model.component.evidence.Occurrence> fresh = new java.util.ArrayList<>();
+                    final String content = contentKey(asset);
+                    final List<Occurrence> fresh = new ArrayList<>();
+                    String duplicateOf = null;
                     for (var o : asset.getEvidence().getOccurrences()) {
-                        if (seen.add(occurrenceKey(asset, o))) {
+                        final String previous = seen.putIfAbsent(occurrenceKey(content, o), asset.getBomRef());
+                        if (previous == null) {
                             fresh.add(o);
+                        } else if (duplicateOf == null) {
+                            duplicateOf = previous;
                         }
                     }
                     if (fresh.isEmpty()) {
+                        refs.put(asset.getBomRef(), duplicateOf);
                         continue;
                     }
                     asset.getEvidence().setOccurrences(fresh);
                 }
+                refs.put(asset.getBomRef(), asset.getBomRef());
                 bom.addComponent(asset);
                 // an asset belongs to the artifacts its occurrences are located in: values
                 // resolved at a caller are located in the caller's artifact
-                final java.util.Set<List<MavenComponent>> owners = new java.util.LinkedHashSet<>();
+                final Set<List<MavenComponent>> owners = new LinkedHashSet<>();
                 if (asset.getEvidence() != null && asset.getEvidence().getOccurrences() != null) {
                     for (var o : asset.getEvidence().getOccurrences()) {
                         findings++;
@@ -119,7 +142,13 @@ public class CbomAssembler {
                     }
                 }
             }
+            if (part.get().getDependencies() != null) {
+                for (Dependency d : part.get().getDependencies()) {
+                    linkAssets(assetLinks, refs, d);
+                }
+            }
         }
+        assetLinks.values().forEach(bom::addDependency);
         links.values().forEach(bom::addDependency);
         log.infof(
                 "%d of %d analyzed components contain cryptographic assets",
@@ -128,20 +157,81 @@ public class CbomAssembler {
         return new Result(bom, links.size(), findings);
     }
 
+    /**
+     * Adds an asset's dependencies on other assets, redirecting duplicates to the asset kept for
+     * them and dropping references to assets that aren't in the CBOM.
+     *
+     * @param assetLinks dependencies by bom-ref of the depending asset; updated
+     * @param refs this part's asset bom-refs mapped to the kept asset's bom-ref
+     * @param d a dependency entry of the part
+     */
+    private static void linkAssets(Map<String, Dependency> assetLinks, Map<String, String> refs, Dependency d) {
+        final String from = refs.get(d.getRef());
+        if (from == null || d.getDependencies() == null) {
+            return;
+        }
+        for (Dependency to : d.getDependencies()) {
+            final String target = refs.get(to.getRef());
+            if (target == null || target.equals(from)) {
+                continue;
+            }
+            final Dependency link = assetLinks.computeIfAbsent(from, Dependency::new);
+            if (link.getDependencies() == null || link.getDependencies().stream().noneMatch(x -> x.getRef().equals(target))) {
+                link.addDependency(new Dependency(target));
+            }
+        }
+    }
+
+    private static final ObjectMapper CONTENT_JSON = new ObjectMapper()
+            .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true)
+            .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
+
+    /**
+     * Returns what identifies an asset apart from where it occurs: its name and crypto properties,
+     * without the random UUIDs in names and references. Two assets at one location are duplicates
+     * only if this is equal, e.g. not keys of different sizes.
+     *
+     * @param asset the crypto asset
+     * @return the content key
+     */
+    static String contentKey(Component asset) {
+        String props;
+        try {
+            props = asset.getCryptoProperties() == null ? "" : CONTENT_JSON.writeValueAsString(asset.getCryptoProperties());
+        } catch (JsonProcessingException e) {
+            props = String.valueOf(asset.getCryptoProperties());
+        }
+        final String name = asset.getName() == null ? "" : asset.getName();
+        return NAME_UUID.matcher(name).replaceAll("") + "|" + ANY_UUID.matcher(props).replaceAll("");
+    }
+
+    /** A run-independent sort key for an asset: its content key and its occurrences. */
+    private static String sortKey(Component asset) {
+        final StringBuilder sb = new StringBuilder(contentKey(asset));
+        if (asset.getEvidence() != null && asset.getEvidence().getOccurrences() != null) {
+            for (var o : asset.getEvidence().getOccurrences()) {
+                sb.append('|').append(o.getLocation()).append(':').append(o.getLine()).append(':').append(o.getAdditionalContext());
+            }
+        }
+        return sb.toString();
+    }
+
+    private static final Pattern ANY_UUID =
+            Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+
     /** Random UUIDs some asset names embed, e.g. {@code key@<uuid>}. */
-    private static final java.util.regex.Pattern NAME_UUID =
-            java.util.regex.Pattern.compile("@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+    private static final Pattern NAME_UUID =
+            Pattern.compile("@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
 
     /**
      * Returns the key identifying an occurrence of an asset across per-artifact CBOMs.
      *
-     * @param asset the crypto asset
+     * @param contentKey the asset's {@link #contentKey}
      * @param o one of its occurrences
-     * @return asset name without embedded UUIDs, location, line and offset
+     * @return the content key with location, line and offset
      */
-    static String occurrenceKey(Component asset, org.cyclonedx.model.component.evidence.Occurrence o) {
-        final String name = asset.getName() == null ? "" : NAME_UUID.matcher(asset.getName()).replaceAll("");
-        return name + "|" + o.getLocation() + "|" + o.getLine() + "|" + o.getOffset();
+    static String occurrenceKey(String contentKey, Occurrence o) {
+        return contentKey + "|" + o.getLocation() + "|" + o.getLine() + "|" + o.getOffset();
     }
 
     /**
@@ -247,7 +337,7 @@ public class CbomAssembler {
     }
 
     private static String sonarCryptographyVersion() {
-        final Package p = com.ibm.engine.rule.IDetectionRule.class.getPackage();
+        final Package p = IDetectionRule.class.getPackage();
         return p == null || p.getImplementationVersion() == null ? "1.7.0" : p.getImplementationVersion();
     }
 

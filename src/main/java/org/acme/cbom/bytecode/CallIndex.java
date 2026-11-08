@@ -2,7 +2,10 @@ package org.acme.cbom.bytecode;
 
 import java.lang.constant.ClassDesc;
 import java.lang.constant.MethodTypeDesc;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -71,6 +74,11 @@ public final class CallIndex {
      * @param site the call site passing it
      */
     record Hit(Object value, Site site) {}
+
+    private static final Comparator<Site> SITE_ORDER = Comparator.comparing(Site::file)
+            .thenComparingInt(Site::line)
+            .thenComparing(Site::callerMethod)
+            .thenComparing(Site::signature);
 
     private final Set<String> analyzedClasses;
     private final Map<String, ClassInfo> classes = new ConcurrentHashMap<>();
@@ -148,6 +156,8 @@ public final class CallIndex {
     public void finish() {
         final Map<String, List<Site>> result = new HashMap<>();
         byInvoked.forEach((key, sites) -> result.computeIfAbsent(declaring(key), k -> new ArrayList<>()).addAll(sites));
+        // artifacts are indexed in parallel: order the sites, so values resolve in the same order in every run
+        result.values().forEach(sites -> sites.sort(SITE_ORDER));
         byDeclaring = result;
     }
 
@@ -189,7 +199,7 @@ public final class CallIndex {
         return supertypes.computeIfAbsent(owner, o -> {
             final List<String> result = new ArrayList<>();
             final Set<String> seen = new HashSet<>(Set.of(o));
-            final java.util.Deque<String> todo = new java.util.ArrayDeque<>(List.of(o));
+            final Deque<String> todo = new ArrayDeque<>(List.of(o));
             while (!todo.isEmpty()) {
                 final ClassInfo ci = classes.get(todo.poll());
                 if (ci == null) {

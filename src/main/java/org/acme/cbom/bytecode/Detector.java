@@ -11,10 +11,13 @@ import com.ibm.engine.rule.IDetectionRule;
 import com.ibm.engine.rule.MethodDetectionRule;
 import com.ibm.engine.rule.Parameter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
-import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import org.sonar.api.batch.fs.InputFile;
 
 /**
  * Evaluates sonar-cryptography's detection rules on the call sites of a method, building the same
@@ -38,6 +41,12 @@ final class Detector {
     private static final int MAX_DEPTH = 8;
 
     /**
+     * Most findings one match is split into, one per combination of the possible values of its
+     * detectable arguments; beyond this, the values stay together in one finding.
+     */
+    static final int MAX_VARIANTS = 16;
+
+    /**
      * A detection to translate and report on its own.
      *
      * @param loc where to report it: the matched call, or for a value resolved from a caller,
@@ -49,6 +58,18 @@ final class Detector {
 
     /** Findings of values resolved from callers, collected while processing a method. */
     private List<Finding> resolved = new ArrayList<>();
+
+    /** A detectable argument of a call: the call site and the parameter position. */
+    private record Point(CallSite call, int index) {}
+
+    /**
+     * While building a store: the detectable arguments seen with several possible values, or
+     * {@code null} when not collecting.
+     */
+    private Map<Point, List<Object>> multiValued;
+
+    /** While building a variant: the value chosen for each multi-valued argument. */
+    private Map<Point, Object> chosen = Map.of();
 
     private final List<IDetectionRule<Loc>> rootRules;
     private final Types types;
@@ -91,15 +112,81 @@ final class Detector {
         for (CallSite cs : method.calls()) {
             for (IDetectionRule<Loc> rule : candidates(cs)) {
                 if (matches(rule, cs)) {
-                    final DetectionStore<Object, Loc, Object, Object> store = StoreAccess.create(0, rule, ctx);
-                    process(store, rule, List.of(cs), method, ctx, 0);
-                    findings.add(new Finding(Loc.of(cs), cs, store));
+                    for (DetectionStore<Object, Loc, Object, Object> store : variants(rule, cs, method, ctx)) {
+                        findings.add(new Finding(Loc.of(cs), cs, store));
+                    }
                     findings.addAll(resolved);
                     resolved = new ArrayList<>();
                 }
             }
         }
         return findings;
+    }
+
+    /**
+     * Builds the store trees of a match: one per combination of the possible values of its
+     * detectable arguments, so that each translation sees one value per argument, as for a value
+     * resolved from a caller. A store holding several values for one argument would be
+     * translated into one asset with an arbitrary one of them. Up to {@link #MAX_VARIANTS}
+     * combinations; more keep the values together in one store. Values resolved from callers are
+     * collected once, from the first build.
+     */
+    private List<DetectionStore<Object, Loc, Object, Object>> variants(
+            IDetectionRule<Loc> rule, CallSite cs, Analyzer.MethodResult method, IScanContext<Object, Loc> ctx) {
+        multiValued = new LinkedHashMap<>();
+        final DetectionStore<Object, Loc, Object, Object> merged = StoreAccess.create(0, rule, ctx);
+        process(merged, rule, List.of(cs), method, ctx, 0);
+        final Map<Point, List<Object>> points = multiValued;
+        multiValued = null;
+        long count = 1;
+        for (List<Object> values : points.values()) {
+            count *= values.size();
+        }
+        if (points.isEmpty() || count > MAX_VARIANTS) {
+            return List.of(merged);
+        }
+        final List<Map<Point, Object>> combinations = new ArrayList<>();
+        combinations.add(Map.of());
+        for (Map.Entry<Point, List<Object>> e : points.entrySet()) {
+            final List<Map<Point, Object>> next = new ArrayList<>();
+            for (Map<Point, Object> c : combinations) {
+                for (Object v : e.getValue()) {
+                    final Map<Point, Object> m = new LinkedHashMap<>(c);
+                    m.put(e.getKey(), v);
+                    next.add(m);
+                }
+            }
+            combinations.clear();
+            combinations.addAll(next);
+        }
+        final List<Finding> fromCallers = resolved;
+        resolved = new ArrayList<>();
+        final List<DetectionStore<Object, Loc, Object, Object>> stores = new ArrayList<>();
+        for (Map<Point, Object> c : combinations) {
+            chosen = c;
+            final DetectionStore<Object, Loc, Object, Object> store = StoreAccess.create(0, rule, ctx);
+            process(store, rule, List.of(cs), method, ctx, 0);
+            stores.add(store);
+        }
+        chosen = Map.of();
+        resolved = fromCallers;
+        return stores;
+    }
+
+    /**
+     * The values of a detectable argument to put into the store: the chosen one while building a
+     * variant, otherwise all, recording an argument with several.
+     */
+    private Collection<Object> values(CallSite cs, int index, AVal arg) {
+        final Point point = new Point(cs, index);
+        final Object v = chosen.get(point);
+        if (v != null) {
+            return List.of(v);
+        }
+        if (multiValued != null && arg.consts().size() > 1) {
+            multiValued.putIfAbsent(point, List.copyOf(arg.consts()));
+        }
+        return arg.consts();
     }
 
     /** The root rules that may match a call site, by its method name. */
@@ -132,8 +219,8 @@ final class Detector {
         // cheap pre-check on the owner type before the matcher's full predicate evaluation
         final List<String> owners = matcher.getInvokedObjectTypeStringsSerializable();
         if (!owners.contains(MethodMatcher.ANY)) {
-            final java.util.Set<String> names = rule.shouldMatchExactTypes()
-                    ? java.util.Set.of(cs.owner.replace('/', '.'))
+            final Set<String> names = rule.shouldMatchExactTypes()
+                    ? Set.of(cs.owner.replace('/', '.'))
                     : types.supertypeNames(cs.owner);
             if (owners.stream().noneMatch(names::contains)) {
                 return false;
@@ -162,7 +249,7 @@ final class Detector {
                 final Parameter<Loc> p = params.get(k);
                 final AVal arg = cs.args[k];
                 if (p instanceof DetectableParameter<Loc> dp) {
-                    for (Object value : arg.consts()) {
+                    for (Object value : values(cs, k, arg)) {
                         dp.getiValueFactory().apply(new ResolvedValue<>(value, loc)).ifPresent(v -> {
                             if (dp.getShouldBeMovedUnder().isPresent()) {
                                 final int id = dp.getShouldBeMovedUnder().get();
@@ -240,7 +327,7 @@ final class Detector {
         public void reportIssue(Object rule, Loc tree, String message) {}
 
         @Override
-        public org.sonar.api.batch.fs.InputFile getInputFile() {
+        public InputFile getInputFile() {
             throw new UnsupportedOperationException();
         }
 

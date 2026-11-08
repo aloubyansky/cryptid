@@ -1,5 +1,7 @@
 package org.acme.cbom.bytecode;
 
+import java.util.Arrays;
+
 /**
  * A method or constructor invocation found in the bytecode, with the abstract values of its
  * receiver and arguments.
@@ -28,7 +30,7 @@ final class CallSite {
         this.isStatic = isStatic;
         this.line = line;
         this.args = new AVal[argCount];
-        java.util.Arrays.fill(args, AVal.UNKNOWN);
+        Arrays.fill(args, AVal.UNKNOWN);
         this.receiver = AVal.UNKNOWN;
     }
 

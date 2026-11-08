@@ -10,7 +10,7 @@ cbom-generator is a Quarkus CLI that turns a CycloneDX SBOM into a CBOM by analy
 - Values passed between methods are resolved from their callers, within a JAR and across JARs, including calls through interfaces and superclasses, and reported where the value is chosen (e.g. SHA-1 at Keycloak's `DPoPUtil`, RSA through Keycloak's `CryptoProvider` SPI).
 - sonar-cryptography's own Java test fixtures: 97.2% of the comparable expected detections reproduced, checked on every build.
 - Main gap: values built from parameters (e.g. `"AES/" + mode`) or returned by getters don't resolve.
-- Code: `/home/aloubyansky/playground/cbom` (not a git repository yet). The pipeline diagram is a separate page: [Bytecode CBOM pipeline](https://claude.ai/artifact/JMUe9uXECMXWgyMpKkz6j6).
+- Docs: [Architecture](docs/architecture.md) (pipeline diagram, input and output, library integration, what the runner JAR contains) and [Design review](docs/design-review.md) (findings and refactoring plan).
 
 ## How it works
 
@@ -26,7 +26,7 @@ Steps 1, 2 and 7 run once; steps 3 to 6 run for each JAR in parallel. Each step 
 | 6. Write each artifact's CBOM | `BytecodeScanner` | `com.ibm:output` (`CBOMOutputFile`) |
 | 7. Merge and link assets to SBOM components | `CbomAssembler` | cyclonedx-core-java |
 
-The dependency closure from the SBOM supplies supertypes for rule matching. A larger version with every class is on the [pipeline page](https://claude.ai/artifact/JMUe9uXECMXWgyMpKkz6j6).
+The dependency closure from the SBOM supplies supertypes for rule matching. [Architecture](docs/architecture.md) has the diagram and the details of each step.
 
 ## Licensing
 
@@ -91,11 +91,11 @@ The largest gap is values derived from parameters; the rest are fidelity details
 - **Positions.** Multi-line `new X(...)` expressions report the statement's first line; classes without line tables (Bouncy Castle's release JARs) report no line; no column offsets. Adding `symbol` (enclosing method) would identify occurrences more robustly.
 - **Memory.** 6.8 GB peak on Keycloak with the call index: `JarCache` keeps every JAR open for the whole run, and the index holds 302k call sites.
 - **Archive reading.** `JarCache` uses `java.util.zip.ZipFile` directly and skips multi-release variants; consider smallrye-common-archive instead.
-- **De-duplication.** Occurrences with the same asset name, location and line are kept once (they come from code shaded into several JARs). Two different assets with the same name at one location would be merged.
+- **De-duplication.** An occurrence is kept once per asset content (name without UUIDs, plus crypto properties), location and line; duplicates come from code shaded into several JARs, and their asset-to-asset links are redirected to the asset kept. Assets of the same content at the same line but matched by different calls keep only the first call's `additionalContext`.
 - **Shaded and generated code.** Binaries include classes that sources JARs lack; keycloak-admin-cli shades keycloak-common, so its copies are reported as separate locations. Whether to attribute shaded code to the shading component or to the original library is open.
-- **Tests.** Scanner tests (single JAR, two-hop cross-JAR, interface dispatch), SBOM-reader tests, and `FixtureConformanceTest` over 129 copied sonar-cryptography fixtures with a per-fixture baseline (`src/test/resources/fixture-baseline.tsv`). Integration tests run the packaged uber-jar as a process with [CLI Assured](https://central.sonatype.com/artifact/org.cli-assured/cli-assured) (failsafe, after `package`): `SampleSbomIT` on every `mvn verify` (CBOM contents, work-directory reuse and `--rescan`, a missing SBOM); `KeycloakEndToEndIT` on the Keycloak 26.8.2 SBOM (548 JARs, about 40 s, 8 GB RSS), tagged `e2e`, only with `mvn verify -Pe2e`. It checks that every artifact is analyzed, lower bounds on totals, well-formed occurrences, the cross-JAR SHA-1 at `DPoPUtil`, and RSA-2048 at `KeyUtils` through the `CryptoProvider` interface.
-- **Nondeterminism.** Some resolved values vary between runs of the same input: on Keycloak, the DSA key size at wildfly-elytron-x500-cert `SelfSignedX509CertificateAndSigningKey.java:367` came out as 2048, 256 or -1 in different runs (seen with and without tree-shaking). Probably order-dependent merging in the parallel analysis or call resolution; not investigated yet.
-- **Distribution.** Third-party notices file; the project isn't a git repository yet.
+- **Tests.** Scanner tests (single JAR, two-hop cross-JAR, interface dispatch), SBOM-reader tests, and `FixtureConformanceTest` over 129 copied sonar-cryptography fixtures with a per-fixture baseline (`src/test/resources/fixture-baseline.tsv`). Integration tests run the packaged uber-jar as a process with [CLI Assured](https://central.sonatype.com/artifact/org.cli-assured/cli-assured) (failsafe, after `package`): `SampleSbomIT` and `ReproducibilityIT` (three runs on wildfly-elytron-x500-cert, compared) on every `mvn verify` (CBOM contents, work-directory reuse and `--rescan`, a missing SBOM); `KeycloakEndToEndIT` on the Keycloak 26.8.2 SBOM (548 JARs, about 40 s, 8 GB RSS), tagged `e2e`, only with `mvn verify -Pe2e`. It checks that every artifact is analyzed, lower bounds on totals, well-formed occurrences, the cross-JAR SHA-1 at `DPoPUtil`, and RSA-2048 at `KeyUtils` through the `CryptoProvider` interface.
+- **Reproducibility.** The same input gives the same CBOM, apart from bom-refs, UUIDs in names and the timestamp (`ReproducibilityIT`, and two Keycloak runs compared per occurrence). Constants and origins iterate in sorted order, call-index sites are sorted, and the assembler sorts each artifact's assets before de-duplicating. A detectable argument with several possible constants yields one finding per value (up to 16 combinations per match), as values resolved from callers do: wildfly-elytron's key size field gives `DSA--1`, `DSA-256` and `DSA-2048`, which over-approximates, since the analysis isn't path-sensitive.
+- **Distribution.** Third-party notices file.
 - **Housekeeping.** `--threads` defaults to all CPUs; per-artifact CBOMs cached in the work directory aren't invalidated when other artifacts change.
 
 ## Next steps
@@ -107,7 +107,7 @@ In priority order. Cross-method value propagation and interface dispatch are don
 3. **Remaining value-resolution features** from the fixture gaps: nested engines (GMac over AES), `BigInteger`-derived DH sizes, GOST naming, SSL parameter arrays. `FixtureConformanceTest` reports each improvement; record it with `-Dfixtures.updateBaseline=true`.
 4. **Occurrence identity.** Emit `symbol` (enclosing method signature) on occurrences; de-duplicate on symbol plus bytecode offset rather than name, location and line.
 5. **Upstream changes to sonar-cryptography.** A public `DetectionStore` builder (drops `StoreAccess`); a value factory instead of the two `Tree`-typed lambdas in `JcaGCMParameterSpec` (drops the marker interface); `Set.of` instead of `SetUtils` in `MethodMatcher` (drops sonar-analyzer-commons); an `IScanContext` without `InputFile` (drops sonar-plugin-api).
-6. **Distribution and housekeeping.** Third-party notices; `git init`; decide shaded-code attribution; invalidate cached per-artifact CBOMs when the SBOM changes.
+6. **Distribution and housekeeping.** Third-party notices; decide shaded-code attribution; invalidate cached per-artifact CBOMs when the SBOM changes.
 7. **Legal confirmation** of the remaining LGPL components and the marker interface, and closing the SSAL pause formally.
 
 ## Reference

@@ -7,8 +7,11 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
@@ -106,7 +109,7 @@ class BytecodeScannerTest {
         final BytecodeScanner scanner = new BytecodeScanner();
         final Bom bom;
         try (JarCache jars = new JarCache()) {
-            final java.util.Set<String> classes = new java.util.HashSet<>(jars.classNames(wrapper));
+            final Set<String> classes = new HashSet<>(jars.classNames(wrapper));
             classes.addAll(jars.classNames(app));
             final CallIndex index = new CallIndex(classes);
             scanner.index(wrapper, "org.acme/wrap/1.0", jars, index);
@@ -168,7 +171,7 @@ class BytecodeScannerTest {
         final BytecodeScanner scanner = new BytecodeScanner();
         final Bom bom;
         try (JarCache jars = new JarCache()) {
-            final java.util.Set<String> classes = new java.util.HashSet<>(jars.classNames(spi));
+            final Set<String> classes = new HashSet<>(jars.classNames(spi));
             classes.addAll(jars.classNames(client));
             final CallIndex index = new CallIndex(classes);
             scanner.index(spi, "org.acme/spi/1.0", jars, index);
@@ -199,7 +202,7 @@ class BytecodeScannerTest {
         Files.writeString(src, source);
         final Path classes = Files.createDirectories(tmp.resolve(name + "-classes"));
         final JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
-        final List<String> args = new java.util.ArrayList<>(List.of("-g", "-proc:none", "-d", classes.toString()));
+        final List<String> args = new ArrayList<>(List.of("-g", "-proc:none", "-d", classes.toString()));
         if (classpath != null) {
             args.addAll(List.of("-cp", classpath.toString()));
         }

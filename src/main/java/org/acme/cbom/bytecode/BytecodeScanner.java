@@ -7,6 +7,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import org.cyclonedx.model.Bom;
+import org.cyclonedx.model.Component;
+import org.cyclonedx.model.component.evidence.Occurrence;
 
 /**
  * Detects cryptographic assets in a binary JAR by analyzing its bytecode with sonar-cryptography's
@@ -73,11 +75,11 @@ public final class BytecodeScanner {
         if (bom.getComponents() == null) {
             return;
         }
-        for (org.cyclonedx.model.Component c : bom.getComponents()) {
+        for (Component c : bom.getComponents()) {
             if (c.getEvidence() == null || c.getEvidence().getOccurrences() == null) {
                 continue;
             }
-            for (org.cyclonedx.model.component.evidence.Occurrence o : c.getEvidence().getOccurrences()) {
+            for (Occurrence o : c.getEvidence().getOccurrences()) {
                 o.setOffset(null);
                 if (o.getLine() != null && o.getLine() <= 0) {
                     o.setLine(null);

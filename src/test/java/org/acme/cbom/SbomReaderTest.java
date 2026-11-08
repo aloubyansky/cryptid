@@ -11,6 +11,7 @@ import java.util.Set;
 import org.cyclonedx.model.Bom;
 import org.cyclonedx.model.Component;
 import org.cyclonedx.model.Dependency;
+import org.cyclonedx.model.Metadata;
 import org.junit.jupiter.api.Test;
 
 class SbomReaderTest {
@@ -35,7 +36,7 @@ class SbomReaderTest {
     void sameCoordinatesWithDifferentBomRefsAreKept() {
         final Bom bom = new Bom();
         final Component root = component("root", "pkg:maven/org.acme/app@1.0?type=jar");
-        final org.cyclonedx.model.Metadata md = new org.cyclonedx.model.Metadata();
+        final Metadata md = new Metadata();
         md.setComponent(root);
         bom.setMetadata(md);
         bom.addComponent(component("pkg:maven/org.apache.httpcomponents/httpclient@4.5.14?type=jar", "pkg:maven/org.apache.httpcomponents/httpclient@4.5.14?type=jar"));

@@ -6,6 +6,7 @@ import io.smallrye.classfile.ClassModel;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.constant.ClassDesc;
+import java.lang.constant.MethodTypeDesc;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
@@ -144,7 +145,7 @@ final class Types {
     List<IType> ofParameters(String descriptor) {
         return parameterTypes.computeIfAbsent(descriptor, d -> {
             final List<IType> result = new ArrayList<>();
-            for (ClassDesc p : java.lang.constant.MethodTypeDesc.ofDescriptor(d).parameterList()) {
+            for (ClassDesc p : MethodTypeDesc.ofDescriptor(d).parameterList()) {
                 result.add(of(p));
             }
             return List.copyOf(result);
