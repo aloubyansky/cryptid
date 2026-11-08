@@ -21,7 +21,7 @@ class SpecExportTest {
 
     @Test
     void specsMatchTheRules() throws Exception {
-        final SpecExporter.Export export = new SpecExporter().export(Translation.javaRules());
+        final SpecExporter.Export export = new SpecExporter().export(Rules.javaRules());
         final String yaml = SpecExporter.yaml(export.specs());
         Files.createDirectories(REPORT.getParent());
         Files.writeString(REPORT, export.report().summary());

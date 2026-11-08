@@ -34,7 +34,7 @@ import picocli.CommandLine.Parameters;
         mixinStandardHelpOptions = true,
         description =
                 "Generates a CBOM for the Maven components of a CycloneDX SBOM by analyzing the"
-                        + " bytecode of their JARs with sonar-cryptography's Java detection rules")
+                        + " bytecode of their JARs with crypto API specifications derived from sonar-cryptography's Java rules")
 public class GenerateCbomCommand implements Callable<Integer> {
 
     private static final Logger log = Logger.getLogger(GenerateCbomCommand.class);

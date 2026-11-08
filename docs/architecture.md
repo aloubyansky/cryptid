@@ -51,15 +51,13 @@ flowchart TB
   cdx[("cyclonedx-core-java<br/>packageurl-java")]
   mvn[("quarkus-maven-resolver")]
   cf[("jdk-classfile-backport")]
-  rules[("com.ibm:java rules<br/>com.ibm:engine")]
-  sac[("sonar-analyzer-commons<br/>LGPL-3.0")]
+  rules[("crypto-api-specs.yaml<br/>com.ibm:engine")]
   mapper[("com.ibm:mapper<br/>com.ibm:java translators<br/>com.ibm:enricher")]
   out[("com.ibm:output")]
   s1 -.-> cdx
   s2 -.-> mvn
   s3 -.-> cf
   s5 -.-> rules
-  rules -.-> sac
   s6 -.-> mapper
   s7 -.-> out
   s8 -.-> cdx
@@ -69,7 +67,7 @@ flowchart TB
   classDef lib fill:#f4ecd9,stroke:#8a6418,color:#1d2421
   class s1,s2,s3,s4,s5,s6,s7,s8 ours
   class rules,mapper,out ibm
-  class cdx,mvn,cf,sac lib
+  class cdx,mvn,cf lib
 ```
 
 Green: this project. Blue: sonar-cryptography modules (Apache-2.0). Beige: other libraries. Dashed: uses.

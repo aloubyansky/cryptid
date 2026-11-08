@@ -4,7 +4,6 @@ import com.ibm.engine.detection.DetectionStore;
 import com.ibm.engine.model.IValue;
 import com.ibm.engine.model.context.IDetectionContext;
 import com.ibm.engine.rule.IBundle;
-import com.ibm.engine.rule.IDetectionRule;
 import com.ibm.enricher.Enricher;
 import com.ibm.mapper.IContextTranslation;
 import com.ibm.mapper.ITranslator;
@@ -57,13 +56,6 @@ final class Translation extends ITranslator<Object, Loc, Object, Object> {
         }
         reorganizerRules = (List<IReorganizerRule>) Class.forName(
                 "com.ibm.plugin.translation.reorganizer.JavaReorganizerRules").getMethod("rules").invoke(null);
-    }
-
-    /** sonar-cryptography's Java detection rules, the root rules of an inventory scan. */
-    @SuppressWarnings("unchecked")
-    static List<IDetectionRule<Loc>> javaRules() throws ReflectiveOperationException {
-        return (List<IDetectionRule<Loc>>) Class.forName("com.ibm.plugin.rules.detection.JavaDetectionRules")
-                .getMethod("rules").invoke(null);
     }
 
     /** Translates, reorganizes and enriches a root store tree. */

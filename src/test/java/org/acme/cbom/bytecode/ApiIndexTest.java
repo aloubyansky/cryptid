@@ -55,7 +55,7 @@ class ApiIndexTest {
     void matchesWhatTheRulesMatch() throws Exception {
         final Path bcprov = Path.of(AESEngine.class.getProtectionDomain().getCodeSource().getLocation().toURI());
         final ApiIndex index = new ApiIndex(ApiSpecs.load());
-        final List<IDetectionRule<Loc>> rules = allRules(Translation.javaRules());
+        final List<IDetectionRule<Loc>> rules = allRules(Rules.javaRules());
         final RuleTable ruleTable = new RuleTable(rules);
         final Types types = new Types(ApiIndexTest.class.getClassLoader());
 

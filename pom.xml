@@ -103,10 +103,13 @@
             </exclusions>
         </dependency>
         <dependency>
-            <!-- LGPL-3.0; sonar-cryptography's MethodMatcher uses its SetUtils -->
+            <!-- LGPL-3.0; sonar-cryptography's MethodMatcher uses its SetUtils when the rules load,
+                 which only the tests do (as the reference for the spec-based detection and for
+                 exporting the specs) -->
             <groupId>org.sonarsource.analyzer-commons</groupId>
             <artifactId>sonar-analyzer-commons</artifactId>
             <version>${sonar-analyzer-commons.version}</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <!-- LGPL-3.0; compile-only, for the InputFile type in sonar-cryptography's IScanContext -->

@@ -14,8 +14,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.acme.cbom.bytecode.Detector.Finding;
-import org.acme.cbom.bytecode.Detector.ScanContext;
 import org.acme.cbom.bytecode.ObjectGraph.ApiCall;
 import org.acme.cbom.spec.ApiSpecs.ApiSpec;
 import org.acme.cbom.spec.ApiSpecs.Arg;
@@ -29,8 +27,8 @@ import org.acme.cbom.spec.ApiSpecs.Role;
  * roles the specs give them.
  *
  * <p>Findings are built as {@code DetectionStore} trees, the input of sonar-cryptography's
- * translation, the same way {@link Detector} builds them from rules: multi-valued arguments give
- * one finding per value combination (up to {@link Detector#MAX_VARIANTS}), and arguments passed
+ * translation, the same way the rule-based detection built them: multi-valued arguments give
+ * one finding per value combination (up to {@link #MAX_VARIANTS}), and arguments passed
  * in from callers are resolved through the {@link CallIndex} into findings located at the caller.
  * Unlike rule trees, a link accepts any object a specified API creates, not only those a rule
  * lists.
@@ -38,6 +36,12 @@ import org.acme.cbom.spec.ApiSpecs.Role;
 final class SpecDetector {
 
     private static final int MAX_DEPTH = 8;
+
+    /**
+     * Most findings one match is split into, one per combination of the possible values of its
+     * detectable arguments; beyond this, the values stay together in one finding.
+     */
+    static final int MAX_VARIANTS = 16;
 
     private final ApiIndex apis;
     private final Types types;
@@ -116,7 +120,7 @@ final class SpecDetector {
         for (List<Object> values : points.values()) {
             count *= values.size();
         }
-        if (points.isEmpty() || count > Detector.MAX_VARIANTS) {
+        if (points.isEmpty() || count > MAX_VARIANTS) {
             return List.of(merged);
         }
         List<Map<Point, Object>> combinations = List.of(Map.of());

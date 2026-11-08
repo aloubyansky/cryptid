@@ -2,7 +2,6 @@ package org.acme.cbom.bytecode;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.ibm.engine.rule.IDetectionRule;
 import com.ibm.mapper.model.INode;
 import com.ibm.rules.InventoryRule;
 import com.ibm.rules.issue.Issue;
@@ -59,7 +58,6 @@ class FixtureConformanceTest {
 
     @Test
     void matchesBaseline(@TempDir Path work) throws Exception {
-        final List<IDetectionRule<Loc>> rules = Translation.javaRules();
         final Translation translation = new Translation();
         final String classpath = System.getProperty("java.class.path");
 
@@ -71,7 +69,7 @@ class FixtureConformanceTest {
             unit++;
             final Map<String, Map<Integer, List<String>>> actualByFile = new LinkedHashMap<>();
             if (error == null) {
-                analyze(classes, rules, translation, actualByFile);
+                analyze(classes, translation, actualByFile);
             }
             for (Path src : sources) {
                 final String fixture = FIXTURES.relativize(src).toString().replace('\\', '/');
@@ -166,7 +164,7 @@ class FixtureConformanceTest {
     }
 
     /** Analyzes compiled fixtures with the call index; collects issues by source file and line. */
-    private static void analyze(Path classes, List<IDetectionRule<Loc>> rules, Translation translation,
+    private static void analyze(Path classes, Translation translation,
             Map<String, Map<Integer, List<String>>> actualByFile) throws IOException {
         final Analyzer analyzer = new Analyzer();
         analyzer.addClasses(classes);
@@ -178,10 +176,9 @@ class FixtureConformanceTest {
         final List<Analyzer.MethodResult> methods = analyzer.analyze();
         index.addCalls(methods, "");
         index.finish();
-        final Detector detector = BytecodeScanner.RULES ? new Detector(rules, types, "", index) : null;
-        final SpecDetector specDetector = BytecodeScanner.RULES ? null : new SpecDetector(new ApiIndex(ApiSpecs.load()), types, "", index);
+        final SpecDetector detector = new SpecDetector(new ApiIndex(ApiSpecs.load()), types, "", index);
         for (Analyzer.MethodResult m : methods) {
-            for (Detector.Finding f : BytecodeScanner.RULES ? detector.detect(m) : specDetector.detect(m)) {
+            for (Finding f : detector.detect(m)) {
                 final List<INode> nodes = translation.process(f.store());
                 for (Issue<Loc> issue : new InventoryRule<Loc>().report(f.loc(), nodes)) {
                     actualByFile.computeIfAbsent(issue.tree().file(), k -> new TreeMap<>())

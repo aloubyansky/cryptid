@@ -28,7 +28,7 @@ class RuleTableTest {
 
     @Test
     void candidatesEqualBruteForce() throws Exception {
-        final List<IDetectionRule<Loc>> rules = Translation.javaRules();
+        final List<IDetectionRule<Loc>> rules = Rules.javaRules();
         final RuleTable table = new RuleTable(rules);
         final Types types = new Types(RuleTableTest.class.getClassLoader());
         final Set<String> names = new TreeSet<>();

@@ -1,7 +1,20 @@
 package org.acme.cbom.bytecode;
 
 import com.ibm.engine.language.ILanguageTranslation;
+import com.ibm.engine.model.context.AlgorithmParameterContext;
+import com.ibm.engine.model.context.CipherContext;
+import com.ibm.engine.model.context.DigestContext;
 import com.ibm.engine.model.context.IDetectionContext;
+import com.ibm.engine.model.context.KeyAgreementContext;
+import com.ibm.engine.model.context.KeyContext;
+import com.ibm.engine.model.context.KeyDerivationFunctionContext;
+import com.ibm.engine.model.context.MacContext;
+import com.ibm.engine.model.context.PRNGContext;
+import com.ibm.engine.model.context.PrivateKeyContext;
+import com.ibm.engine.model.context.ProtocolContext;
+import com.ibm.engine.model.context.PublicKeyContext;
+import com.ibm.engine.model.context.SecretKeyContext;
+import com.ibm.engine.model.context.SignatureContext;
 import com.ibm.engine.rule.IBundle;
 import com.ibm.engine.rule.IDetectionRule;
 import java.util.List;
@@ -27,6 +40,13 @@ record SpecRule(ApiSpec spec, Context context, IDetectionContext detectionValueC
     private record Library(String getIdentifier) implements IBundle {}
 
     private static final Map<String, IBundle> LIBRARIES = new ConcurrentHashMap<>();
+
+    /** The context classes specs may name, referenced explicitly for jar tree-shaking. */
+    private static final Map<String, Class<?>> CONTEXT_TYPES = SpecFactories.classes(
+            AlgorithmParameterContext.class, CipherContext.class, DigestContext.class, KeyAgreementContext.class,
+            KeyContext.class, KeyDerivationFunctionContext.class, MacContext.class, PRNGContext.class,
+            PrivateKeyContext.class, ProtocolContext.class, PublicKeyContext.class, SecretKeyContext.class,
+            SignatureContext.class);
     private static final Map<Context, IDetectionContext> CONTEXTS = new ConcurrentHashMap<>();
 
     /**
@@ -72,7 +92,7 @@ record SpecRule(ApiSpec spec, Context context, IDetectionContext detectionValueC
     @SuppressWarnings({"unchecked", "rawtypes"})
     static IDetectionContext context(Context c) {
         try {
-            final Class<?> type = Class.forName("com.ibm.engine.model.context." + c.type());
+            final Class<?> type = SpecFactories.type(CONTEXT_TYPES, c.type());
             if (!c.properties().isEmpty()) {
                 return (IDetectionContext) type.getConstructor(Map.class).newInstance(c.properties());
             }

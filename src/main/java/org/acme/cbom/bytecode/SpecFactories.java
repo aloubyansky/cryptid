@@ -1,13 +1,39 @@
 package org.acme.cbom.bytecode;
 
+import com.ibm.engine.model.Mode;
+import com.ibm.engine.model.factory.AlgorithmFactory;
+import com.ibm.engine.model.factory.AlgorithmParameterFactory;
+import com.ibm.engine.model.factory.BlockSizeFactory;
+import com.ibm.engine.model.factory.BooleanFactory;
+import com.ibm.engine.model.factory.CipherActionFactory;
+import com.ibm.engine.model.factory.CipherSuiteFactory;
+import com.ibm.engine.model.factory.CurveFactory;
+import com.ibm.engine.model.factory.DigestSizeFactory;
+import com.ibm.engine.model.factory.InitializationVectorSizeFactory;
+import com.ibm.engine.model.factory.IterationCountFactory;
+import com.ibm.engine.model.factory.KeyActionFactory;
+import com.ibm.engine.model.factory.KeySizeFactory;
+import com.ibm.engine.model.factory.MacSizeFactory;
+import com.ibm.engine.model.factory.ModeFactory;
+import com.ibm.engine.model.factory.OperationModeFactory;
+import com.ibm.engine.model.factory.PaddingFactory;
+import com.ibm.engine.model.factory.ParameterIdentifierFactory;
+import com.ibm.engine.model.factory.PasswordSizeFactory;
+import com.ibm.engine.model.factory.ProtocolFactory;
+import com.ibm.engine.model.factory.SaltSizeFactory;
+import com.ibm.engine.model.factory.SeedSizeFactory;
+import com.ibm.engine.model.factory.SignatureActionFactory;
+import com.ibm.engine.model.factory.TagSizeFactory;
+import com.ibm.engine.model.factory.ValueActionFactory;
 import java.lang.reflect.Constructor;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.acme.cbom.spec.ApiSpecs.Factory;
 
 /**
  * Creates sonar-cryptography's value and action factories from their description in the specs:
- * the class name in {@code com.ibm.engine.model.factory} and at most one configuration value,
+ * the class's simple name and at most one configuration value,
  * passed to the constructor taking it (a {@code String} or an enum constant).
  *
  * <p>Rule-specific functions ({@code factory: lambda}) can't be created this way; {@link #create}
@@ -15,7 +41,21 @@ import org.acme.cbom.spec.ApiSpecs.Factory;
  */
 final class SpecFactories {
 
-    private static final String PACKAGE = "com.ibm.engine.model.factory.";
+    /**
+     * The factory classes specs may name, referenced explicitly so that jar tree-shaking keeps
+     * them: they're only looked up by name.
+     */
+    private static final Map<String, Class<?>> FACTORIES = classes(
+            AlgorithmFactory.class, AlgorithmParameterFactory.class, BlockSizeFactory.class, BooleanFactory.class,
+            CipherActionFactory.class, CipherSuiteFactory.class, CurveFactory.class, DigestSizeFactory.class,
+            InitializationVectorSizeFactory.class, IterationCountFactory.class, KeyActionFactory.class,
+            KeySizeFactory.class, MacSizeFactory.class, ModeFactory.class, OperationModeFactory.class,
+            PaddingFactory.class, ParameterIdentifierFactory.class, PasswordSizeFactory.class, ProtocolFactory.class,
+            SaltSizeFactory.class, SeedSizeFactory.class, SignatureActionFactory.class, TagSizeFactory.class,
+            ValueActionFactory.class);
+
+    /** The value classes rule-specific functions produce, by simple name. */
+    private static final Map<String, Class<?>> VALUES = classes(Mode.class);
     private static final Map<Factory, Object> CACHE = new ConcurrentHashMap<>();
 
     private SpecFactories() {}
@@ -52,7 +92,7 @@ final class SpecFactories {
             throw new IllegalArgumentException("No result recorded: " + spec);
         }
         try {
-            return Class.forName("com.ibm.engine.model." + result.substring(0, space))
+            return type(VALUES, result.substring(0, space))
                     .getConstructor(String.class, Object.class)
                     .newInstance(result.substring(space + 1), location);
         } catch (ReflectiveOperationException e) {
@@ -63,7 +103,7 @@ final class SpecFactories {
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Object instantiate(Factory spec) {
         try {
-            final Class<?> type = Class.forName(PACKAGE + spec.factory());
+            final Class<?> type = type(FACTORIES, spec.factory());
             if (spec.config().isEmpty()) {
                 return type.getConstructor().newInstance();
             }
@@ -87,5 +127,23 @@ final class SpecFactories {
         } catch (ReflectiveOperationException e) {
             throw new IllegalArgumentException("Can't create " + spec, e);
         }
+    }
+
+    /** Classes by simple name. */
+    static Map<String, Class<?>> classes(Class<?>... classes) {
+        final Map<String, Class<?>> result = new HashMap<>();
+        for (Class<?> c : classes) {
+            result.put(c.getSimpleName(), c);
+        }
+        return Map.copyOf(result);
+    }
+
+    /** The class of a simple name, or {@link ClassNotFoundException}. */
+    static Class<?> type(Map<String, Class<?>> classes, String name) throws ClassNotFoundException {
+        final Class<?> c = classes.get(name);
+        if (c == null) {
+            throw new ClassNotFoundException(name);
+        }
+        return c;
     }
 }

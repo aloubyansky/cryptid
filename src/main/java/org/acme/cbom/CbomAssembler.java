@@ -312,7 +312,7 @@ public class CbomAssembler {
 
     /**
      * Creates the CBOM metadata: a timestamp and this tool, with the sonar-cryptography version
-     * whose detection rules and CBOM model it uses.
+     * whose Java rules the crypto API specs are derived from, and whose CBOM model it uses.
      *
      * @return the metadata
      */
@@ -324,7 +324,7 @@ public class CbomAssembler {
         tool.setGroup("org.acme");
         tool.setName("cbom-generator");
         tool.setVersion(BuildInfo.VERSION);
-        tool.setDescription("Bytecode analysis with sonar-cryptography's Java detection rules");
+        tool.setDescription("Bytecode analysis with crypto API specs derived from sonar-cryptography's Java rules");
         final Component rules = new Component();
         rules.setType(Component.Type.LIBRARY);
         rules.setGroup("com.ibm");

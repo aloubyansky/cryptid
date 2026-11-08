@@ -51,7 +51,7 @@ class FactsEquivalenceTest {
     @Test
     void graphCarriesWhatTheDetectionTreesCarry() throws Exception {
         final ApiIndex apis = new ApiIndex(ApiSpecs.load());
-        final List<com.ibm.engine.rule.IDetectionRule<Loc>> rules = Translation.javaRules();
+        final List<com.ibm.engine.rule.IDetectionRule<Loc>> rules = Rules.javaRules();
         final Map<String, Set<String>> before = new TreeMap<>();
         final Map<String, Set<String>> after = new TreeMap<>();
 
@@ -114,7 +114,7 @@ class FactsEquivalenceTest {
      */
     static String compareJars(List<Path> jars) throws Exception {
         final ApiIndex apis = new ApiIndex(ApiSpecs.load());
-        final List<com.ibm.engine.rule.IDetectionRule<Loc>> rules = Translation.javaRules();
+        final List<com.ibm.engine.rule.IDetectionRule<Loc>> rules = Rules.javaRules();
         final Map<String, Set<String>> before = new TreeMap<>();
         final Map<String, Set<String>> after = new TreeMap<>();
         try (JarCache cache = new JarCache()) {
@@ -154,7 +154,7 @@ class FactsEquivalenceTest {
             ApiIndex apis, Types types, Map<String, Set<String>> before, Map<String, Set<String>> after) {
         final Detector detector = new Detector(rules, types, "", null);
         for (Analyzer.MethodResult m : methods) {
-            for (Detector.Finding f : detector.detect(m)) {
+            for (Finding f : detector.detect(m)) {
                 final Context ctx = SpecExporter.context(f.store().getDetectionValueContext());
                 final String key = key(f.call(), ctx, f.store().getDetectionRule().bundle().getIdentifier());
                 lines(f.store(), "", before.computeIfAbsent(key, k -> new TreeSet<>()),

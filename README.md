@@ -21,7 +21,7 @@ Steps 1, 2 and 7 run once; steps 3 to 6 run for each JAR in parallel. Each step 
 | 1. Read SBOM, group by artifact | `GenerateCbomCommand`, `SbomReader` | cyclonedx-core-java, packageurl-java (SBOM and purl parsing) |
 | 2. Resolve binary JARs (no sources JARs needed) | `ArtifactResolver` | quarkus-maven-resolver |
 | 3. Interpret bytecode | `Analyzer`, `Types`, `JarCache`, `AVal`, `CallIndex` | jdk-classfile-backport (SmallRye) |
-| 4. Match detection rules; dependent rules follow object origins | `Detector`, `StoreAccess` | `com.ibm:java` (351 Java rules), `com.ibm:engine` (rule model, `MethodMatcher`, `DetectionStore`); sonar-analyzer-commons (LGPL) |
+| 4. Detect from the crypto API specs (`crypto-api-specs.yaml`, exported from sonar-cryptography's 351 Java rules); objects followed through the method's object graph | `SpecDetector`, `ObjectGraph`, `ApiIndex`, `StoreAccess` | `com.ibm:engine` (value factories, `DetectionStore`) |
 | 5. Translate to crypto assets: translate, reorganize, enrich | `Translation` | `com.ibm:mapper`, `com.ibm:java` (context translators, reorganizer rules), `com.ibm:enricher` |
 | 6. Write each artifact's CBOM | `BytecodeScanner` | `com.ibm:output` (`CBOMOutputFile`) |
 | 7. Merge and link assets to SBOM components | `CbomAssembler` | cyclonedx-core-java |
@@ -39,14 +39,14 @@ Why it matters: SSALv1 limits use to a "Non-competitive Purpose", which excludes
 | sonar-java, sonar-python, sonar-go analyzers | SSALv1 | Removed: excluded in the pom (sonar-cryptography's parent pom adds them to every module) |
 | shaded `sonar-cryptography-plugin` JAR | embeds SSALv1 sonar-python, EPL, Apache, BSD code with notices stripped | Removed |
 | cbomkit-lib | Apache-2.0 | Removed; it existed to drive sonar-java |
-| sonar-cryptography modules `com.ibm:java`, `engine`, `mapper`, `enricher`, `output`, `rules`, `common` 1.7.0 | Apache-2.0 | Used: rules, CBOM model, translation, output |
-| `sonar-analyzer-commons` 2.18 | LGPL-3.0 | Shipped: `MethodMatcher` uses its `SetUtils` |
+| sonar-cryptography modules `com.ibm:java`, `engine`, `mapper`, `enricher`, `output`, `rules`, `common` 1.7.0 | Apache-2.0 | Used: CBOM model, value factories, translation, output. The Java rules are exported once into `crypto-api-specs.yaml` (with attribution) and loaded only by tests |
+| `sonar-analyzer-commons` 2.18 | LGPL-3.0 | Tests only: `MethodMatcher` uses its `SetUtils` when sonar-cryptography's rules load, and only the tests load them (as the reference for the spec-based detection, and to export the specs); not shipped |
 | `sonar-plugin-api` 13.11 | LGPL-3.0 | Compile-only (`provided`): the `InputFile` type in `IScanContext`; not shipped |
 
 Two workarounds remain, each removable by a small upstream change:
 
 - `StoreAccess` sits in sonar-cryptography's `com.ibm.engine.detection` package, because building `DetectionStore` trees needs package-private members.
-- An empty marker interface named `org.sonar.plugins.java.api.tree.Tree` (no SonarSource code) is shipped, because two lambdas in the `JcaGCMParameterSpec` rules are typed on it. Worth a confirmation from legal.
+- An empty marker interface named `org.sonar.plugins.java.api.tree.Tree` (no SonarSource code) is shipped, because two lambdas in the `JcaGCMParameterSpec` rules are typed on it. The tool no longer loads the rules; the marker stays only while the tests run them as a reference. Worth a confirmation from legal.
 
 Still needed for distribution: a third-party notices file covering the Apache and LGPL components.
 

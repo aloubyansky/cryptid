@@ -16,7 +16,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.sonar.api.batch.fs.InputFile;
 
 /**
  * Evaluates sonar-cryptography's detection rules on the call sites of a method, building the same
@@ -35,25 +34,15 @@ import org.sonar.api.batch.fs.InputFile;
  * <p>Objects are followed within the enclosing method, like sonar-cryptography follows the
  * variable a call is assigned to.
  */
+/**
+ * The rule-based detection that preceded {@link SpecDetector}, kept in the tests as the reference
+ * the spec-based detection is compared with.
+ */
 final class Detector {
 
     private static final int MAX_DEPTH = 8;
 
-    /**
-     * Most findings one match is split into, one per combination of the possible values of its
-     * detectable arguments; beyond this, the values stay together in one finding.
-     */
-    static final int MAX_VARIANTS = 16;
 
-    /**
-     * A detection to translate and report on its own.
-     *
-     * @param loc where to report it: the matched call, or for a value resolved from a caller,
-     *     the caller's call site
-     * @param call the matched call
-     * @param store its store tree
-     */
-    record Finding(Loc loc, CallSite call, DetectionStore<Object, Loc, Object, Object> store) {}
 
     /** Findings of values resolved from callers, collected while processing a method. */
     private List<Finding> resolved = new ArrayList<>();
@@ -119,7 +108,7 @@ final class Detector {
      * Builds the store trees of a match: one per combination of the possible values of its
      * detectable arguments, so that each translation sees one value per argument, as for a value
      * resolved from a caller. A store holding several values for one argument would be
-     * translated into one asset with an arbitrary one of them. Up to {@link #MAX_VARIANTS}
+     * translated into one asset with an arbitrary one of them. Up to {@link SpecDetector#MAX_VARIANTS}
      * combinations; more keep the values together in one store. Values resolved from callers are
      * collected once, from the first build.
      */
@@ -134,7 +123,7 @@ final class Detector {
         for (List<Object> values : points.values()) {
             count *= values.size();
         }
-        if (points.isEmpty() || count > MAX_VARIANTS) {
+        if (points.isEmpty() || count > SpecDetector.MAX_VARIANTS) {
             return List.of(merged);
         }
         final List<Map<Point, Object>> combinations = new ArrayList<>();
@@ -323,24 +312,4 @@ final class Detector {
         }
     }
 
-    /** Provides the file path to sonar-cryptography's translation. */
-    record ScanContext(String path) implements IScanContext<Object, Loc> {
-        @Override
-        public void reportIssue(Object rule, Loc tree, String message) {}
-
-        @Override
-        public InputFile getInputFile() {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public String getFilePath() {
-            return path;
-        }
-
-        @Override
-        public String getRelativePath() {
-            return path;
-        }
-    }
 }
