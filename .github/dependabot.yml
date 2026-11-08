@@ -1,0 +1,36 @@
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # the Quarkus BOM and the Quarkus Maven plugin share quarkus.platform.version
+      quarkus:
+        patterns:
+          - "io.quarkus*"
+      maven-plugins:
+        patterns:
+          - "org.apache.maven.plugins:*"
+          - "org.codehaus.mojo:*"
+    ignore:
+      # sonar-cryptography isn't on Maven Central; upgrading it means building it from source,
+      # regenerating crypto-api-specs.yaml and reviewing the difference (see README)
+      - dependency-name: "com.ibm:*"
+      # test-only, at the versions sonar-cryptography 1.7.0 was built against
+      - dependency-name: "org.sonarsource.*:*"
+      # test-only, at the version sonar-cryptography's fixture tests use; FixtureConformanceTest's
+      # baseline depends on it
+      - dependency-name: "org.bouncycastle:*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      github-actions:
+        patterns:
+          - "*"
