@@ -96,7 +96,7 @@ The largest gap is values derived from parameters; the rest are fidelity details
 - **Tests.** Scanner tests (single JAR, two-hop cross-JAR, interface dispatch), SBOM-reader tests, and `FixtureConformanceTest` over 129 copied sonar-cryptography fixtures with a per-fixture baseline (`src/test/resources/fixture-baseline.tsv`). Integration tests run the packaged uber-jar as a process with [CLI Assured](https://central.sonatype.com/artifact/org.cli-assured/cli-assured) (failsafe, after `package`): `SampleSbomIT` on every `mvn verify` (CBOM contents, work-directory reuse and `--rescan`, a missing SBOM); `KeycloakEndToEndIT` on the Keycloak 26.8.2 SBOM (548 JARs, about 40 s, 8 GB RSS), tagged `e2e`, only with `mvn verify -Pe2e`. It checks that every artifact is analyzed, lower bounds on totals, well-formed occurrences, the cross-JAR SHA-1 at `DPoPUtil`, and RSA-2048 at `KeyUtils` through the `CryptoProvider` interface.
 - **Nondeterminism.** Some resolved values vary between runs of the same input: on Keycloak, the DSA key size at wildfly-elytron-x500-cert `SelfSignedX509CertificateAndSigningKey.java:367` came out as 2048, 256 or -1 in different runs (seen with and without tree-shaking). Probably order-dependent merging in the parallel analysis or call resolution; not investigated yet.
 - **Distribution.** Third-party notices file; the project isn't a git repository yet.
-- **Housekeeping.** `CryptoCallGraph` is superseded by `CallIndex`; `--threads` defaults to all CPUs; per-artifact CBOMs cached in the work directory aren't invalidated when other artifacts change.
+- **Housekeeping.** `--threads` defaults to all CPUs; per-artifact CBOMs cached in the work directory aren't invalidated when other artifacts change.
 
 ## Next steps
 
@@ -107,7 +107,7 @@ In priority order. Cross-method value propagation and interface dispatch are don
 3. **Remaining value-resolution features** from the fixture gaps: nested engines (GMac over AES), `BigInteger`-derived DH sizes, GOST naming, SSL parameter arrays. `FixtureConformanceTest` reports each improvement; record it with `-Dfixtures.updateBaseline=true`.
 4. **Occurrence identity.** Emit `symbol` (enclosing method signature) on occurrences; de-duplicate on symbol plus bytecode offset rather than name, location and line.
 5. **Upstream changes to sonar-cryptography.** A public `DetectionStore` builder (drops `StoreAccess`); a value factory instead of the two `Tree`-typed lambdas in `JcaGCMParameterSpec` (drops the marker interface); `Set.of` instead of `SetUtils` in `MethodMatcher` (drops sonar-analyzer-commons); an `IScanContext` without `InputFile` (drops sonar-plugin-api).
-6. **Distribution and housekeeping.** Third-party notices; `git init`; delete `CryptoCallGraph`; decide shaded-code attribution; invalidate cached per-artifact CBOMs when the SBOM changes.
+6. **Distribution and housekeeping.** Third-party notices; `git init`; decide shaded-code attribution; invalidate cached per-artifact CBOMs when the SBOM changes.
 7. **Legal confirmation** of the remaining LGPL components and the marker interface, and closing the SSAL pause formally.
 
 ## Reference
@@ -122,7 +122,6 @@ Paths are relative to `/home/aloubyansky/playground/cbom`.
 | Merge | `CbomAssembler` | attributes assets by occurrence location, de-duplicates occurrences, CycloneDX 1.6 JSON |
 | Bytecode engine | `src/main/java/org/acme/cbom/bytecode/` | `BytecodeScanner` (entry: `index`, `scan`), `Analyzer`, `AVal`, `CallSite`, `CallIndex`, `Types`, `JarCache`, `Detector`, `Translation`, `Loc` |
 | Workarounds | `src/main/java/com/ibm/engine/detection/StoreAccess.java`, `src/main/java/org/sonar/plugins/java/api/tree/Tree.java` | see Licensing |
-| Superseded call-graph logic | `src/main/java/org/acme/cbom/CryptoCallGraph.java` | replaced by `CallIndex`; to delete |
 | Tests | `src/test/java/org/acme/cbom/bytecode/BytecodeScannerTest.java`, `SbomReaderTest` | single-JAR detection; two-hop resolution across two JARs; calls through an interface |
 | Integration tests | `src/test/java/org/acme/cbom/SampleSbomIT.java`, `KeycloakEndToEndIT.java`, `Cli.java` | CLI Assured runs `java -jar` on the runner JAR (failsafe passes its path as `cbom.runner.jar`); `KeycloakEndToEndIT` is tagged `e2e`, run with `mvn verify -Pe2e` |
 | Packaging | `src/main/resources/application.properties` | `uber-jar` with `quarkus.package.jar.tree-shake.mode=classes`: 19.6 MB and 10.6k classes instead of 27.4 MB and 15.9k, same CBOM on the sample and Keycloak SBOMs. `Translation` passes `Class.forName` compile-time constant names so the tree-shaker keeps the reflectively loaded rules and translators |
