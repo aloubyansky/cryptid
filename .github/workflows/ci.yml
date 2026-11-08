@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      e2e:
+        description: Also run the Keycloak end-to-end test (resolves 548 JARs)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # sonar-cryptography's modules aren't on Maven Central; they're built from source (see README)
+  SONAR_CRYPTOGRAPHY_VERSION: 1.7.0
+
+jobs:
+  build:
+    name: Build and test on Java ${{ matrix.java }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: [17, 21]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21 for building sonar-cryptography
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Restore sonar-cryptography
+        id: sonar-cryptography
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/com/ibm
+          key: sonar-cryptography-${{ env.SONAR_CRYPTOGRAPHY_VERSION }}
+
+      - name: Build sonar-cryptography
+        if: steps.sonar-cryptography.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "$SONAR_CRYPTOGRAPHY_VERSION" \
+            https://github.com/cbomkit/sonar-cryptography.git "$RUNNER_TEMP/sonar-cryptography"
+          mvn -B -ntp -f "$RUNNER_TEMP/sonar-cryptography/pom.xml" install -pl java -am \
+            -DskipTests -Dspotless.skip -Dcheckstyle.skip -Dcyclonedx.skip
+
+      - name: Set up Java ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+
+      - name: Build and test
+        env:
+          # the end-to-end test needs a few GB of heap in the JVM it starts
+          JAVA_TOOL_OPTIONS: ${{ inputs.e2e && '-XX:MaxRAMPercentage=50' || '' }}
+        run: mvn -B -ntp verify ${{ inputs.e2e && matrix.java == 21 && '-Pe2e' || '' }}
+
+      - name: Upload the JAR
+        if: matrix.java == 21
+        uses: actions/upload-artifact@v4
+        with:
+          name: cryptid
+          path: target/cryptid.jar
+          if-no-files-found: error

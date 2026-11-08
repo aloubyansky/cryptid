@@ -118,7 +118,7 @@ Gaps and improvements beyond the findings above, moved here from the README on 2
 - **Memory and archives.** `JarCache` keeps every JAR open for the whole run and reads them with `java.util.zip.ZipFile`, skipping multi-release variants; smallrye-common-archive, with a bound on open archives and a more compact call index, would cut the peak (5.5 GB on Keycloak).
 - **Shaded code.** Binaries include classes that sources JARs lack; keycloak-admin-cli shades keycloak-common, so its copies are reported as separate locations. Whether to attribute shaded code to the shading component or to the original library is open.
 - **Work directory cache.** Per-artifact CBOMs aren't invalidated when other artifacts of the SBOM change.
-- **Distribution.** A third-party notices file for the Apache-2.0 and LGPL components; a legal confirmation of the `org.sonar.plugins.java.api.tree.Tree` marker interface.
+- **Distribution.** A legal confirmation of the `org.sonar.plugins.java.api.tree.Tree` marker interface. (`NOTICE` and the JAR's `META-INF/THIRD-PARTY.txt` were added on 2026-11-09.)
 - **Upstream changes to sonar-cryptography** that would remove the remaining workarounds: a value factory instead of the two `Tree`-typed lambdas in `JcaGCMParameterSpec` (drops the marker), `Set.of` instead of `SetUtils` in `MethodMatcher`, an `IScanContext` without `InputFile`, a public `DetectionStore` builder (the last three only matter to the test reference now).
 
 ## How this was measured

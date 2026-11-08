@@ -1,5 +1,7 @@
 # cryptid
 
+[![CI](https://github.com/aloubyansky/cryptid/actions/workflows/ci.yml/badge.svg)](https://github.com/aloubyansky/cryptid/actions/workflows/ci.yml)
+
 cryptid generates a CBOM (Cryptography Bill of Materials) from an SBOM. Give it a CycloneDX SBOM of a Java application, and it resolves the JAR of every Maven component, analyzes their bytecode for uses of cryptographic APIs, and writes a CycloneDX 1.6 CBOM listing the algorithms, keys and protocols the application uses, where it uses them, and which component each belongs to.
 
 - Works on binary JARs, so no sources are needed.
@@ -28,7 +30,7 @@ Then build cryptid:
 mvn package
 ```
 
-This produces `target/cryptid.jar`, a single executable JAR.
+This produces `target/cryptid.jar`, a single executable JAR. [CI](.github/workflows/ci.yml) does the same on Java 17 and 21, caching the sonar-cryptography build; a manual run can include the end-to-end test.
 
 ## Usage
 
@@ -131,6 +133,6 @@ cryptid uses these modules of sonar-cryptography 1.7.0 (Apache-2.0): `com.ibm:ja
 
 No SonarSource analyzer is used or shipped. sonar-java, sonar-python and sonar-go are under SSALv1, whose terms exclude, among others, using artificial intelligence technology with them. sonar-cryptography's parent POM makes them dependencies of every module, so `pom.xml` excludes them explicitly. Two SonarSource libraries under LGPL-3.0, `sonar-analyzer-commons` and `sonar-plugin-api`, are test dependencies only, for the rule-based reference.
 
-The runner JAR contains one class in a SonarSource package name, the empty interface `org.sonar.plugins.java.api.tree.Tree`. It's this project's own code, needed by the tests that run sonar-cryptography's rules.
+The JAR contains one class in a SonarSource package name, the empty interface `org.sonar.plugins.java.api.tree.Tree`. It's this project's own code, needed by the tests that run sonar-cryptography's rules.
 
-A third-party notices file for distribution is still to be written.
+cryptid is licensed under the [Apache License 2.0](LICENSE); [NOTICE](NOTICE) lists what it derives from sonar-cryptography. The JAR contains both, as `META-INF/cryptid/LICENSE` and `META-INF/cryptid/NOTICE`, and `META-INF/THIRD-PARTY.txt`, the libraries it bundles with their licenses, generated at build time by the license-maven-plugin.

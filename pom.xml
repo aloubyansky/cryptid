@@ -17,9 +17,8 @@
         <quarkus.platform.version>3.40.1</quarkus.platform.version>
 
         <quarkus-maven-resolver.version>0.0.5</quarkus-maven-resolver.version>
-        <!-- sonar-cryptography's rules, CBOM model, translation and output (Apache-2.0); not published
-             to Maven Central: build https://github.com/cbomkit/sonar-cryptography locally or configure
-             the GitHub Packages repository below with a read:packages token -->
+        <!-- sonar-cryptography's CBOM model, translators and output (Apache-2.0); not published to
+             Maven Central: build https://github.com/cbomkit/sonar-cryptography locally (see README) -->
         <sonar-cryptography.version>1.7.0</sonar-cryptography.version>
         <sonar-plugin-api.version>13.11.0.4459</sonar-plugin-api.version>
         <sonar-analyzer-commons.version>2.18.0.3393</sonar-analyzer-commons.version>
@@ -32,20 +31,12 @@
         <compiler-plugin.version>3.14.0</compiler-plugin.version>
         <surefire-plugin.version>3.5.3</surefire-plugin.version>
         <templating-plugin.version>3.1.1</templating-plugin.version>
+        <license-plugin.version>2.7.0</license-plugin.version>
 
         <quarkus.package.add-runner-suffix>false</quarkus.package.add-runner-suffix>
         <skipOriginalJarRename>true</skipOriginalJarRename>
         <quarkus.package.type>uber-jar</quarkus.package.type>
     </properties>
-
-    <repositories>
-        <!-- com.ibm:* sonar-cryptography modules are published here;
-             requires a <server><id>github</id> entry in settings.xml -->
-        <repository>
-            <id>github</id>
-            <url>https://maven.pkg.github.com/cbomkit/sonar-cryptography</url>
-        </repository>
-    </repositories>
 
     <dependencyManagement>
         <dependencies>
@@ -174,7 +165,40 @@
 
     <build>
         <finalName>cryptid</finalName>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <!-- the project's license and notice, in the JAR; the uber-jar build drops
+                     META-INF/LICENSE and META-INF/NOTICE, which many dependencies have -->
+                <directory>${project.basedir}</directory>
+                <targetPath>META-INF/cryptid</targetPath>
+                <includes>
+                    <include>LICENSE</include>
+                    <include>NOTICE</include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
+            <plugin>
+                <!-- META-INF/THIRD-PARTY.txt in the JAR: the bundled libraries and their licenses -->
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>license-maven-plugin</artifactId>
+                <version>${license-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>third-party</id>
+                        <goals>
+                            <goal>add-third-party</goal>
+                        </goals>
+                        <configuration>
+                            <excludedScopes>test,provided,system</excludedScopes>
+                            <thirdPartyFilename>META-INF/THIRD-PARTY.txt</thirdPartyFilename>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>${quarkus.platform.group-id}</groupId>
                 <artifactId>quarkus-maven-plugin</artifactId>

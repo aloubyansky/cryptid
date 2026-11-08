@@ -1,0 +1,18 @@
+cryptid
+Copyright 2026 Alexey Loubyansky
+
+Licensed under the Apache License, Version 2.0; see LICENSE.
+
+This product includes material derived from sonar-cryptography
+(https://github.com/cbomkit/sonar-cryptography), Copyright (C) 2024 PQCA,
+licensed under the Apache License, Version 2.0:
+
+- src/main/resources/crypto-api-specs.yaml is generated from its Java detection
+  rules, version 1.7.0;
+- src/test/resources/sonar-cryptography-fixtures/ contains unmodified copies of
+  its Java test files, version 1.7.0, with its license.
+
+The cryptid JAR bundles third-party libraries, among them sonar-cryptography's
+modules. They are listed with their licenses in META-INF/THIRD-PARTY.txt inside
+the JAR, generated from their Maven metadata at build time. This file and
+LICENSE are in the JAR as META-INF/cryptid/NOTICE and META-INF/cryptid/LICENSE.
