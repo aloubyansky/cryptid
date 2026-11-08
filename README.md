@@ -93,7 +93,8 @@ The largest gap is values derived from parameters; the rest are fidelity details
 - **Archive reading.** `JarCache` uses `java.util.zip.ZipFile` directly and skips multi-release variants; consider smallrye-common-archive instead.
 - **De-duplication.** Occurrences with the same asset name, location and line are kept once (they come from code shaded into several JARs). Two different assets with the same name at one location would be merged.
 - **Shaded and generated code.** Binaries include classes that sources JARs lack; keycloak-admin-cli shades keycloak-common, so its copies are reported as separate locations. Whether to attribute shaded code to the shading component or to the original library is open.
-- **Tests.** Scanner tests (single JAR, two-hop cross-JAR, interface dispatch), SBOM-reader tests, and `FixtureConformanceTest` over 129 copied sonar-cryptography fixtures with a per-fixture baseline (`src/test/resources/fixture-baseline.tsv`). No end-to-end test of the CLI command yet.
+- **Tests.** Scanner tests (single JAR, two-hop cross-JAR, interface dispatch), SBOM-reader tests, and `FixtureConformanceTest` over 129 copied sonar-cryptography fixtures with a per-fixture baseline (`src/test/resources/fixture-baseline.tsv`). Integration tests run the packaged uber-jar as a process with [CLI Assured](https://central.sonatype.com/artifact/org.cli-assured/cli-assured) (failsafe, after `package`): `SampleSbomIT` on every `mvn verify` (CBOM contents, work-directory reuse and `--rescan`, a missing SBOM); `KeycloakEndToEndIT` on the Keycloak 26.8.2 SBOM (548 JARs, about 40 s, 8 GB RSS), tagged `e2e`, only with `mvn verify -Pe2e`. It checks that every artifact is analyzed, lower bounds on totals, well-formed occurrences, the cross-JAR SHA-1 at `DPoPUtil`, and RSA-2048 at `KeyUtils` through the `CryptoProvider` interface.
+- **Nondeterminism.** Some resolved values vary between runs of the same input: on Keycloak, the DSA key size at wildfly-elytron-x500-cert `SelfSignedX509CertificateAndSigningKey.java:367` came out as 2048, 256 or -1 in different runs (seen with and without tree-shaking). Probably order-dependent merging in the parallel analysis or call resolution; not investigated yet.
 - **Distribution.** Third-party notices file; the project isn't a git repository yet.
 - **Housekeeping.** `CryptoCallGraph` is superseded by `CallIndex`; `--threads` defaults to all CPUs; per-artifact CBOMs cached in the work directory aren't invalidated when other artifacts change.
 
@@ -123,6 +124,8 @@ Paths are relative to `/home/aloubyansky/playground/cbom`.
 | Workarounds | `src/main/java/com/ibm/engine/detection/StoreAccess.java`, `src/main/java/org/sonar/plugins/java/api/tree/Tree.java` | see Licensing |
 | Superseded call-graph logic | `src/main/java/org/acme/cbom/CryptoCallGraph.java` | replaced by `CallIndex`; to delete |
 | Tests | `src/test/java/org/acme/cbom/bytecode/BytecodeScannerTest.java`, `SbomReaderTest` | single-JAR detection; two-hop resolution across two JARs; calls through an interface |
+| Integration tests | `src/test/java/org/acme/cbom/SampleSbomIT.java`, `KeycloakEndToEndIT.java`, `Cli.java` | CLI Assured runs `java -jar` on the runner JAR (failsafe passes its path as `cbom.runner.jar`); `KeycloakEndToEndIT` is tagged `e2e`, run with `mvn verify -Pe2e` |
+| Packaging | `src/main/resources/application.properties` | `uber-jar` with `quarkus.package.jar.tree-shake.mode=classes`: 19.6 MB and 10.6k classes instead of 27.4 MB and 15.9k, same CBOM on the sample and Keycloak SBOMs. `Translation` passes `Class.forName` compile-time constant names so the tree-shaker keeps the reflectively loaded rules and translators |
 | Fixture conformance test | `FixtureConformanceTest`, `FixtureSupport` (test sources) | compiles each fixture with javac, compares with its annotations and with `src/test/resources/fixture-baseline.tsv`; `-Dfixtures.updateBaseline=true` rewrites the baseline |
 | sonar-cryptography fixtures | `src/test/resources/sonar-cryptography-fixtures/` | 129 files from tag 1.7.0, Apache-2.0, with `LICENSE.txt` and `NOTICE.md`; Bouncy Castle 1.85 as test dependencies |
 | Test SBOMs | `src/test/resources/sample-sbom.json`, `src/test/resources/keycloak-26.8.2.zip.cdx.json` | Keycloak SBOM: CycloneDX 1.7, 573 Maven components, full dependency graph; from a local 999.0.0-SNAPSHOT build with its Keycloak versions replaced by 26.8.2, so all artifacts resolve from Maven Central |
@@ -140,5 +143,13 @@ Run:
 
 ```
 mvn package
-java -jar target/quarkus-app/quarkus-run.jar <sbom.json> -o cbom.json [--work-dir DIR] [--classpath deps|all|none] [--threads N] [--rescan]
+java -jar target/cbom-generator-1.0.0-SNAPSHOT-runner.jar <sbom.json> -o cbom.json [--work-dir DIR] [--classpath deps|all|none] [--threads N] [--rescan]
+```
+
+The build produces a single tree-shaken uber-jar. Tests:
+
+```
+mvn package         # unit tests
+mvn verify          # plus integration tests on the runner JAR (SampleSbomIT)
+mvn verify -Pe2e    # plus the Keycloak end-to-end test (resolves 548 JARs)
 ```

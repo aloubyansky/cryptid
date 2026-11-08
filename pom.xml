@@ -25,6 +25,9 @@
         <sonar-analyzer-commons.version>2.18.0.3393</sonar-analyzer-commons.version>
         <packageurl.version>1.5.0</packageurl.version>
         <bouncycastle.version>1.85</bouncycastle.version>
+        <cli-assured.version>0.2.3</cli-assured.version>
+        <!-- integration tests tagged e2e run only with -Pe2e -->
+        <it.excludedGroups>e2e</it.excludedGroups>
 
         <compiler-plugin.version>3.14.0</compiler-plugin.version>
         <surefire-plugin.version>3.5.3</surefire-plugin.version>
@@ -123,8 +126,15 @@
         </dependency>
 
         <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-junit5</artifactId>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- integration tests: runs the packaged uber-jar as a process and asserts on its output -->
+        <dependency>
+            <groupId>org.cli-assured</groupId>
+            <artifactId>cli-assured</artifactId>
+            <version>${cli-assured.version}</version>
             <scope>test</scope>
         </dependency>
         <!-- compiling sonar-cryptography's fixtures in FixtureConformanceTest; the version its tests use -->
@@ -181,6 +191,37 @@
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
+            <plugin>
+                <!-- *IT tests, after package: they run the uber-jar built by the quarkus plugin -->
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>${surefire-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <!-- end-to-end tests resolve hundreds of JARs and take a while: run them with -Pe2e -->
+                    <excludedGroups>${it.excludedGroups}</excludedGroups>
+                    <systemPropertyVariables>
+                        <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                        <cbom.runner.jar>${project.build.directory}/${project.build.finalName}-runner.jar</cbom.runner.jar>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <!-- mvn verify -Pe2e: also runs the end-to-end tests (KeycloakEndToEndIT) -->
+            <id>e2e</id>
+            <properties>
+                <it.excludedGroups></it.excludedGroups>
+            </properties>
+        </profile>
+    </profiles>
 </project>
