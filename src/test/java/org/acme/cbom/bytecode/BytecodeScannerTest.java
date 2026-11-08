@@ -1,6 +1,7 @@
 package org.acme.cbom.bytecode;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -112,13 +113,18 @@ class BytecodeScannerTest {
             final Set<String> classes = new HashSet<>(jars.classNames(wrapper));
             classes.addAll(jars.classNames(app));
             final CallIndex index = new CallIndex(classes);
-            scanner.index(wrapper, "org.acme/wrap/1.0", jars, index);
-            scanner.index(app, "org.acme/app/1.0", jars, index);
+            final BytecodeScanner.Facts facts = scanner.index(wrapper, "org.acme/wrap/1.0", List.of(), jars, index, true);
+            assertNull(scanner.index(app, "org.acme/app/1.0", List.of(), jars, index, false));
             index.finish();
             // within the wrapper alone, the algorithm is unknown
             assertTrue(scanner.scan(wrapper, "org.acme/wrap/1.0", List.of(), jars, null).bom().getComponents() == null
                     || scanner.scan(wrapper, "org.acme/wrap/1.0", List.of(), jars, null).bom().getComponents().isEmpty());
             bom = scanner.scan(wrapper, "org.acme/wrap/1.0", List.of(), jars, index).bom();
+            // the facts kept by indexing: only the method calling MessageDigest, and the same CBOM
+            assertEquals(List.of("org/acme/wrap/Digests.digest(Ljava/lang/String;)Ljava/security/MessageDigest;"),
+                    facts.methods().stream().map(Analyzer.MethodResult::method).toList());
+            final Bom fromFacts = scanner.scan(wrapper, "org.acme/wrap/1.0", List.of(), jars, index, facts).bom();
+            assertEquals(names(bom), names(fromFacts));
         }
         final Component digest = bom.getComponents().stream()
                 .filter(c -> c.getName().replace("-", "").equals("SHA512"))
@@ -174,8 +180,8 @@ class BytecodeScannerTest {
             final Set<String> classes = new HashSet<>(jars.classNames(spi));
             classes.addAll(jars.classNames(client));
             final CallIndex index = new CallIndex(classes);
-            scanner.index(spi, "org.acme/spi/1.0", jars, index);
-            scanner.index(client, "org.acme/client/1.0", jars, index);
+            scanner.index(spi, "org.acme/spi/1.0", List.of(), jars, index, false);
+            scanner.index(client, "org.acme/client/1.0", List.of(), jars, index, false);
             index.finish();
             bom = scanner.scan(spi, "org.acme/spi/1.0", List.of(), jars, index).bom();
         }
@@ -190,6 +196,18 @@ class BytecodeScannerTest {
         // both calls go through CryptoService.cipher and dispatch to DefaultCryptoService.cipher
         assertTrue(byLine.getOrDefault(7, "").contains("ChaCha20"), byLine.toString());
         assertTrue(byLine.getOrDefault(8, "").contains("AES"), byLine.toString());
+    }
+
+    /** Asset names with their occurrences, for comparing CBOMs. */
+    private static List<String> names(Bom bom) {
+        final List<String> result = new ArrayList<>();
+        for (Component c : bom.getComponents()) {
+            for (Occurrence o : c.getEvidence().getOccurrences()) {
+                result.add(c.getName() + " @ " + o.getLocation() + ":" + o.getLine());
+            }
+        }
+        result.sort(null);
+        return result;
     }
 
     private Path compile(String path, String source) throws IOException {

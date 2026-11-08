@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -167,6 +168,7 @@ public class GenerateCbomCommand implements Callable<Integer> {
             // from callers; skipped when every artifact was analyzed before
             final boolean needed = rescan || resolved.stream().anyMatch(g -> !Files.exists(g.first().cbomFile(baseDir)));
             final CallIndex callIndex;
+            final Map<String, BytecodeScanner.Facts> facts = new ConcurrentHashMap<>();
             if (needed) {
                 final long t0 = System.currentTimeMillis();
                 final Set<String> allClasses = new HashSet<>();
@@ -174,20 +176,27 @@ public class GenerateCbomCommand implements Callable<Integer> {
                 callIndex = new CallIndex(allClasses);
                 parallel(threadCount, resolved, g -> {
                     try {
-                        scanner.index(g.jar(), g.first().artifactPath(), jarCache, callIndex);
+                        // artifacts to be scanned keep what detection needs, so they aren't analyzed twice
+                        final boolean scanned = rescan || !Files.exists(g.first().cbomFile(baseDir));
+                        final BytecodeScanner.Facts f = scanner.index(g.jar(), g.first().artifactPath(),
+                                classpath(g, jarsByRef, allJars, closure), jarCache, callIndex, scanned);
+                        if (f != null) {
+                            facts.put(g.first().artifactPath(), f);
+                        }
                     } catch (Exception | LinkageError e) {
                         log.warnf(e, "Failed to index %s", g.first().artifactPath());
                     }
                     return null;
                 }, "Indexed");
                 callIndex.finish();
-                log.infof("Indexed %d calls between %d classes in %d ms",
-                        callIndex.size(), allClasses.size(), System.currentTimeMillis() - t0);
+                log.infof("Indexed %d calls between %d classes in %d ms; %d methods may contain detections",
+                        callIndex.size(), allClasses.size(), System.currentTimeMillis() - t0,
+                        facts.values().stream().mapToInt(f -> f.methods().size()).sum());
             } else {
                 callIndex = null;
             }
 
-            // phase B: detect
+            // phase B: detect, on the methods phase A kept
             parallel(threadCount, resolved, g -> {
                 final MavenComponent c = g.first();
                 final Path cbomFile = c.cbomFile(baseDir);
@@ -196,8 +205,12 @@ public class GenerateCbomCommand implements Callable<Integer> {
                     return null;
                 }
                 try {
-                    final BytecodeScanner.Result r = scanner.scan(
-                            g.jar(), c.artifactPath(), classpath(g, jarsByRef, allJars, closure), jarCache, callIndex);
+                    final List<Path> cp = classpath(g, jarsByRef, allJars, closure);
+                    // released once scanned; an artifact that failed to index is analyzed here
+                    final BytecodeScanner.Facts f = facts.remove(c.artifactPath());
+                    final BytecodeScanner.Result r = f != null
+                            ? scanner.scan(g.jar(), c.artifactPath(), cp, jarCache, callIndex, f)
+                            : scanner.scan(g.jar(), c.artifactPath(), cp, jarCache, callIndex);
                     CbomAssembler.write(r.bom(), cbomFile);
                     classes.addAndGet(r.classes());
                     if (r.failedMethods() > 0) {

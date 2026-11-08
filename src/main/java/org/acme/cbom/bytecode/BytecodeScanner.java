@@ -89,23 +89,44 @@ public final class BytecodeScanner {
     }
 
     /**
+     * What phase A learned about a JAR that detection needs: the methods that may contain a
+     * detection, with their call sites from the final round of the field fixpoint. Detection on
+     * them gives the same findings as re-analyzing the JAR, without interpreting it again.
+     *
+     * @param methods the methods {@link Detector#mayDetect may contain a detection}, in analysis order
+     * @param failedMethods the number of methods whose bytecode couldn't be interpreted
+     */
+    public record Facts(List<Analyzer.MethodResult> methods, int failedMethods) {}
+
+    /**
      * Records a JAR's classes and its calls into analyzed classes in the call index, for
-     * resolving values passed between methods during {@link #scan}.
+     * resolving values passed between methods during {@link #scan}, and optionally returns the
+     * JAR's {@link Facts} for scanning it without analyzing it again.
      *
      * @param jar the JAR
      * @param locationPrefix the artifact path, prepended to source files of call sites
+     * @param classpath JARs to resolve supertypes from, as for {@link #scan}
      * @param jarCache the shared JAR cache
      * @param callIndex the index to fill
+     * @param keepFacts whether to return the JAR's facts, for a JAR that will be scanned
+     * @return the facts, or {@code null} if not kept
      */
-    public void index(Path jar, String locationPrefix, JarCache jarCache, CallIndex callIndex) {
+    public Facts index(Path jar, String locationPrefix, List<Path> classpath, JarCache jarCache, CallIndex callIndex,
+            boolean keepFacts) {
         final Analyzer analyzer = new Analyzer();
         analyzer.addJar(jar, jarCache);
         callIndex.addClasses(analyzer.classInfos());
-        callIndex.addCalls(analyzer.analyze(), locationPrefix);
+        final List<Analyzer.MethodResult> methods = analyzer.analyze();
+        callIndex.addCalls(methods, locationPrefix);
+        if (!keepFacts) {
+            return null;
+        }
+        final Detector screen = new Detector(rules, types(jar, classpath, jarCache), locationPrefix, null);
+        return new Facts(methods.stream().filter(screen::mayDetect).toList(), analyzer.failedMethods);
     }
 
     /**
-     * Scans a JAR.
+     * Scans a JAR, analyzing its bytecode.
      *
      * @param jar the JAR to scan
      * @param locationPrefix prepended to source file paths in occurrence locations, e.g. the
@@ -121,16 +142,28 @@ public final class BytecodeScanner {
     public Result scan(Path jar, String locationPrefix, List<Path> classpath, JarCache jarCache, CallIndex callIndex) {
         final Analyzer analyzer = new Analyzer();
         analyzer.addJar(jar, jarCache);
-        final List<Path> lookup = new ArrayList<>(classpath.size() + 1);
-        lookup.add(jar);
-        lookup.addAll(classpath);
-        final Types types = new Types(ClassLoader.getSystemClassLoader(), jarCache, lookup);
-        final Detector detector = new Detector(rules, types, locationPrefix, callIndex);
-        final Translation translation = translations.get();
+        final List<Analyzer.MethodResult> methods = analyzer.analyze();
+        return detect(jar, locationPrefix, classpath, jarCache, callIndex, methods, analyzer.failedMethods);
+    }
 
+    /**
+     * Scans a JAR from the facts {@link #index} kept for it, without analyzing it again.
+     *
+     * @param facts the JAR's facts from {@link #index}
+     * @see #scan(Path, String, List, JarCache, CallIndex)
+     */
+    public Result scan(Path jar, String locationPrefix, List<Path> classpath, JarCache jarCache, CallIndex callIndex,
+            Facts facts) {
+        return detect(jar, locationPrefix, classpath, jarCache, callIndex, facts.methods(), facts.failedMethods());
+    }
+
+    private Result detect(Path jar, String locationPrefix, List<Path> classpath, JarCache jarCache, CallIndex callIndex,
+            List<Analyzer.MethodResult> methods, int failedMethods) {
+        final Detector detector = new Detector(rules, types(jar, classpath, jarCache), locationPrefix, callIndex);
+        final Translation translation = translations.get();
         final CBOMOutputFile output = new CBOMOutputFile();
         int findings = 0;
-        for (Analyzer.MethodResult m : analyzer.analyze()) {
+        for (Analyzer.MethodResult m : methods) {
             for (Detector.Finding f : detector.detect(m)) {
                 final List<INode> nodes = translation.process(f.store());
                 if (!nodes.isEmpty()) {
@@ -141,6 +174,14 @@ public final class BytecodeScanner {
         }
         final Bom bom = output.getBom();
         clearUnknownPositions(bom);
-        return new Result(bom, jarCache.classNames(jar).size(), findings, analyzer.failedMethods);
+        return new Result(bom, jarCache.classNames(jar).size(), findings, failedMethods);
+    }
+
+    /** The class hierarchy for matching rules: the JAR, then its classpath, then the JDK. */
+    private static Types types(Path jar, List<Path> classpath, JarCache jarCache) {
+        final List<Path> lookup = new ArrayList<>(classpath.size() + 1);
+        lookup.add(jar);
+        lookup.addAll(classpath);
+        return new Types(ClassLoader.getSystemClassLoader(), jarCache, lookup);
     }
 }

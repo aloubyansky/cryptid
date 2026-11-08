@@ -39,7 +39,7 @@ flowchart TB
   s2["2 Resolve binary JARs<br/><code>ArtifactResolver</code>"]
   s3["3 Phase A: index calls across all JARs<br/><code>Analyzer</code>, <code>CallIndex</code>"]
   subgraph perjar["for each JAR, in parallel (--threads)"]
-    s4["4 Phase B: interpret the JAR<br/><code>Analyzer</code>, <code>Types</code>, <code>JarCache</code>, <code>AVal</code>"]
+    s4["4 Phase B: take the methods phase A kept<br/><code>BytecodeScanner.Facts</code>, <code>Types</code>"]
     s5["5 Match detection rules<br/><code>Detector</code>, <code>StoreAccess</code>"]
     s6["6 Translate to crypto assets<br/><code>Translation</code>"]
     s7["7 Write the artifact's CBOM<br/><code>BytecodeScanner</code>"]
@@ -58,7 +58,6 @@ flowchart TB
   s1 -.-> cdx
   s2 -.-> mvn
   s3 -.-> cf
-  s4 -.-> cf
   s5 -.-> rules
   rules -.-> sac
   s6 -.-> mapper
@@ -79,8 +78,8 @@ Green: this project. Blue: sonar-cryptography modules (Apache-2.0). Beige: other
 | --- | --- | --- |
 | 1. Read SBOM | Parses the SBOM, turns each Maven purl into a `MavenComponent` (groupId, artifactId, classifier, type, version, SBOM component), de-duplicates by bom-ref, groups components with equal coordinates, and computes each component's dependency closure. | components grouped by artifact; closure by bom-ref |
 | 2. Resolve JARs | Resolves each artifact's binary JAR from the local repository or the configured remotes; artifacts that can't be resolved are logged and skipped. No sources JARs are needed. | artifact groups with their JAR |
-| 3. Phase A | Interprets every method of every JAR abstractly (see below) and records each call into an analyzed class whose `String` or `int` arguments are constants or parameters of the caller, plus every class's superclass, interfaces and declared methods. Skipped when all artifacts are cached in `--work-dir`. Keycloak: 301,754 calls between 83,314 classes in 14.5 s. | `CallIndex`: invoked method → call sites with argument constants |
-| 4. Phase B | Interprets the scanned JAR's methods again. `Types` resolves supertypes from the JAR, its classpath and the JDK. | per method: call sites with receiver, arguments and created object |
+| 3. Phase A | Interprets every method of every JAR abstractly (see below) and records each call into an analyzed class whose `String` or `int` arguments are constants or parameters of the caller, plus every class's superclass, interfaces and declared methods. For each JAR to be scanned it also keeps the methods that may contain a detection: those with a call site passing the detector's pre-check, a root rule by method name whose owner types include the call's owner or one of its supertypes (`Types`: the JAR, its classpath, the JDK). Skipped when all artifacts are cached in `--work-dir`. Keycloak: 301,754 calls between 83,314 classes, 1,958 methods kept, in about 20 s. | `CallIndex`: invoked method → call sites with argument constants; `Facts` per JAR |
+| 4. Phase B | Takes the JAR's kept methods, with their call sites from the final round of phase A's field fixpoint; nothing is interpreted again. Detection finds nothing in the other methods, so the result is the same as analyzing the whole JAR. | per method: call sites with receiver, arguments and created object |
 | 5. Detection | Matches sonar-cryptography's root rules on call sites and builds `DetectionStore` trees (see below). | findings: location, call site, store tree |
 | 6. Translation | `ITranslator.translate` walks each store; the context translator for its type (cipher, digest, key, signature, MAC, …) turns each value into `INode`s with the string mappers of `com.ibm:mapper`, e.g. `JcaCipherMapper` for `"AES/GCM/NoPadding"`. Then the 19 Java reorganizer rules merge and move nodes, and the 17 enrichers add OIDs, default key sizes and functions. This is the order of sonar-cryptography's `JavaTranslationProcess`. | `INode` trees |
 | 7. Artifact CBOM | `CBOMOutputFile` turns the nodes into CycloneDX components and dependencies; offsets and line 0 (no line table) are cleared; the result is written atomically to `work/cbom/<g>/<a>/<v>[/<classifier>].json`, which later runs reuse unless `--rescan`. | per-artifact CBOM files |

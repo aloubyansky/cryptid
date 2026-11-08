@@ -211,23 +211,46 @@ final class Detector {
         return null;
     }
 
+    /**
+     * Whether a method has a call site that may match a root rule, by method name and owner type:
+     * {@link #detect} finds nothing in any other method. Doesn't run the rules' matchers.
+     *
+     * @param method the method
+     * @return {@code true} if {@link #detect} may find something in it
+     */
+    boolean mayDetect(Analyzer.MethodResult method) {
+        for (CallSite cs : method.calls()) {
+            for (IDetectionRule<Loc> rule : candidates(cs)) {
+                if (ownerMayMatch(rule, cs)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private boolean matches(IDetectionRule<Loc> rule, CallSite cs) {
+        if (!ownerMayMatch(rule, cs)) {
+            return false;
+        }
+        return matcher(rule).matchKeys(
+                types.ofClass(cs.owner, rule.shouldMatchExactTypes()), cs.name, types.ofParameters(cs.descriptor));
+    }
+
+    /** A cheap pre-check of the call's owner type against the rule's, before its matcher runs. */
+    private boolean ownerMayMatch(IDetectionRule<Loc> rule, CallSite cs) {
         final MethodMatcher<Loc> matcher = matcher(rule);
         if (matcher == null) {
             return false;
         }
-        // cheap pre-check on the owner type before the matcher's full predicate evaluation
         final List<String> owners = matcher.getInvokedObjectTypeStringsSerializable();
-        if (!owners.contains(MethodMatcher.ANY)) {
-            final Set<String> names = rule.shouldMatchExactTypes()
-                    ? Set.of(cs.owner.replace('/', '.'))
-                    : types.supertypeNames(cs.owner);
-            if (owners.stream().noneMatch(names::contains)) {
-                return false;
-            }
+        if (owners.contains(MethodMatcher.ANY)) {
+            return true;
         }
-        return matcher.matchKeys(
-                types.ofClass(cs.owner, rule.shouldMatchExactTypes()), cs.name, types.ofParameters(cs.descriptor));
+        final Set<String> names = rule.shouldMatchExactTypes()
+                ? Set.of(cs.owner.replace('/', '.'))
+                : types.supertypeNames(cs.owner);
+        return owners.stream().anyMatch(names::contains);
     }
 
     private void process(DetectionStore<Object, Loc, Object, Object> store, IDetectionRule<Loc> rule,

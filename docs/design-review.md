@@ -6,7 +6,7 @@ Findings from reviewing the implementation against its [architecture](architectu
 | --- | --- | --- | --- |
 | F1 | Results vary between runs | defect | fixed |
 | F2 | Wrong sonar-cryptography version in the CBOM metadata | defect | fixed |
-| F3 | Every method is interpreted twice | design | open |
+| F3 | Every method is interpreted twice | design | fixed |
 | F4 | The tool's own classpath leaks into the analysis | design | open |
 | F5 | Results round-trip through JSON and string heuristics | design | open |
 | F6 | Dead and unused weight | cleanup | partly done |
@@ -26,9 +26,20 @@ Fix: sorted constants and origins in `AVal`, sorted call sites in `CallIndex`, o
 
 `CbomAssembler` reads `Package.getImplementationVersion()`. In the uber-jar the merged manifest is the application's, so the CBOM reports sonar-cryptography `1.0.0-SNAPSHOT` instead of 1.7.0. Fix: `BuildInfo`, generated from `src/main/java-templates` by templating-maven-plugin, holds the tool's version and `${sonar-cryptography.version}` from the pom, and the metadata uses both. `SampleSbomIT` checks the tool versions in the CBOM written by the runner JAR.
 
-## F3. Every method is interpreted twice
+## F3. Every method is interpreted twice (fixed)
 
 Phase A and phase B each create an `Analyzer` and interpret the whole JAR. Phase B only needs methods calling one of the 515 matcher keys, and only 8.3% of Keycloak's 88,337 classes reference `javax/crypto`, `java/security`, `org/bouncycastle/{crypto,pqc}` or `javax/net/ssl` at all (an upper bound, since `java/security` also covers non-crypto classes). A constant-pool pre-filter, or keeping phase A's results, would skip most of phase B.
+
+Fix: phase A keeps, for each JAR to be scanned, the methods with a call site that passes `Detector`'s pre-check (a root rule by method name whose owner types include the call's owner or, for non-exact rules, one of its supertypes), with their call sites from the final round of the field fixpoint. Phase B runs detection on those only and doesn't analyze the JAR again. `Detector` finds nothing in the other methods, so the CBOM is unchanged; the screen uses the same `Types` lookup as detection, so subclasses of crypto types are kept. Keycloak 26.8.2, same CBOM per occurrence:
+
+| | before | after |
+| --- | ---: | ---: |
+| total | 34 s | 24 s |
+| phase A (index) | 15 s | 21 s |
+| methods scanned in phase B | all | 1,958 |
+| peak RSS | 8.6 GB | 7.2 GB |
+
+Phase A now carries the pre-check; the remaining cost is its interpretation of every method, up to 10 rounds per JAR until field values settle.
 
 ## F4. The tool's own classpath leaks into the analysis
 
@@ -70,7 +81,7 @@ RuleTable                       // built once from JavaDetectionRules.rules(), i
   Param(index, ValueFactory?, movedUnder?, dependents[])
   ownerPrefilter: Set<internal name>   // for constant-pool screening
 
-Facts (per JAR, from Analyzer)  // computed once; detection reads them, no re-interpretation
+Facts (per JAR, from Analyzer)  // computed once; detection reads them, no re-interpretation (done: BytecodeScanner.Facts)
   MethodFacts(class, method, sourceFile, List<CallSite>)
 
 Detection (our tree, instead of DetectionStore)
@@ -85,14 +96,14 @@ Order of work, one step at a time, each checked by `SampleSbomIT`, `Reproducibil
 
 1. **Reproducible results (F1)**: done.
 2. **Metadata version (F2)**: done.
-3. **Analyze once, screen early (F3)**: keep each JAR's phase A results for phase B, or store them compactly, and skip classes whose constant pool names none of the rule owners.
+3. **Analyze once, screen early (F3)**: done; phase A keeps the methods detection needs.
 4. **RuleTable**: convert the rule graph into our own records once, keeping the original rules for their factories; match with map lookups and `Types`, without `MethodMatcher`, `IType` or `SetUtils`, which drops sonar-analyzer-commons.
 5. **Our own detection tree and translation walk**: reproduce `ITranslator.translate`'s traversal over `Detection`, calling the context translators directly (needs a close reading of how `ITranslator.translate` attaches child nodes). Then remove `StoreAccess`, `ScanContext` and `InputFile`; the `Tree` marker stays while the two `JcaGCMParameterSpec` lambdas need it.
 6. **In-memory assembly (F5)**: pass `Site`-keyed results to the assembler; JSON only as a cache; drop the UUID and prefix heuristics.
 7. **JDK-only supertypes and cleanup (F4, F6)**: read JDK classes from `jrt:/`; move `com.ibm:rules` to test scope; stop attaching empty child stores.
 8. **Later: object flow across methods (F7)**, by recording receivers and returns of objects created by matched calls in the call index, as for constant arguments.
 
-Steps 3 and 7 are independent and low-risk; 4 to 6 change internals behind stable inputs and outputs.
+Step 7 is independent and low-risk; 4 to 6 change internals behind stable inputs and outputs.
 
 ## How this was measured
 
