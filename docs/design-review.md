@@ -5,7 +5,7 @@ Findings from reviewing the implementation against its [architecture](architectu
 | | Finding | Kind | Status |
 | --- | --- | --- | --- |
 | F1 | Results vary between runs | defect | fixed |
-| F2 | Wrong sonar-cryptography version in the CBOM metadata | defect | open |
+| F2 | Wrong sonar-cryptography version in the CBOM metadata | defect | fixed |
 | F3 | Every method is interpreted twice | design | open |
 | F4 | The tool's own classpath leaks into the analysis | design | open |
 | F5 | Results round-trip through JSON and string heuristics | design | open |
@@ -22,9 +22,9 @@ Six single-threaded runs on one JAR reported `DSA-2048`, `DSA-256` and `DSA--1` 
 
 Fix: sorted constants and origins in `AVal`, sorted call sites in `CallIndex`, one finding per value of a multi-valued detectable argument (up to 16 combinations; an over-approximation, since the analysis isn't path-sensitive), and de-duplication on asset content with assets sorted first and links of dropped duplicates redirected. `ReproducibilityIT` runs the CLI three times on that JAR and compares the CBOMs; two Keycloak runs are identical per occurrence.
 
-## F2. Wrong sonar-cryptography version in the CBOM metadata
+## F2. Wrong sonar-cryptography version in the CBOM metadata (fixed)
 
-`CbomAssembler` reads `Package.getImplementationVersion()`. In the uber-jar the merged manifest is the application's, so the CBOM reports sonar-cryptography `1.0.0-SNAPSHOT` instead of 1.7.0. `META-INF/maven/com.ibm/engine/pom.properties`, which the uber-jar keeps, has the right version.
+`CbomAssembler` reads `Package.getImplementationVersion()`. In the uber-jar the merged manifest is the application's, so the CBOM reports sonar-cryptography `1.0.0-SNAPSHOT` instead of 1.7.0. Fix: `BuildInfo`, generated from `src/main/java-templates` by templating-maven-plugin, holds the tool's version and `${sonar-cryptography.version}` from the pom, and the metadata uses both. `SampleSbomIT` checks the tool versions in the CBOM written by the runner JAR.
 
 ## F3. Every method is interpreted twice
 
@@ -84,7 +84,7 @@ Assemble:  Map<Site, List<INode>> -> Bom  // owner = Site.artifact, de-duplicate
 Order of work, one step at a time, each checked by `SampleSbomIT`, `ReproducibilityIT`, `KeycloakEndToEndIT` and the fixture baseline:
 
 1. **Reproducible results (F1)**: done.
-2. **Metadata version (F2)**: read the version from the `pom.properties` the uber-jar keeps.
+2. **Metadata version (F2)**: done.
 3. **Analyze once, screen early (F3)**: keep each JAR's phase A results for phase B, or store them compactly, and skip classes whose constant pool names none of the rule owners.
 4. **RuleTable**: convert the rule graph into our own records once, keeping the original rules for their factories; match with map lookups and `Types`, without `MethodMatcher`, `IType` or `SetUtils`, which drops sonar-analyzer-commons.
 5. **Our own detection tree and translation walk**: reproduce `ITranslator.translate`'s traversal over `Detection`, calling the context translators directly (needs a close reading of how `ITranslator.translate` attaches child nodes). Then remove `StoreAccess`, `ScanContext` and `InputFile`; the `Tree` marker stays while the two `JcaGCMParameterSpec` lambdas need it.
@@ -92,7 +92,7 @@ Order of work, one step at a time, each checked by `SampleSbomIT`, `Reproducibil
 7. **JDK-only supertypes and cleanup (F4, F6)**: read JDK classes from `jrt:/`; move `com.ibm:rules` to test scope; stop attaching empty child stores.
 8. **Later: object flow across methods (F7)**, by recording receivers and returns of objects created by matched calls in the call index, as for constant arguments.
 
-Steps 2, 3 and 7 are independent and low-risk; 4 to 6 change internals behind stable inputs and outputs.
+Steps 3 and 7 are independent and low-risk; 4 to 6 change internals behind stable inputs and outputs.
 
 ## How this was measured
 

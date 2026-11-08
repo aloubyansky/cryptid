@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 import org.cyclonedx.model.Component;
 import org.junit.jupiter.api.Test;
@@ -47,6 +49,11 @@ class SampleSbomIT {
         assertEquals("pkg:maven/org.acme/sample-app@1.0.0?type=jar",
                 cbom.bom().getMetadata().getComponent().getPurl());
         assertTrue(cbom.assets().size() >= 200, "crypto assets: " + cbom.assets().size());
+        // the tool versions come from the build, not from the uber-jar's merged manifest
+        final Map<String, String> tools = new HashMap<>();
+        cbom.bom().getMetadata().getToolChoice().getComponents().forEach(t -> tools.put(t.getName(), t.getVersion()));
+        assertEquals(Map.of("cbom-generator", BuildInfo.VERSION, "sonar-cryptography", BuildInfo.SONAR_CRYPTOGRAPHY_VERSION), tools);
+        assertTrue(BuildInfo.SONAR_CRYPTOGRAPHY_VERSION.matches("\\d+\\.\\d+\\.\\d+.*"), BuildInfo.SONAR_CRYPTOGRAPHY_VERSION);
         assertEquals(Set.of(BCPROV, CODEC), cbom.assetsByComponent().keySet());
 
         // an algorithm chosen by a constructor, in a JAR without line tables: no line

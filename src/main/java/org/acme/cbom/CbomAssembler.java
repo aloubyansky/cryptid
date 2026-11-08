@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import com.ibm.engine.rule.IDetectionRule;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -324,21 +323,17 @@ public class CbomAssembler {
         tool.setType(Component.Type.APPLICATION);
         tool.setGroup("org.acme");
         tool.setName("cbom-generator");
+        tool.setVersion(BuildInfo.VERSION);
         tool.setDescription("Bytecode analysis with sonar-cryptography's Java detection rules");
         final Component rules = new Component();
         rules.setType(Component.Type.LIBRARY);
         rules.setGroup("com.ibm");
         rules.setName("sonar-cryptography");
-        rules.setVersion(sonarCryptographyVersion());
+        rules.setVersion(BuildInfo.SONAR_CRYPTOGRAPHY_VERSION);
         final ToolInformation tools = new ToolInformation();
         tools.setComponents(new ArrayList<>(List.of(tool, rules)));
         metadata.setToolChoice(tools);
         return metadata;
-    }
-
-    private static String sonarCryptographyVersion() {
-        final Package p = IDetectionRule.class.getPackage();
-        return p == null || p.getImplementationVersion() == null ? "1.7.0" : p.getImplementationVersion();
     }
 
     /**

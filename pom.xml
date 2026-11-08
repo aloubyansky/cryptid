@@ -31,6 +31,7 @@
 
         <compiler-plugin.version>3.14.0</compiler-plugin.version>
         <surefire-plugin.version>3.5.3</surefire-plugin.version>
+        <templating-plugin.version>3.1.1</templating-plugin.version>
     </properties>
 
     <repositories>
@@ -171,6 +172,19 @@
                             <goal>build</goal>
                             <goal>generate-code</goal>
                             <goal>generate-code-tests</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <!-- src/main/java-templates: BuildInfo with versions from this pom -->
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>templating-maven-plugin</artifactId>
+                <version>${templating-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>filter-sources</goal>
                         </goals>
                     </execution>
                 </executions>
