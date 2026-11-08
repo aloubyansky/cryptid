@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Stream;
+import org.acme.cbom.spec.ApiSpecs;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -177,9 +178,10 @@ class FixtureConformanceTest {
         final List<Analyzer.MethodResult> methods = analyzer.analyze();
         index.addCalls(methods, "");
         index.finish();
-        final Detector detector = new Detector(rules, types, "", index);
+        final Detector detector = BytecodeScanner.RULES ? new Detector(rules, types, "", index) : null;
+        final SpecDetector specDetector = BytecodeScanner.RULES ? null : new SpecDetector(new ApiIndex(ApiSpecs.load()), types, "", index);
         for (Analyzer.MethodResult m : methods) {
-            for (Detector.Finding f : detector.detect(m)) {
+            for (Detector.Finding f : BytecodeScanner.RULES ? detector.detect(m) : specDetector.detect(m)) {
                 final List<INode> nodes = translation.process(f.store());
                 for (Issue<Loc> issue : new InventoryRule<Loc>().report(f.loc(), nodes)) {
                     actualByFile.computeIfAbsent(issue.tree().file(), k -> new TreeMap<>())

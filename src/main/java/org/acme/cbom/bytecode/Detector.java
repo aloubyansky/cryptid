@@ -324,7 +324,7 @@ final class Detector {
     }
 
     /** Provides the file path to sonar-cryptography's translation. */
-    private record ScanContext(String path) implements IScanContext<Object, Loc> {
+    record ScanContext(String path) implements IScanContext<Object, Loc> {
         @Override
         public void reportIssue(Object rule, Loc tree, String message) {}
 

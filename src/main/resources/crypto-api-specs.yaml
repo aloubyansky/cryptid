@@ -20,10 +20,10 @@ apis:
         value:
           factory: AlgorithmFactory
     next:
-      - java.security.AlgorithmParameterGenerator#init(int)
-      - "java.security.AlgorithmParameterGenerator#init(int, java.security.SecureRandom)"
       - java.security.AlgorithmParameterGenerator#init(java.security.spec.AlgorithmParameterSpec)
       - "java.security.AlgorithmParameterGenerator#init(java.security.spec.AlgorithmParameterSpec, java.security.SecureRandom)"
+      - java.security.AlgorithmParameterGenerator#init(int)
+      - "java.security.AlgorithmParameterGenerator#init(int, java.security.SecureRandom)"
   - api: "java.security.AlgorithmParameterGenerator#getInstance(java.lang.String, java.lang.String)"
     subtypes: true
     library: Jca
@@ -38,10 +38,10 @@ apis:
       - index: 1
         type: java.lang.String
     next:
-      - java.security.AlgorithmParameterGenerator#init(int)
-      - "java.security.AlgorithmParameterGenerator#init(int, java.security.SecureRandom)"
       - java.security.AlgorithmParameterGenerator#init(java.security.spec.AlgorithmParameterSpec)
       - "java.security.AlgorithmParameterGenerator#init(java.security.spec.AlgorithmParameterSpec, java.security.SecureRandom)"
+      - java.security.AlgorithmParameterGenerator#init(int)
+      - "java.security.AlgorithmParameterGenerator#init(int, java.security.SecureRandom)"
   - api: "java.security.AlgorithmParameterGenerator#getInstance(java.lang.String, java.security.Provider)"
     subtypes: true
     library: Jca
@@ -56,10 +56,10 @@ apis:
       - index: 1
         type: java.security.Provider
     next:
-      - java.security.AlgorithmParameterGenerator#init(int)
-      - "java.security.AlgorithmParameterGenerator#init(int, java.security.SecureRandom)"
       - java.security.AlgorithmParameterGenerator#init(java.security.spec.AlgorithmParameterSpec)
       - "java.security.AlgorithmParameterGenerator#init(java.security.spec.AlgorithmParameterSpec, java.security.SecureRandom)"
+      - java.security.AlgorithmParameterGenerator#init(int)
+      - "java.security.AlgorithmParameterGenerator#init(int, java.security.SecureRandom)"
   - api: java.security.AlgorithmParameterGenerator#init(int)
     subtypes: true
     library: Jca
@@ -348,9 +348,9 @@ apis:
         value:
           factory: AlgorithmFactory
     next:
-      - java.security.Signature#setParameter(java.security.spec.AlgorithmParameterSpec)
       - java.security.Signature#sign(...)
       - java.security.Signature#verify(...)
+      - java.security.Signature#setParameter(java.security.spec.AlgorithmParameterSpec)
   - api: "java.security.Signature#getInstance(java.lang.String, java.lang.String)"
     subtypes: true
     library: Jca
@@ -366,9 +366,9 @@ apis:
       - index: 1
         type: java.lang.String
     next:
-      - java.security.Signature#setParameter(java.security.spec.AlgorithmParameterSpec)
       - java.security.Signature#sign(...)
       - java.security.Signature#verify(...)
+      - java.security.Signature#setParameter(java.security.spec.AlgorithmParameterSpec)
   - api: "java.security.Signature#getInstance(java.lang.String, java.security.Provider)"
     subtypes: true
     library: Jca
@@ -384,9 +384,9 @@ apis:
       - index: 1
         type: java.security.Provider
     next:
-      - java.security.Signature#setParameter(java.security.spec.AlgorithmParameterSpec)
       - java.security.Signature#sign(...)
       - java.security.Signature#verify(...)
+      - java.security.Signature#setParameter(java.security.spec.AlgorithmParameterSpec)
   - api: java.security.Signature#setParameter(java.security.spec.AlgorithmParameterSpec)
     subtypes: true
     library: Jca
@@ -661,14 +661,14 @@ apis:
         value:
           factory: AlgorithmFactory
     next:
-      - "javax.crypto.Cipher#init(int, java.security.Key)"
-      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.AlgorithmParameters)"
-      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.AlgorithmParameters, java.security.SecureRandom)"
-      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.SecureRandom)"
-      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.spec.AlgorithmParameterSpec)"
-      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.spec.AlgorithmParameterSpec, java.security.SecureRandom)"
       - "javax.crypto.Cipher#init(int, java.security.cert.Certificate)"
       - "javax.crypto.Cipher#init(int, java.security.cert.Certificate, java.security.SecureRandom)"
+      - "javax.crypto.Cipher#init(int, java.security.Key)"
+      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.AlgorithmParameters)"
+      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.spec.AlgorithmParameterSpec)"
+      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.AlgorithmParameters, java.security.SecureRandom)"
+      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.spec.AlgorithmParameterSpec, java.security.SecureRandom)"
+      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.SecureRandom)"
       - javax.crypto.Cipher#wrap(java.security.Key)
   - api: "javax.crypto.Cipher#getInstance(java.lang.String, java.lang.String)"
     subtypes: true
@@ -684,14 +684,14 @@ apis:
       - index: 1
         type: java.lang.String
     next:
-      - "javax.crypto.Cipher#init(int, java.security.Key)"
-      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.AlgorithmParameters)"
-      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.AlgorithmParameters, java.security.SecureRandom)"
-      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.SecureRandom)"
-      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.spec.AlgorithmParameterSpec)"
-      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.spec.AlgorithmParameterSpec, java.security.SecureRandom)"
       - "javax.crypto.Cipher#init(int, java.security.cert.Certificate)"
       - "javax.crypto.Cipher#init(int, java.security.cert.Certificate, java.security.SecureRandom)"
+      - "javax.crypto.Cipher#init(int, java.security.Key)"
+      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.AlgorithmParameters)"
+      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.spec.AlgorithmParameterSpec)"
+      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.AlgorithmParameters, java.security.SecureRandom)"
+      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.spec.AlgorithmParameterSpec, java.security.SecureRandom)"
+      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.SecureRandom)"
       - javax.crypto.Cipher#wrap(java.security.Key)
   - api: "javax.crypto.Cipher#getInstance(java.lang.String, java.security.Provider)"
     subtypes: true
@@ -707,14 +707,14 @@ apis:
       - index: 1
         type: java.security.Provider
     next:
-      - "javax.crypto.Cipher#init(int, java.security.Key)"
-      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.AlgorithmParameters)"
-      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.AlgorithmParameters, java.security.SecureRandom)"
-      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.SecureRandom)"
-      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.spec.AlgorithmParameterSpec)"
-      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.spec.AlgorithmParameterSpec, java.security.SecureRandom)"
       - "javax.crypto.Cipher#init(int, java.security.cert.Certificate)"
       - "javax.crypto.Cipher#init(int, java.security.cert.Certificate, java.security.SecureRandom)"
+      - "javax.crypto.Cipher#init(int, java.security.Key)"
+      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.AlgorithmParameters)"
+      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.spec.AlgorithmParameterSpec)"
+      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.AlgorithmParameters, java.security.SecureRandom)"
+      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.spec.AlgorithmParameterSpec, java.security.SecureRandom)"
+      - "javax.crypto.Cipher#init(int, java.security.Key, java.security.SecureRandom)"
       - javax.crypto.Cipher#wrap(java.security.Key)
   - api: "javax.crypto.Cipher#init(int, java.security.Key)"
     subtypes: true
@@ -902,12 +902,12 @@ apis:
         value:
           factory: AlgorithmFactory
     next:
-      - "javax.crypto.KeyAgreement#generateSecret(byte[], int)"
-      - javax.crypto.KeyAgreement#generateSecret(java.lang.String)
       - javax.crypto.KeyAgreement#init(java.security.Key)
-      - "javax.crypto.KeyAgreement#init(java.security.Key, java.security.SecureRandom)"
       - "javax.crypto.KeyAgreement#init(java.security.Key, java.security.spec.AlgorithmParameterSpec)"
       - "javax.crypto.KeyAgreement#init(java.security.Key, java.security.spec.AlgorithmParameterSpec, java.security.SecureRandom)"
+      - "javax.crypto.KeyAgreement#init(java.security.Key, java.security.SecureRandom)"
+      - "javax.crypto.KeyAgreement#generateSecret(byte[], int)"
+      - javax.crypto.KeyAgreement#generateSecret(java.lang.String)
   - api: "javax.crypto.KeyAgreement#getInstance(java.lang.String, java.lang.String)"
     subtypes: true
     library: Jca
@@ -922,12 +922,12 @@ apis:
       - index: 1
         type: java.lang.String
     next:
-      - "javax.crypto.KeyAgreement#generateSecret(byte[], int)"
-      - javax.crypto.KeyAgreement#generateSecret(java.lang.String)
       - javax.crypto.KeyAgreement#init(java.security.Key)
-      - "javax.crypto.KeyAgreement#init(java.security.Key, java.security.SecureRandom)"
       - "javax.crypto.KeyAgreement#init(java.security.Key, java.security.spec.AlgorithmParameterSpec)"
       - "javax.crypto.KeyAgreement#init(java.security.Key, java.security.spec.AlgorithmParameterSpec, java.security.SecureRandom)"
+      - "javax.crypto.KeyAgreement#init(java.security.Key, java.security.SecureRandom)"
+      - "javax.crypto.KeyAgreement#generateSecret(byte[], int)"
+      - javax.crypto.KeyAgreement#generateSecret(java.lang.String)
   - api: "javax.crypto.KeyAgreement#getInstance(java.lang.String, java.security.Provider)"
     subtypes: true
     library: Jca
@@ -942,12 +942,12 @@ apis:
       - index: 1
         type: java.security.Provider
     next:
-      - "javax.crypto.KeyAgreement#generateSecret(byte[], int)"
-      - javax.crypto.KeyAgreement#generateSecret(java.lang.String)
       - javax.crypto.KeyAgreement#init(java.security.Key)
-      - "javax.crypto.KeyAgreement#init(java.security.Key, java.security.SecureRandom)"
       - "javax.crypto.KeyAgreement#init(java.security.Key, java.security.spec.AlgorithmParameterSpec)"
       - "javax.crypto.KeyAgreement#init(java.security.Key, java.security.spec.AlgorithmParameterSpec, java.security.SecureRandom)"
+      - "javax.crypto.KeyAgreement#init(java.security.Key, java.security.SecureRandom)"
+      - "javax.crypto.KeyAgreement#generateSecret(byte[], int)"
+      - javax.crypto.KeyAgreement#generateSecret(java.lang.String)
   - api: javax.crypto.KeyAgreement#init(java.security.Key)
     subtypes: true
     library: Jca
@@ -3332,9 +3332,9 @@ apis:
         type: org.bouncycastle.crypto.Mac
         link: true
     next:
-      - "org.bouncycastle.crypto.engines.IESEngine#init(boolean, org.bouncycastle.crypto.CipherParameters, org.bouncycastle.crypto.CipherParameters, org.bouncycastle.crypto.CipherParameters)"
-      - "org.bouncycastle.crypto.engines.IESEngine#init(org.bouncycastle.crypto.params.AsymmetricKeyParameter, org.bouncycastle.crypto.CipherParameters, org.bouncycastle.crypto.KeyParser)"
       - "org.bouncycastle.crypto.engines.IESEngine#init(org.bouncycastle.crypto.params.AsymmetricKeyParameter, org.bouncycastle.crypto.CipherParameters, org.bouncycastle.crypto.generators.EphemeralKeyPairGenerator)"
+      - "org.bouncycastle.crypto.engines.IESEngine#init(org.bouncycastle.crypto.params.AsymmetricKeyParameter, org.bouncycastle.crypto.CipherParameters, org.bouncycastle.crypto.KeyParser)"
+      - "org.bouncycastle.crypto.engines.IESEngine#init(boolean, org.bouncycastle.crypto.CipherParameters, org.bouncycastle.crypto.CipherParameters, org.bouncycastle.crypto.CipherParameters)"
   - api: "org.bouncycastle.crypto.engines.IESEngine#<init>(org.bouncycastle.crypto.BasicAgreement, org.bouncycastle.crypto.DerivationFunction, org.bouncycastle.crypto.Mac, org.bouncycastle.crypto.BufferedBlockCipher)"
     subtypes: true
     library: Bc
@@ -3361,9 +3361,9 @@ apis:
         type: org.bouncycastle.crypto.BufferedBlockCipher
         link: true
     next:
-      - "org.bouncycastle.crypto.engines.IESEngine#init(boolean, org.bouncycastle.crypto.CipherParameters, org.bouncycastle.crypto.CipherParameters, org.bouncycastle.crypto.CipherParameters)"
-      - "org.bouncycastle.crypto.engines.IESEngine#init(org.bouncycastle.crypto.params.AsymmetricKeyParameter, org.bouncycastle.crypto.CipherParameters, org.bouncycastle.crypto.KeyParser)"
       - "org.bouncycastle.crypto.engines.IESEngine#init(org.bouncycastle.crypto.params.AsymmetricKeyParameter, org.bouncycastle.crypto.CipherParameters, org.bouncycastle.crypto.generators.EphemeralKeyPairGenerator)"
+      - "org.bouncycastle.crypto.engines.IESEngine#init(org.bouncycastle.crypto.params.AsymmetricKeyParameter, org.bouncycastle.crypto.CipherParameters, org.bouncycastle.crypto.KeyParser)"
+      - "org.bouncycastle.crypto.engines.IESEngine#init(boolean, org.bouncycastle.crypto.CipherParameters, org.bouncycastle.crypto.CipherParameters, org.bouncycastle.crypto.CipherParameters)"
   - api: "org.bouncycastle.crypto.engines.IESEngine#init(boolean, org.bouncycastle.crypto.CipherParameters, org.bouncycastle.crypto.CipherParameters, org.bouncycastle.crypto.CipherParameters)"
     subtypes: true
     library: Bc

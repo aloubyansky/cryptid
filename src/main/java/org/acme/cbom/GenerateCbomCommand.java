@@ -159,7 +159,7 @@ public class GenerateCbomCommand implements Callable<Integer> {
                 classpathMode == ClasspathMode.deps ? sbomReader.dependencyClosure(sbom) : Map.of();
 
         final BytecodeScanner scanner = new BytecodeScanner();
-        log.infof("Loaded %d detection rules", scanner.ruleCount());
+        log.infof("Loaded %s", scanner.detection());
         final AtomicInteger cached = new AtomicInteger();
         final AtomicInteger failed = new AtomicInteger();
         final AtomicInteger classes = new AtomicInteger();

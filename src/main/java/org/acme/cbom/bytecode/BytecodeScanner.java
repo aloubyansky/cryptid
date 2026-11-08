@@ -3,9 +3,11 @@ package org.acme.cbom.bytecode;
 import com.ibm.engine.rule.IDetectionRule;
 import com.ibm.mapper.model.INode;
 import com.ibm.output.cyclondx.CBOMOutputFile;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import org.acme.cbom.spec.ApiSpecs;
 import org.cyclonedx.model.Bom;
 import org.cyclonedx.model.Component;
 import org.cyclonedx.model.component.evidence.Occurrence;
@@ -33,7 +35,17 @@ public final class BytecodeScanner {
      */
     public record Result(Bom bom, int classes, int findings, int failedMethods) {}
 
+    /**
+     * The detection in use: {@code specs} (the default) detects from the crypto API specs;
+     * {@code rules} from sonar-cryptography's rule trees, kept while the spec-based detection is
+     * compared with it. Set with the system property {@code cbom.engine}.
+     */
+    static final boolean RULES = "rules".equals(System.getProperty("cbom.engine"));
+
+    /** sonar-cryptography's root rules, loaded only for the rule-based detection. */
     private final List<IDetectionRule<Loc>> rules;
+    private final ApiIndex apis;
+    private final int apiCount;
     private final ThreadLocal<Translation> translations = ThreadLocal.withInitial(() -> {
         try {
             return new Translation();
@@ -43,26 +55,36 @@ public final class BytecodeScanner {
     });
 
     /**
-     * Loads sonar-cryptography's Java detection rules.
+     * Loads the crypto API specs, or for the rule-based detection sonar-cryptography's rules.
      *
-     * @throws IllegalStateException if the rules can't be loaded
+     * @throws IllegalStateException if they can't be loaded
      */
     public BytecodeScanner() {
         try {
-            this.rules = Translation.javaRules();
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("Failed to load sonar-cryptography's Java detection rules", e);
+            if (RULES) {
+                this.rules = Translation.javaRules();
+                this.apis = null;
+                this.apiCount = 0;
+            } else {
+                final ApiSpecs specs = ApiSpecs.load();
+                this.rules = List.of();
+                this.apis = new ApiIndex(specs);
+                this.apiCount = specs.apis().size();
+            }
+        } catch (ReflectiveOperationException | IOException e) {
+            throw new IllegalStateException("Failed to load the detection " + (RULES ? "rules" : "specs"), e);
         }
     }
 
     /**
-     * Returns the number of root detection rules.
+     * Describes what detection uses, for logging.
      *
-     * @return the number of rules
+     * @return e.g. {@code 515 crypto API specs}
      */
-    public int ruleCount() {
-        return rules.size();
+    public String detection() {
+        return RULES ? rules.size() + " sonar-cryptography detection rules" : apiCount + " crypto API specs";
     }
+
 
     /**
      * Removes positions bytecode doesn't provide: the column offset always, and the line when the
@@ -121,7 +143,12 @@ public final class BytecodeScanner {
         if (!keepFacts) {
             return null;
         }
-        final Detector screen = new Detector(rules, types(jar, classpath, jarCache), locationPrefix, null);
+        final Types types = types(jar, classpath, jarCache);
+        if (RULES) {
+            final Detector screen = new Detector(rules, types, locationPrefix, null);
+            return new Facts(methods.stream().filter(screen::mayDetect).toList(), analyzer.failedMethods);
+        }
+        final SpecDetector screen = new SpecDetector(apis, types, locationPrefix, null);
         return new Facts(methods.stream().filter(screen::mayDetect).toList(), analyzer.failedMethods);
     }
 
@@ -159,12 +186,14 @@ public final class BytecodeScanner {
 
     private Result detect(Path jar, String locationPrefix, List<Path> classpath, JarCache jarCache, CallIndex callIndex,
             List<Analyzer.MethodResult> methods, int failedMethods) {
-        final Detector detector = new Detector(rules, types(jar, classpath, jarCache), locationPrefix, callIndex);
+        final Types types = types(jar, classpath, jarCache);
+        final Detector detector = RULES ? new Detector(rules, types, locationPrefix, callIndex) : null;
+        final SpecDetector specDetector = RULES ? null : new SpecDetector(apis, types, locationPrefix, callIndex);
         final Translation translation = translations.get();
         final CBOMOutputFile output = new CBOMOutputFile();
         int findings = 0;
         for (Analyzer.MethodResult m : methods) {
-            for (Detector.Finding f : detector.detect(m)) {
+            for (Detector.Finding f : RULES ? detector.detect(m) : specDetector.detect(m)) {
                 final List<INode> nodes = translation.process(f.store());
                 if (!nodes.isEmpty()) {
                     output.add(nodes);

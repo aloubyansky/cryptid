@@ -24,6 +24,7 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -139,7 +140,8 @@ final class SpecExporter {
             for (IDetectionRule<Loc> n : r.nextDetectionRules()) {
                 for (String api : apis) {
                     linked(api + "|next", r, n);
-                    next.computeIfAbsent(api, k -> new TreeSet<>()).addAll(apis(n));
+                    // in rule order: translation attaches next calls in this order
+                    next.computeIfAbsent(api, k -> new LinkedHashSet<>()).addAll(apis(n));
                 }
                 todo.add(n);
             }

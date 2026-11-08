@@ -35,6 +35,31 @@ final class SpecFactories {
         return CACHE.computeIfAbsent(spec, SpecFactories::instantiate);
     }
 
+    /**
+     * Creates the action a rule-specific function produced when exported, from its recorded result
+     * ({@code <value class> <value>}, e.g. {@code Mode GCM}): the value class in {@code
+     * com.ibm.engine.model} constructed with the value and the location.
+     *
+     * @param spec the description, with {@code factory: lambda}
+     * @param location the call's location
+     * @return the action
+     * @throws IllegalArgumentException if it can't be created
+     */
+    static Object lambdaAction(Factory spec, Loc location) {
+        final String result = spec.result();
+        final int space = result == null ? -1 : result.indexOf(' ');
+        if (space < 0) {
+            throw new IllegalArgumentException("No result recorded: " + spec);
+        }
+        try {
+            return Class.forName("com.ibm.engine.model." + result.substring(0, space))
+                    .getConstructor(String.class, Object.class)
+                    .newInstance(result.substring(space + 1), location);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalArgumentException("Can't create " + result, e);
+        }
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Object instantiate(Factory spec) {
         try {

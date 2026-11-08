@@ -40,7 +40,7 @@ flowchart TB
   s3["3 Phase A: index calls across all JARs<br/><code>Analyzer</code>, <code>CallIndex</code>"]
   subgraph perjar["for each JAR, in parallel (--threads)"]
     s4["4 Phase B: take the methods phase A kept<br/><code>BytecodeScanner.Facts</code>, <code>Types</code>"]
-    s5["5 Match detection rules<br/><code>Detector</code>, <code>StoreAccess</code>"]
+    s5["5 Detect from the API specs<br/><code>SpecDetector</code>, <code>ObjectGraph</code>, <code>ApiIndex</code>"]
     s6["6 Translate to crypto assets<br/><code>Translation</code>"]
     s7["7 Write the artifact's CBOM<br/><code>BytecodeScanner</code>"]
   end

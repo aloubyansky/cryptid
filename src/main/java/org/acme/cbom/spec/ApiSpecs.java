@@ -75,7 +75,8 @@ public record ApiSpecs(int specVersion, Source source, List<ApiSpec> apis) {
      *     object reported through another API
      * @param action what the call itself states, e.g. the algorithm a constructor implements
      * @param args what the arguments contribute, by position
-     * @param next API methods called on the object this call creates that contribute to it
+     * @param next API methods called on the object this call creates that contribute to it, in
+     *     the order sonar-cryptography's rules list them, which its translation depends on
      * @param nextRoles roles of those calls that differ from their own context
      */
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
