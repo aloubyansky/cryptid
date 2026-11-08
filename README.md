@@ -125,7 +125,7 @@ Paths are relative to `/home/aloubyansky/playground/cbom`.
 | Tests | `src/test/java/org/acme/cbom/bytecode/BytecodeScannerTest.java`, `SbomReaderTest` | single-JAR detection; two-hop resolution across two JARs; calls through an interface |
 | Fixture conformance test | `FixtureConformanceTest`, `FixtureSupport` (test sources) | compiles each fixture with javac, compares with its annotations and with `src/test/resources/fixture-baseline.tsv`; `-Dfixtures.updateBaseline=true` rewrites the baseline |
 | sonar-cryptography fixtures | `src/test/resources/sonar-cryptography-fixtures/` | 129 files from tag 1.7.0, Apache-2.0, with `LICENSE.txt` and `NOTICE.md`; Bouncy Castle 1.85 as test dependencies |
-| Test SBOMs | `src/test/resources/sample-sbom.json`, `src/test/resources/keycloak-999.0.0-SNAPSHOT.zip.cdx.json` | Keycloak SBOM: CycloneDX 1.7, 573 Maven components, full dependency graph |
+| Test SBOMs | `src/test/resources/sample-sbom.json`, `src/test/resources/keycloak-26.8.2.zip.cdx.json` | Keycloak SBOM: CycloneDX 1.7, 573 Maven components, full dependency graph; from a local 999.0.0-SNAPSHOT build with its Keycloak versions replaced by 26.8.2, so all artifacts resolve from Maven Central |
 
 Prerequisite: sonar-cryptography's modules (`com.ibm:java`, `engine`, `mapper`, `enricher`, `output`, `rules`, `common` and the parent POM `com.ibm:sonar-cryptography`, all 1.7.0) aren't on Maven Central. Build them from source and install them into the local Maven repository once:
 
