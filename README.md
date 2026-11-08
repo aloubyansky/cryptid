@@ -10,7 +10,7 @@ cbom-generator is a Quarkus CLI that turns a CycloneDX SBOM into a CBOM by analy
 - Values passed between methods are resolved from their callers, within a JAR and across JARs, including calls through interfaces and superclasses, and reported where the value is chosen (e.g. SHA-1 at Keycloak's `DPoPUtil`, RSA through Keycloak's `CryptoProvider` SPI).
 - sonar-cryptography's own Java test fixtures: 97.2% of the comparable expected detections reproduced, checked on every build.
 - Main gap: values built from parameters (e.g. `"AES/" + mode`) or returned by getters don't resolve.
-- Docs: [Architecture](docs/architecture.md) (pipeline diagram, input and output, library integration, what the runner JAR contains) and [Design review](docs/design-review.md) (findings and refactoring plan).
+- Docs: [Architecture](docs/architecture.md) (pipeline diagram, input and output, library integration, what the runner JAR contains) [Design review](docs/design-review.md) (findings and refactoring plan) and [Detection redesign](docs/detection-redesign.md) (proposal).
 
 ## How it works
 

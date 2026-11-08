@@ -62,6 +62,8 @@ Constant values resolve across methods (`CallIndex`), but next and depending rul
 
 ## A more direct design for Java
 
+[Detection redesign](detection-redesign.md) proposes going further than the steps below: API specifications as data and an object graph of crypto objects, instead of rule trees, which also removes the SonarSource libraries.
+
 The analysis core (`Analyzer`, `AVal`, `CallIndex`) is independent of sonar. The complexity sits in the middle, where bytecode facts are reshaped into sonar-era abstractions (`Tree`, `IScanContext`, `DetectionStore` with hooks), and at the end, where identity is rebuilt from strings. The plan keeps sonar-cryptography's knowledge (rules as data, the node model, mappers, reorganizer, enricher, CycloneDX builders) and replaces the plumbing between them with a small model of our own.
 
 | Keep | Replace or drop |
