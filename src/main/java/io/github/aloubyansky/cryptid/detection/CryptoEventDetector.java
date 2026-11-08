@@ -1,0 +1,262 @@
+package io.github.aloubyansky.cryptid.detection;
+
+import com.ibm.engine.detection.ResolvedValue;
+import com.ibm.engine.model.IAction;
+import com.ibm.engine.model.factory.IActionFactory;
+import com.ibm.engine.model.factory.IValueFactory;
+import io.github.aloubyansky.cryptid.bytecode.AVal;
+import io.github.aloubyansky.cryptid.bytecode.Analyzer;
+import io.github.aloubyansky.cryptid.bytecode.CallIndex;
+import io.github.aloubyansky.cryptid.bytecode.CallSite;
+import io.github.aloubyansky.cryptid.bytecode.Types;
+import io.github.aloubyansky.cryptid.detection.CryptoObjectGraph.CryptoApiCall;
+import io.github.aloubyansky.cryptid.spec.CryptoApiMatcher;
+import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs.ApiSpec;
+import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs.Arg;
+import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs.Context;
+import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs.Role;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Detects crypto events from the crypto API specs: each call to an API that reports on its own is
+ * a finding, a tree of {@link CryptoEvent}s built from the method's {@link CryptoObjectGraph}: the
+ * events on the created object the spec lists as next, and the events of the objects passed
+ * through linking arguments, in the roles the specs give them.
+ *
+ * <p>Event trees are built the way the rule-based detection built sonar-cryptography's detection
+ * stores: multi-valued arguments give
+ * one finding per value combination (up to {@link #MAX_VARIANTS}), and arguments passed
+ * in from callers are resolved through the {@link CallIndex} into findings located at the caller.
+ * Unlike rule trees, a link accepts any object a specified API creates, not only those a rule
+ * lists.
+ */
+public final class CryptoEventDetector {
+
+    private static final int MAX_DEPTH = 8;
+
+    /**
+     * Most findings one match is split into, one per combination of the possible values of its
+     * detectable arguments; beyond this, the values stay together in one finding.
+     */
+    public static final int MAX_VARIANTS = 16;
+
+    private final CryptoApiMatcher matcher;
+    private final Types types;
+    private final String locationPrefix;
+    private final CallIndex callIndex;
+
+    /** A detectable argument of a call: the call site and the parameter position. */
+    private record Point(CallSite call, int index) {}
+
+    private List<Finding> resolved = new ArrayList<>();
+    private Map<Point, List<Object>> multiValued;
+    private Map<Point, Object> chosen = Map.of();
+
+    /**
+     * @param matcher the spec matcher
+     * @param types the class hierarchy
+     * @param locationPrefix prepended to source file paths, e.g. the artifact path {@code g/a/v};
+     *     empty for none
+     * @param callIndex resolves values passed in from callers; {@code null} for within methods only
+     */
+    public CryptoEventDetector(CryptoApiMatcher matcher, Types types, String locationPrefix, CallIndex callIndex) {
+        this.matcher = matcher;
+        this.types = types;
+        this.locationPrefix = locationPrefix.isEmpty() ? "" : locationPrefix + "/";
+        this.callIndex = callIndex;
+    }
+
+    /**
+     * Whether a method calls an API that reports findings on its own: {@link #detect} finds
+     * nothing in any other method.
+     *
+     * @param method the method
+     * @return {@code true} if {@link #detect} may find something in it
+     */
+    public boolean mayDetect(Analyzer.MethodResult method) {
+        for (CallSite cs : method.calls()) {
+            for (ApiSpec spec : matcher.match(cs, types)) {
+                if (spec.root()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Detects the findings of a method.
+     *
+     * @param method the method
+     * @return the findings, by call site and then API, followed after each by the findings of
+     *     values its callers pass
+     */
+    public List<Finding> detect(Analyzer.MethodResult method) {
+        final CryptoObjectGraph graph = CryptoObjectGraph.of(method, matcher, types);
+        final String file = locationPrefix + method.sourceFile();
+        final List<Finding> findings = new ArrayList<>();
+        for (CryptoApiCall root : graph.roots()) {
+            for (CryptoEvent d : variants(root, graph, file)) {
+                findings.add(new Finding(Loc.of(root.site()), root.site(), d));
+            }
+            findings.addAll(resolved);
+            resolved = new ArrayList<>();
+        }
+        return findings;
+    }
+
+    private List<CryptoEvent> variants(CryptoApiCall root, CryptoObjectGraph graph, String file) {
+        multiValued = new LinkedHashMap<>();
+        final CryptoEvent merged = CryptoEvent.of(root.spec(), root.spec().context(), file);
+        process(merged, List.of(root.site()), graph, file, 0);
+        final Map<Point, List<Object>> points = multiValued;
+        multiValued = null;
+        long count = 1;
+        for (List<Object> values : points.values()) {
+            count *= values.size();
+        }
+        if (points.isEmpty() || count > MAX_VARIANTS) {
+            return List.of(merged);
+        }
+        List<Map<Point, Object>> combinations = List.of(Map.of());
+        for (Map.Entry<Point, List<Object>> e : points.entrySet()) {
+            final List<Map<Point, Object>> next = new ArrayList<>();
+            for (Map<Point, Object> c : combinations) {
+                for (Object v : e.getValue()) {
+                    final Map<Point, Object> m = new LinkedHashMap<>(c);
+                    m.put(e.getKey(), v);
+                    next.add(m);
+                }
+            }
+            combinations = next;
+        }
+        final List<Finding> fromCallers = resolved;
+        resolved = new ArrayList<>();
+        final List<CryptoEvent> events = new ArrayList<>();
+        for (Map<Point, Object> c : combinations) {
+            chosen = c;
+            final CryptoEvent d = CryptoEvent.of(root.spec(), root.spec().context(), file);
+            process(d, List.of(root.site()), graph, file, 0);
+            events.add(d);
+        }
+        chosen = Map.of();
+        resolved = fromCallers;
+        return events;
+    }
+
+    private Collection<Object> values(CallSite cs, int index, AVal arg) {
+        final Point point = new Point(cs, index);
+        final Object v = chosen.get(point);
+        if (v != null) {
+            return List.of(v);
+        }
+        if (multiValued != null && arg.consts().size() > 1) {
+            multiValued.putIfAbsent(point, List.copyOf(arg.consts()));
+        }
+        return arg.consts();
+    }
+
+    @SuppressWarnings("unchecked")
+    private void process(CryptoEvent store, List<CallSite> calls, CryptoObjectGraph graph, String file, int depth) {
+        final ApiSpec spec = store.spec();
+        final Context context = store.context();
+        for (CallSite cs : calls) {
+            final Loc loc = Loc.of(cs);
+            if (spec.action() != null) {
+                final Object factory = ValueFactories.create(spec.action());
+                if (factory == null) {
+                    store.action((IAction<Loc>) ValueFactories.lambdaAction(spec.action(), loc));
+                } else {
+                    ((IActionFactory<Loc>) factory).apply(loc).ifPresent(store::action);
+                }
+            }
+            for (Arg arg : spec.args()) {
+                final int k = arg.index();
+                if (k >= cs.args().length) {
+                    continue;
+                }
+                final AVal value = cs.args()[k];
+                if (arg.value() != null) {
+                    final IValueFactory<Loc> factory = (IValueFactory<Loc>) ValueFactories.create(arg.value());
+                    for (Object c : values(cs, k, value)) {
+                        factory.apply(new ResolvedValue<>(c, loc)).ifPresent(v -> {
+                            if (arg.movedUnder() != null) {
+                                final CryptoEvent sub = CryptoEvent.of(spec, context, file);
+                                sub.addValue(arg.movedUnder(), v);
+                                store.attach(arg.movedUnder(), sub);
+                            } else {
+                                store.addValue(k, v);
+                            }
+                        });
+                    }
+                    if (value.params() != 0 && callIndex != null) {
+                        resolveFromCallers(spec, context, arg, factory, cs, value.params());
+                    }
+                }
+                if (arg.link()) {
+                    follow(store, k, graph.related(value.origins()), arg.roles(), context, graph, file, depth);
+                }
+            }
+            if (!spec.next().isEmpty() && cs.created() >= 0) {
+                // in the spec's order, then call order: translation attaches them in this order,
+                // e.g. a signature's verify action before the parameters set on it
+                final List<CryptoApiCall> next = graph.related(Set.of(cs.created())).stream()
+                        .filter(c -> spec.next().contains(c.spec().api()))
+                        .sorted(Comparator.comparingInt(c -> spec.next().indexOf(c.spec().api())))
+                        .toList();
+                follow(store, -1, next, spec.nextRoles(), context, graph, file, depth);
+            }
+        }
+    }
+
+    /**
+     * Attaches the related calls to the parent, one child event per API, holding all its
+     * calls, as rule trees held all calls of a rule.
+     */
+    private void follow(CryptoEvent parent, int index, List<CryptoApiCall> related, List<Role> roles, Context parentContext,
+            CryptoObjectGraph graph, String file, int depth) {
+        if (related.isEmpty() || depth >= MAX_DEPTH) {
+            return;
+        }
+        final Map<ApiSpec, List<CallSite>> byApi = new LinkedHashMap<>();
+        for (CryptoApiCall c : related) {
+            byApi.computeIfAbsent(c.spec(), k -> new ArrayList<>()).add(c.site());
+        }
+        for (Map.Entry<ApiSpec, List<CallSite>> e : byApi.entrySet()) {
+            final CryptoEvent child = CryptoEvent.of(e.getKey(), role(roles, parentContext, e.getKey()), file);
+            parent.attach(index, child);
+            process(child, e.getValue(), graph, file, depth + 1);
+        }
+    }
+
+    /** The linked object's context: the first role of the link that applies, else its API's. */
+    static Context role(List<Role> roles, Context parent, ApiSpec linked) {
+        for (Role r : roles) {
+            if ((r.when() == null || r.when().equals(parent)) && (r.api() == null || r.api().equals(linked.api()))) {
+                return r.context();
+            }
+        }
+        return linked.context();
+    }
+
+    @SuppressWarnings("unchecked")
+    private void resolveFromCallers(ApiSpec spec, Context context, Arg arg, IValueFactory<Loc> factory, CallSite cs,
+            long params) {
+        final int index = arg.movedUnder() != null ? arg.movedUnder() : arg.index();
+        for (CallIndex.Hit hit : callIndex.resolve(cs.method(), params)) {
+            final CallIndex.Site site = hit.site();
+            final Loc at = new Loc(site.file(), site.line(), site.signature(), site.name());
+            factory.apply(new ResolvedValue<>(hit.value(), at)).ifPresent(v -> {
+                final CryptoEvent d = CryptoEvent.of(spec, context, site.file());
+                d.addValue(index, v);
+                resolved.add(new Finding(at, cs, d));
+            });
+        }
+    }
+}

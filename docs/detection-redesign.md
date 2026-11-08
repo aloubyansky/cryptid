@@ -14,7 +14,7 @@ sonar-cryptography carries two kinds of knowledge, and they have different value
 | How to turn names like `"AES/GCM/NoPadding"` into a crypto model | the string mappers (`com.ibm:mapper`, `mapper.jca`, `mapper.bc`, `mapper.ssl`) | High, and independent of the engine: `IMapper.parse(String, DetectionLocation)` |
 | OIDs, default key sizes, functions | `com.ibm:enricher` | High, works on the `INode` model |
 | CycloneDX output of the model | `com.ibm:output` | Useful, works on the `INode` model |
-| How detections attach to each other | the store tree, `ITranslator`'s traverser, 19 reorganizer rules | Low: it exists to bring tree-shaped detections into the model's shape |
+| How detections attach to each other | the store tree and `ITranslator`'s traverser | Low: it exists to bring tree-shaped detections into the model's shape |
 
 The rule graph is large because it encodes context for AST matching:
 
@@ -23,7 +23,7 @@ The rule graph is large because it encodes context for AST matching:
 - 94% of the rules match constructors;
 - the asset name comes from the rule itself in 2,361 rules.
 
-The reorganizer then corrects the shape that store-tree translation produces. In this design, both layers go away.
+In this design, the store tree and its traverser go away. The 19 reorganizer rules stay: they normalize the crypto model itself, whatever builds it.
 
 ## The idea: API usage facts, an object graph, and specifications as data
 
@@ -58,9 +58,7 @@ Three layers, each with one job:
 
    Objects are identified by allocation site, and identity is followed across methods through parameters and returns. The result is an object graph of crypto objects with the events applied to each.
 2. **API specifications** (data, owned by us). For each API key: whether the call creates an object or configures its receiver, the kind of object, and what each argument contributes (a property, through which mapper, or a link to another object). The specs live in a resource file, not in code. API families with unusual semantics, such as Bouncy Castle's `CipherParameters` hierarchy, can have a small handler in code.
-3. **Model building**, in two parts:
-   - **3a, detection from the specs**: done. `SpecDetector` builds the `DetectionStore` trees from the object graph (`SpecRule` carries the library and context from the spec; the `GCMParameterSpec` functions are rebuilt from their recorded result), and translation, reorganizer, enricher and output are unchanged. sonar-cryptography's rules are no longer loaded; `-Dcbom.engine=rules` keeps the rule-based detection for comparison until 3b. See the step 3a findings below.
-   - **3b, the model from the object graph**: replacing the store trees, `ITranslator`'s traversal and the reorganizer. At this point the specs become hand-maintained and the exporter turns into the opt-in diff tool (see above).
+3. **Model building**. Walk the object graph, apply the specs, and build `INode`s with sonar-cryptography's mappers (through its context translators). Then normalize them with its reorganizer rules, enrich them with its enricher and write them with its output, unchanged. There is no store tree to traverse. The reorganizer stays: its 19 rules are model knowledge (for example, a block cipher and a mode make an authenticated encryption), not plumbing.
 
 ## Why this is better
 
@@ -85,10 +83,10 @@ Three layers, each with one job:
 
 | Dependency | Today | After |
 | --- | --- | --- |
-| sonar-plugin-api (LGPL, provided) | `IScanContext` signature | gone |
+| sonar-plugin-api (LGPL, provided) | `IScanContext` signature | gone (test-only since 3b-1) |
 | sonar-analyzer-commons (LGPL, shipped) | `MethodMatcher`, run while the rules load | gone: no rules are loaded |
 | `org.sonar…tree.Tree` marker | lambdas in the rules | gone |
-| `StoreAccess` in sonar-cryptography's package | building stores | gone |
+| `StoreAccess` in sonar-cryptography's package | building stores | gone (test-only since 3b-1) |
 | `com.ibm:java`, `com.ibm:engine` | rules and stores | gone at runtime; used once, to bootstrap the specs |
 | `com.ibm:mapper`, `enricher`, `output` (Apache-2.0) | used | still used, for the model, the mappers, the enrichment and the output; replaceable later |
 
@@ -149,11 +147,11 @@ org.bouncycastle.crypto.encodings.OAEPEncoding#<init>(AsymmetricBlockCipher, Dig
                                                                BC   Cipher        root  name: OAEPEncoding  arg0: link cipher  arg1: link digest  arg2: link digest (role: MGF1)
 ```
 
-`SpecExporter` (test sources) writes them to `src/main/resources/crypto-api-specs.yaml`, about 8,800 lines, and `SpecExportTest` keeps the file in sync with the rules: it fails when they differ, and `-Dspecs.update=true` rewrites it. Its report (`target/spec-export-report.txt`) lists what doesn't fit; for 1.7.0 that is nothing: no API method whose rules disagree beyond the context, and no role that depends on more than the parent's link and role. Two entries, the `GCMParameterSpec` constructors, carry a rule-specific function (`factory: lambda`, producing the GCM mode) and need a handler in code.
+`RuleSpecExporter` (test sources) writes them to `src/main/resources/crypto-api-specs.yaml`, about 8,800 lines, and `RuleSpecExportTest` keeps the file in sync with the rules: it fails when they differ, and `-Dspecs.update=true` rewrites it. Its report (`target/spec-export-report.txt`) lists what doesn't fit; for 1.7.0 that is nothing: no API method whose rules disagree beyond the context, and no role that depends on more than the parent's link and role. Two entries, the `GCMParameterSpec` constructors, carry a rule-specific function (`factory: lambda`, producing the GCM mode) and need a handler in code.
 
 ### When the exporter runs
 
-- **Until the new pipeline uses the specs**: on every build. The specs are derived data, and `SpecExportTest` keeps the file in sync with the rules (under a second); `-Dspecs.update=true` rewrites it.
+- **Until the new pipeline uses the specs**: on every build. The specs are derived data, and `RuleSpecExportTest` keeps the file in sync with the rules (under a second); `-Dspecs.update=true` rewrites it.
 - **From the switch on**: the specs become hand-maintained, the project's own knowledge base, with handlers, fixes and new libraries. The exporter then never rewrites the file. It becomes an opt-in diff tool: it exports the rules of a sonar-cryptography version and reports what differs from our specs (new API methods, changed roles, removed entries), to port by hand. It's run when evaluating a sonar-cryptography upgrade, which keeps `com.ibm:java` as a test-scope dependency. Upgrading it still means a person builds sonar-cryptography from source, since that build compiles against the SSALv1 analyzers. The exporter itself only runs the Apache-2.0 rule definitions.
 
 A generated base with a hand-maintained overlay was considered and not chosen: it keeps regeneration safe, but needs merge rules for overriding, removing and extending entries, and splits the knowledge over two files.
@@ -164,8 +162,12 @@ Each step is checked against the current output: the fixture baseline, `Reproduc
 
 1. **Spec exporter and coverage report**: done. All 2,563 rules map to 515 spec entries; see the findings above.
 2. **Facts extraction and object graph**: done for objects within a method; see the step 2 findings below.
-3. **Model building** with the mappers, enricher and output, replacing `Detector`, the store tree, `Translation` and the reorganizer once the comparison is reviewed. At this point the specs become hand-maintained and the exporter turns into the opt-in diff tool (see above).
-4. **Drop the rule engine at runtime**: done in part. The rule-based detection (`Detector`, `RuleTable`, rule loading) moved to the tests, where it is the reference: `DetectorEquivalenceTest` checks that every node translated from its findings is translated from `SpecDetector`'s too, or refined there (fixtures and Bouncy Castle: 2,273 nodes, none lost, 13 refined, 1 new). sonar-analyzer-commons is test-only; the runner JAR has no SonarSource class and none of sonar-cryptography's rules (10,452 classes instead of 10,581). `SpecFactories` and `SpecRule` reference the factory and context classes explicitly, so tree-shaking keeps them; `SpecResourcesTest` checks everything the specs name can be created. Still there until 3b: `com.ibm:java` for the context translators and reorganizer rules, `DetectionStore` and `StoreAccess`, sonar-plugin-api at compile time (`IScanContext`), and the `Tree` marker, which `Loc` implements for the reference tests that run the rules' two `GCMParameterSpec` lambdas. Keycloak: same CBOM as 3a, 22 s, 5.8 GB peak.
+3. **Model building**, in parts:
+   - **3a, detection from the specs**: done. `CryptoEventDetector` builds the detection trees from the object graph; the `GCMParameterSpec` functions are rebuilt from their recorded result. sonar-cryptography's rules are no longer loaded. See the step 3a findings below.
+   - **3b-1, our own detection tree and model builder**: done. `CryptoEvent` (then `Detection`) replaces `DetectionStore`, and `AssetAssembler` (then `ModelBuilder`) replaces `ITranslator`'s traversal, with its attach and merge rules written out (see its javadoc). `PipelineEquivalenceTest` now compares the whole old pipeline (rules, stores, `ITranslator` in the tests as `RuleAssetModeler`) with the new one: 2,273 nodes, none lost, the same 13 refined and 1 new. Keycloak: same CBOM as step 4, 22 s, 5.5 GB peak. The runner JAR has no `DetectionStore`, `StoreAccess`, `ITranslator`, `MethodMatcher` or the engine's `callstack`, `hooks` and `language` packages (10,384 classes); sonar-plugin-api is test-only.
+   - **3b-2, order-independent attachment**: next. Where a detection has no nodes of its own, the first child with nodes becomes its nodes, so the order of children matters (the xmlsec PSS case of 3a). The builder should choose by kind instead of by order, with each resulting difference reviewed.
+   - At the end of step 3 the specs become hand-maintained and the exporter turns into the opt-in diff tool (see above).
+4. **Drop the rule engine at runtime**: done in part. The rule-based detection (`Detector`, `RuleTable`, rule loading) moved to the tests, where it is the reference: `PipelineEquivalenceTest` checks that every node translated from its findings is translated from `CryptoEventDetector`'s too, or refined there (fixtures and Bouncy Castle: 2,273 nodes, none lost, 13 refined, 1 new). sonar-analyzer-commons is test-only; the runner JAR has no SonarSource class and none of sonar-cryptography's rules (10,452 classes instead of 10,581). `ValueFactories` and `SpecRule` reference the factory and context classes explicitly, so tree-shaking keeps them; `SpecResourcesTest` checks everything the specs name can be created. Then still there, until 3b-1 removed the store plumbing: `DetectionStore` and `StoreAccess`, sonar-plugin-api at compile time (`IScanContext`). Still there: `com.ibm:java` for the context translators and reorganizer rules, and the `Tree` marker, which `Loc` implements for the reference tests that run the rules' two `GCMParameterSpec` lambdas. Keycloak: same CBOM as 3a, 22 s, 5.8 GB peak.
 5. **Analysis on demand** with method summaries, replacing the global call index.
 6. **Object flow across methods** (F7), and new spec families.
 
@@ -175,8 +177,8 @@ Steps 1 and 2 change no output, so they can be judged on their reports before co
 
 Measured on 2026-11-08; no output changed yet.
 
-- **Spec matching is the rules' matching.** `ApiIndex` matches a call by method name, owner (exact, or a supertype) and parameters. A class-typed parameter matches its subtypes too, because APIs narrow parameters over time, for example Bouncy Castle's `ShortenedDigest(ExtendedDigest, int)` against a spec of `(Digest, int)`. Rules written without parameter types accept any (116 API methods, `(...)` in the specs). `ApiIndexTest` checks that, on every call site of Bouncy Castle's provider JAR, the specs match the same API methods as all 2,563 rules' `MethodMatcher`s.
-- **The graph has every line of the trees.** `ObjectGraph` records the calls to specified APIs in a method and relates calls to objects they create or are invoked on. `FactsEquivalenceTest` reads both the current detection trees and the graph into the same lines: each value and action, with its path of argument indices, contexts (including the spec roles) and libraries, produced by sonar-cryptography's factories rebuilt from the specs (`SpecFactories`). On the fixtures and Bouncy Castle's JAR, 561 findings with 1,085 lines lose nothing. On Keycloak's 534 JARs, run once outside the build, 883 findings with 1,291 lines lose nothing.
+- **Spec matching is the rules' matching.** `CryptoApiMatcher` (then `ApiIndex`) matches a call by method name, owner (exact, or a supertype) and parameters. A class-typed parameter matches its subtypes too, because APIs narrow parameters over time, for example Bouncy Castle's `ShortenedDigest(ExtendedDigest, int)` against a spec of `(Digest, int)`. Rules written without parameter types accept any (116 API methods, `(...)` in the specs). `CryptoApiMatcherTest` checks that, on every call site of Bouncy Castle's provider JAR, the specs match the same API methods as all 2,563 rules' `MethodMatcher`s.
+- **The graph has every line of the trees.** `CryptoObjectGraph` (then `ObjectGraph`) records the calls to specified APIs in a method and relates calls to objects they create or are invoked on. `ObjectGraphEquivalenceTest` reads both the current detection trees and the graph into the same lines: each value and action, with its path of argument indices, contexts (including the spec roles) and libraries, produced by sonar-cryptography's factories rebuilt from the specs (`ValueFactories`). On the fixtures and Bouncy Castle's JAR, 561 findings with 1,085 lines lose nothing. On Keycloak's 534 JARs, run once outside the build, 883 findings with 1,291 lines lose nothing.
 - **What the graph gains.** Links to objects the rule trees don't list as possible creators: a `GMac` over a GCM cipher from `GCMBlockCipher.newInstance` over `AESEngine.newInstance()` (a fixture gap), keys from `SecretKeyFactory.generateSecret` passed to `Cipher.init` (four in Keycloak), and `KeyFactory.generatePrivate` on the factory from `getInstance`. Each changes the CBOM, so they're reviewed with model building.
 
 ## Step 3a findings: detection from the specs
@@ -184,7 +186,7 @@ Measured on 2026-11-08; no output changed yet.
 Measured on 2026-11-08 with the same runner JAR, `-Dcbom.engine=rules` against the default:
 
 - **The CBOM is the same but for one link gain.** Keycloak 26.8.2: 2,589 occurrences instead of 2,588, all others equal per occurrence. The new one is `CAST6-GCM` in Bouncy Castle's provider (`CAST6$GMAC`), and the GMac asset there (named `unknown` by sonar-cryptography's translation) now links to the 11 GCM ciphers it may be built on. The other graph gains of step 2 translate to the same assets as before. The fixture conformance is unchanged (241 of 284 expected issues, 10 unexpected), and so are the sample SBOM, reproducibility and Keycloak end-to-end tests.
-- **Translation depends on the order of children.** A first run attached the calls on a created object in bytecode order: for xmlsec's PSS signature verification, `setParameter` came before `verify`, and translation then reported SHA-256, MGF1 and the salt length as three assets instead of one signature. sonar-cryptography's traversal attaches nodes in order and merges into nodes that already exist. The specs now keep `next` in rule order and `SpecDetector` attaches in that order. Model building from the object graph (3b) should not depend on order.
+- **Translation depends on the order of children.** A first run attached the calls on a created object in bytecode order: for xmlsec's PSS signature verification, `setParameter` came before `verify`, and translation then reported SHA-256, MGF1 and the salt length as three assets instead of one signature. sonar-cryptography's traversal attaches nodes in order and merges into nodes that already exist. The specs now keep `next` in rule order and `CryptoEventDetector` attaches in that order. Model building from the object graph (3b) should not depend on order.
 - **Phase A keeps slightly fewer methods**: 1,926 instead of 1,958, since only calls to root APIs can start a finding, while the rule pre-check accepted any call passing a root rule's owner check.
 
 ## Open questions and risks

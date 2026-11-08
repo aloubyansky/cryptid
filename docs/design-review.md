@@ -107,6 +107,20 @@ Order of work, one step at a time, each checked by `SampleSbomIT`, `Reproducibil
 
 Step 7 is independent and low-risk; 4 to 6 change internals behind stable inputs and outputs.
 
+## Backlog
+
+Gaps and improvements beyond the findings above, moved here from the README on 2026-11-08.
+
+- **Values derived from parameters.** Only values passed through unchanged resolve from callers. Values built from a parameter (`"AES/" + mode`) or returned by methods (an enum's `getName()`, so commons-codec's `HmacUtils` yields nothing) don't. Carrying a recipe instead of plain provenance (concatenation with constants, returns of simple getters) would resolve them.
+- **Dispatch precision.** A constant passed to `I.m` counts for every implementation of `m`, and static methods with the same signature in a subclass and its superclass are treated like overrides. At worst this adds assets.
+- **Fixture gaps** (about 8 cases): values held in parameter objects (ML-DSA-44, ML-KEM-1024), the digest inside OAEP, DH key sizes from `BigInteger` parameters, GOST naming, SSL parameter arrays. `FixtureConformanceTest` reports each improvement; record it with `-Dfixtures.updateBaseline=true`.
+- **Positions.** Multi-line `new X(...)` expressions report the statement's first line; classes without line tables (Bouncy Castle's release JARs) report no line; there are no column offsets. Emitting `symbol` (the enclosing method) and de-duplicating on it plus the bytecode offset would identify occurrences more robustly.
+- **Memory and archives.** `JarCache` keeps every JAR open for the whole run and reads them with `java.util.zip.ZipFile`, skipping multi-release variants; smallrye-common-archive, with a bound on open archives and a more compact call index, would cut the peak (5.5 GB on Keycloak).
+- **Shaded code.** Binaries include classes that sources JARs lack; keycloak-admin-cli shades keycloak-common, so its copies are reported as separate locations. Whether to attribute shaded code to the shading component or to the original library is open.
+- **Work directory cache.** Per-artifact CBOMs aren't invalidated when other artifacts of the SBOM change.
+- **Distribution.** A third-party notices file for the Apache-2.0 and LGPL components; a legal confirmation of the `org.sonar.plugins.java.api.tree.Tree` marker interface.
+- **Upstream changes to sonar-cryptography** that would remove the remaining workarounds: a value factory instead of the two `Tree`-typed lambdas in `JcaGCMParameterSpec` (drops the marker), `Set.of` instead of `SetUtils` in `MethodMatcher`, an `IScanContext` without `InputFile`, a public `DetectionStore` builder (the last three only matter to the test reference now).
+
 ## How this was measured
 
 - Class inventory: every `.class` entry of the runner JAR, built with tree-shaking, mapped to the dependency JAR containing the same entry.
