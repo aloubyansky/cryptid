@@ -28,10 +28,10 @@
         <!-- integration tests tagged e2e run only with -Pe2e -->
         <it.excludedGroups>e2e</it.excludedGroups>
 
-        <compiler-plugin.version>3.14.0</compiler-plugin.version>
-        <surefire-plugin.version>3.5.3</surefire-plugin.version>
+        <compiler-plugin.version>3.16.0</compiler-plugin.version>
+        <surefire-plugin.version>3.6.1</surefire-plugin.version>
         <templating-plugin.version>3.1.1</templating-plugin.version>
-        <license-plugin.version>2.7.0</license-plugin.version>
+        <license-plugin.version>2.7.1</license-plugin.version>
 
         <quarkus.package.add-runner-suffix>false</quarkus.package.add-runner-suffix>
         <skipOriginalJarRename>true</skipOriginalJarRename>
