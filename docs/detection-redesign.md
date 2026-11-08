@@ -161,13 +161,21 @@ A generated base with a hand-maintained overlay was considered and not chosen: i
 Each step is checked against the current output: the fixture baseline, `ReproducibilityIT`, `SampleSbomIT`, and a per-occurrence comparison of the Keycloak CBOM, where each difference is reviewed as an improvement or a regression.
 
 1. **Spec exporter and coverage report**: done. All 2,563 rules map to 515 spec entries; see the findings above.
-2. **Facts extraction and object graph**, next to the current `Detector`, in the same run.
+2. **Facts extraction and object graph**: done for objects within a method; see the step 2 findings below.
 3. **Model building** with the mappers, enricher and output, replacing `Detector`, the store tree, `Translation` and the reorganizer once the comparison is reviewed. At this point the specs become hand-maintained and the exporter turns into the opt-in diff tool (see above).
 4. **Drop the rule engine at runtime**: `com.ibm:java` and `engine` out of the runtime classpath, along with sonar-analyzer-commons, sonar-plugin-api, the `Tree` marker and `StoreAccess`.
 5. **Analysis on demand** with method summaries, replacing the global call index.
 6. **Object flow across methods** (F7), and new spec families.
 
 Steps 1 and 2 change no output, so they can be judged on their reports before committing to the rest.
+
+## Step 2 findings: the object graph carries what the rule trees carry
+
+Measured on 2026-11-08; no output changed yet.
+
+- **Spec matching is the rules' matching.** `ApiIndex` matches a call by method name, owner (exact, or a supertype) and parameters. A class-typed parameter matches its subtypes too, because APIs narrow parameters over time, for example Bouncy Castle's `ShortenedDigest(ExtendedDigest, int)` against a spec of `(Digest, int)`. Rules written without parameter types accept any (116 API methods, `(...)` in the specs). `ApiIndexTest` checks that, on every call site of Bouncy Castle's provider JAR, the specs match the same API methods as all 2,563 rules' `MethodMatcher`s.
+- **The graph has every line of the trees.** `ObjectGraph` records the calls to specified APIs in a method and relates calls to objects they create or are invoked on. `FactsEquivalenceTest` reads both the current detection trees and the graph into the same lines: each value and action, with its path of argument indices, contexts (including the spec roles) and libraries, produced by sonar-cryptography's factories rebuilt from the specs (`SpecFactories`). On the fixtures and Bouncy Castle's JAR, 561 findings with 1,085 lines lose nothing. On Keycloak's 534 JARs, run once outside the build, 883 findings with 1,291 lines lose nothing.
+- **What the graph gains.** Links to objects the rule trees don't list as possible creators: a `GMac` over a GCM cipher from `GCMBlockCipher.newInstance` over `AESEngine.newInstance()` (a fixture gap), keys from `SecretKeyFactory.generateSecret` passed to `Cipher.init` (four in Keycloak), and `KeyFactory.generatePrivate` on the factory from `getInstance`. Each changes the CBOM, so they're reviewed with model building.
 
 ## Open questions and risks
 

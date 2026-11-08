@@ -349,8 +349,8 @@ apis:
           factory: AlgorithmFactory
     next:
       - java.security.Signature#setParameter(java.security.spec.AlgorithmParameterSpec)
-      - java.security.Signature#sign()
-      - java.security.Signature#verify()
+      - java.security.Signature#sign(...)
+      - java.security.Signature#verify(...)
   - api: "java.security.Signature#getInstance(java.lang.String, java.lang.String)"
     subtypes: true
     library: Jca
@@ -367,8 +367,8 @@ apis:
         type: java.lang.String
     next:
       - java.security.Signature#setParameter(java.security.spec.AlgorithmParameterSpec)
-      - java.security.Signature#sign()
-      - java.security.Signature#verify()
+      - java.security.Signature#sign(...)
+      - java.security.Signature#verify(...)
   - api: "java.security.Signature#getInstance(java.lang.String, java.security.Provider)"
     subtypes: true
     library: Jca
@@ -385,8 +385,8 @@ apis:
         type: java.security.Provider
     next:
       - java.security.Signature#setParameter(java.security.spec.AlgorithmParameterSpec)
-      - java.security.Signature#sign()
-      - java.security.Signature#verify()
+      - java.security.Signature#sign(...)
+      - java.security.Signature#verify(...)
   - api: java.security.Signature#setParameter(java.security.spec.AlgorithmParameterSpec)
     subtypes: true
     library: Jca
@@ -398,7 +398,7 @@ apis:
       - index: 0
         type: java.security.spec.AlgorithmParameterSpec
         link: true
-  - api: java.security.Signature#sign()
+  - api: java.security.Signature#sign(...)
     subtypes: true
     library: Jca
     context:
@@ -409,7 +409,7 @@ apis:
       factory: SignatureActionFactory
       config:
         action: SIGN
-  - api: java.security.Signature#verify()
+  - api: java.security.Signature#verify(...)
     subtypes: true
     library: Jca
     context:
@@ -2001,7 +2001,7 @@ apis:
       - index: 0
         type: org.bouncycastle.crypto.Digest
         link: true
-  - api: org.bouncycastle.crypto.digests.AsconDigest#<init>()
+  - api: org.bouncycastle.crypto.digests.AsconDigest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2011,7 +2011,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: AsconDigest
-  - api: org.bouncycastle.crypto.digests.AsconXof#<init>()
+  - api: org.bouncycastle.crypto.digests.AsconXof#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2021,7 +2021,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: AsconXof
-  - api: org.bouncycastle.crypto.digests.Blake2bDigest#<init>()
+  - api: org.bouncycastle.crypto.digests.Blake2bDigest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2031,7 +2031,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: Blake2bDigest
-  - api: org.bouncycastle.crypto.digests.Blake2bpDigest#<init>()
+  - api: org.bouncycastle.crypto.digests.Blake2bpDigest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2041,7 +2041,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: Blake2bpDigest
-  - api: org.bouncycastle.crypto.digests.Blake2sDigest#<init>()
+  - api: org.bouncycastle.crypto.digests.Blake2sDigest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2051,7 +2051,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: Blake2sDigest
-  - api: org.bouncycastle.crypto.digests.Blake2spDigest#<init>()
+  - api: org.bouncycastle.crypto.digests.Blake2spDigest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2061,7 +2061,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: Blake2spDigest
-  - api: org.bouncycastle.crypto.digests.Blake2xsDigest#<init>()
+  - api: org.bouncycastle.crypto.digests.Blake2xsDigest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2071,7 +2071,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: Blake2xsDigest
-  - api: org.bouncycastle.crypto.digests.Blake3Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.Blake3Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2081,7 +2081,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: Blake3Digest
-  - api: org.bouncycastle.crypto.digests.CSHAKEDigest#<init>()
+  - api: org.bouncycastle.crypto.digests.CSHAKEDigest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2091,7 +2091,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: CSHAKEDigest
-  - api: org.bouncycastle.crypto.digests.DSTU7564Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.DSTU7564Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2101,7 +2101,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: DSTU7564Digest
-  - api: org.bouncycastle.crypto.digests.GOST3411Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.GOST3411Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2111,7 +2111,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: GOST3411Digest
-  - api: org.bouncycastle.crypto.digests.GOST3411_2012_256Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.GOST3411_2012_256Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2121,7 +2121,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: GOST3411_2012_256Digest
-  - api: org.bouncycastle.crypto.digests.GOST3411_2012_512Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.GOST3411_2012_512Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2131,7 +2131,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: GOST3411_2012_512Digest
-  - api: org.bouncycastle.crypto.digests.Haraka256Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.Haraka256Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2141,7 +2141,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: Haraka256Digest
-  - api: org.bouncycastle.crypto.digests.Haraka512Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.Haraka512Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2151,7 +2151,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: Haraka512Digest
-  - api: org.bouncycastle.crypto.digests.HarakaBase#<init>()
+  - api: org.bouncycastle.crypto.digests.HarakaBase#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2161,7 +2161,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: HarakaBase
-  - api: org.bouncycastle.crypto.digests.ISAPDigest#<init>()
+  - api: org.bouncycastle.crypto.digests.ISAPDigest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2171,7 +2171,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: ISAPDigest
-  - api: org.bouncycastle.crypto.digests.Kangaroo$KangarooTwelve#<init>()
+  - api: org.bouncycastle.crypto.digests.Kangaroo$KangarooTwelve#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2181,7 +2181,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: KangarooTwelve
-  - api: org.bouncycastle.crypto.digests.Kangaroo$MarsupilamiFourteen#<init>()
+  - api: org.bouncycastle.crypto.digests.Kangaroo$MarsupilamiFourteen#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2191,7 +2191,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: MarsupilamiFourteen
-  - api: org.bouncycastle.crypto.digests.KeccakDigest#<init>()
+  - api: org.bouncycastle.crypto.digests.KeccakDigest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2201,7 +2201,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: KeccakDigest
-  - api: org.bouncycastle.crypto.digests.MD2Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.MD2Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2211,7 +2211,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: MD2Digest
-  - api: org.bouncycastle.crypto.digests.MD4Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.MD4Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2221,7 +2221,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: MD4Digest
-  - api: org.bouncycastle.crypto.digests.MD5Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.MD5Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2258,7 +2258,7 @@ apis:
               type: DigestContext
               properties:
                 kind: MGF1
-  - api: org.bouncycastle.crypto.digests.NullDigest#<init>()
+  - api: org.bouncycastle.crypto.digests.NullDigest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2268,7 +2268,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: NullDigest
-  - api: org.bouncycastle.crypto.digests.ParallelHash#<init>()
+  - api: org.bouncycastle.crypto.digests.ParallelHash#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2278,7 +2278,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: ParallelHash
-  - api: org.bouncycastle.crypto.digests.PhotonBeetleDigest#<init>()
+  - api: org.bouncycastle.crypto.digests.PhotonBeetleDigest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2288,7 +2288,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: PhotonBeetleDigest
-  - api: org.bouncycastle.crypto.digests.RIPEMD128Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.RIPEMD128Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2298,7 +2298,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: RIPEMD128Digest
-  - api: org.bouncycastle.crypto.digests.RIPEMD160Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.RIPEMD160Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2308,7 +2308,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: RIPEMD160Digest
-  - api: org.bouncycastle.crypto.digests.RIPEMD256Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.RIPEMD256Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2318,7 +2318,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: RIPEMD256Digest
-  - api: org.bouncycastle.crypto.digests.RIPEMD320Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.RIPEMD320Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2328,7 +2328,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: RIPEMD320Digest
-  - api: org.bouncycastle.crypto.digests.SHA1Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.SHA1Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2338,7 +2338,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: SHA1Digest
-  - api: org.bouncycastle.crypto.digests.SHA224Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.SHA224Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2348,7 +2348,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: SHA224Digest
-  - api: org.bouncycastle.crypto.digests.SHA256Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.SHA256Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2358,7 +2358,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: SHA256Digest
-  - api: org.bouncycastle.crypto.digests.SHA384Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.SHA384Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2368,7 +2368,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: SHA384Digest
-  - api: org.bouncycastle.crypto.digests.SHA3Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.SHA3Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2378,7 +2378,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: SHA3Digest
-  - api: org.bouncycastle.crypto.digests.SHA512Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.SHA512Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2388,7 +2388,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: SHA512Digest
-  - api: org.bouncycastle.crypto.digests.SHA512tDigest#<init>()
+  - api: org.bouncycastle.crypto.digests.SHA512tDigest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2426,7 +2426,7 @@ apis:
           config:
             interpretAsUnitType: BIT
         movedUnder: -1
-  - api: org.bouncycastle.crypto.digests.SM3Digest#<init>()
+  - api: org.bouncycastle.crypto.digests.SM3Digest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2469,7 +2469,7 @@ apis:
           factory: DigestSizeFactory
           config:
             interpretAsUnitType: BYTE
-  - api: org.bouncycastle.crypto.digests.SkeinDigest#<init>()
+  - api: org.bouncycastle.crypto.digests.SkeinDigest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2479,7 +2479,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: SkeinDigest
-  - api: org.bouncycastle.crypto.digests.SparkleDigest#<init>()
+  - api: org.bouncycastle.crypto.digests.SparkleDigest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2489,7 +2489,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: SparkleDigest
-  - api: org.bouncycastle.crypto.digests.TigerDigest#<init>()
+  - api: org.bouncycastle.crypto.digests.TigerDigest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2499,7 +2499,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: TigerDigest
-  - api: org.bouncycastle.crypto.digests.TupleHash#<init>()
+  - api: org.bouncycastle.crypto.digests.TupleHash#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2509,7 +2509,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: TupleHash
-  - api: org.bouncycastle.crypto.digests.WhirlpoolDigest#<init>()
+  - api: org.bouncycastle.crypto.digests.WhirlpoolDigest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2519,7 +2519,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: WhirlpoolDigest
-  - api: org.bouncycastle.crypto.digests.XoodyakDigest#<init>()
+  - api: org.bouncycastle.crypto.digests.XoodyakDigest#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -2826,7 +2826,7 @@ apis:
         value: AESLightEngine
     next:
       - "org.bouncycastle.crypto.BlockCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.AESWrapEngine#<init>()
+  - api: org.bouncycastle.crypto.engines.AESWrapEngine#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -2840,7 +2840,7 @@ apis:
         value: AESWrapEngine
     next:
       - "org.bouncycastle.crypto.Wrapper#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.AESWrapPadEngine#<init>()
+  - api: org.bouncycastle.crypto.engines.AESWrapPadEngine#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -2868,7 +2868,7 @@ apis:
         value: ARIAEngine
     next:
       - "org.bouncycastle.crypto.BlockCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.ARIAWrapEngine#<init>()
+  - api: org.bouncycastle.crypto.engines.ARIAWrapEngine#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -2882,7 +2882,7 @@ apis:
         value: ARIAWrapEngine
     next:
       - "org.bouncycastle.crypto.Wrapper#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.ARIAWrapPadEngine#<init>()
+  - api: org.bouncycastle.crypto.engines.ARIAWrapPadEngine#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -2988,7 +2988,7 @@ apis:
         value: CamelliaLightEngine
     next:
       - "org.bouncycastle.crypto.BlockCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.CamelliaWrapEngine#<init>()
+  - api: org.bouncycastle.crypto.engines.CamelliaWrapEngine#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -3002,7 +3002,7 @@ apis:
         value: CamelliaWrapEngine
     next:
       - "org.bouncycastle.crypto.Wrapper#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.ChaCha7539Engine#<init>()
+  - api: org.bouncycastle.crypto.engines.ChaCha7539Engine#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -3016,7 +3016,7 @@ apis:
         value: ChaCha7539Engine
     next:
       - "org.bouncycastle.crypto.StreamCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.ChaChaEngine#<init>()
+  - api: org.bouncycastle.crypto.engines.ChaChaEngine#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -3030,7 +3030,7 @@ apis:
         value: ChaChaEngine
     next:
       - "org.bouncycastle.crypto.StreamCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.CryptoProWrapEngine#<init>()
+  - api: org.bouncycastle.crypto.engines.CryptoProWrapEngine#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -3072,7 +3072,7 @@ apis:
         value: DESedeEngine
     next:
       - "org.bouncycastle.crypto.BlockCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.DESedeWrapEngine#<init>()
+  - api: org.bouncycastle.crypto.engines.DESedeWrapEngine#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -3197,7 +3197,7 @@ apis:
         value: GOST28147Engine
     next:
       - "org.bouncycastle.crypto.BlockCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.GOST28147WrapEngine#<init>()
+  - api: org.bouncycastle.crypto.engines.GOST28147WrapEngine#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -3239,7 +3239,7 @@ apis:
         value: Grain128AEADEngine
     next:
       - "org.bouncycastle.crypto.modes.AEADCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.Grain128Engine#<init>()
+  - api: org.bouncycastle.crypto.engines.Grain128Engine#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -3253,7 +3253,7 @@ apis:
         value: Grain128Engine
     next:
       - "org.bouncycastle.crypto.StreamCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.Grainv1Engine#<init>()
+  - api: org.bouncycastle.crypto.engines.Grainv1Engine#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -3267,7 +3267,7 @@ apis:
         value: Grainv1Engine
     next:
       - "org.bouncycastle.crypto.StreamCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.HC128Engine#<init>()
+  - api: org.bouncycastle.crypto.engines.HC128Engine#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -3281,7 +3281,7 @@ apis:
         value: HC128Engine
     next:
       - "org.bouncycastle.crypto.StreamCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.HC256Engine#<init>()
+  - api: org.bouncycastle.crypto.engines.HC256Engine#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -3414,7 +3414,7 @@ apis:
         link: true
       - index: 2
         type: org.bouncycastle.crypto.generators.EphemeralKeyPairGenerator
-  - api: org.bouncycastle.crypto.engines.ISAACEngine#<init>()
+  - api: org.bouncycastle.crypto.engines.ISAACEngine#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -3578,7 +3578,7 @@ apis:
         value: RC2Engine
     next:
       - "org.bouncycastle.crypto.BlockCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.RC2WrapEngine#<init>()
+  - api: org.bouncycastle.crypto.engines.RC2WrapEngine#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -3592,7 +3592,7 @@ apis:
         value: RC2WrapEngine
     next:
       - "org.bouncycastle.crypto.Wrapper#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.RC4Engine#<init>()
+  - api: org.bouncycastle.crypto.engines.RC4Engine#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -3796,7 +3796,7 @@ apis:
         value: SEEDEngine
     next:
       - "org.bouncycastle.crypto.BlockCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.SEEDWrapEngine#<init>()
+  - api: org.bouncycastle.crypto.engines.SEEDWrapEngine#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -3909,7 +3909,7 @@ apis:
         value: SM4Engine
     next:
       - "org.bouncycastle.crypto.BlockCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.Salsa20Engine#<init>()
+  - api: org.bouncycastle.crypto.engines.Salsa20Engine#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -4051,7 +4051,7 @@ apis:
         value: TwofishEngine
     next:
       - "org.bouncycastle.crypto.BlockCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.VMPCEngine#<init>()
+  - api: org.bouncycastle.crypto.engines.VMPCEngine#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -4065,7 +4065,7 @@ apis:
         value: VMPCEngine
     next:
       - "org.bouncycastle.crypto.StreamCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.VMPCKSA3Engine#<init>()
+  - api: org.bouncycastle.crypto.engines.VMPCKSA3Engine#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -4079,7 +4079,7 @@ apis:
         value: VMPCKSA3Engine
     next:
       - "org.bouncycastle.crypto.StreamCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.XSalsa20Engine#<init>()
+  - api: org.bouncycastle.crypto.engines.XSalsa20Engine#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -4121,7 +4121,7 @@ apis:
         value: XoodyakEngine
     next:
       - "org.bouncycastle.crypto.modes.AEADCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.Zuc128Engine#<init>()
+  - api: org.bouncycastle.crypto.engines.Zuc128Engine#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -4135,7 +4135,7 @@ apis:
         value: Zuc128Engine
     next:
       - "org.bouncycastle.crypto.StreamCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.engines.Zuc256Engine#<init>()
+  - api: org.bouncycastle.crypto.engines.Zuc256Engine#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -4356,7 +4356,7 @@ apis:
       - index: 0
         type: org.bouncycastle.crypto.Digest
         link: true
-  - api: org.bouncycastle.crypto.generators.RSAKeyPairGenerator#<init>()
+  - api: org.bouncycastle.crypto.generators.RSAKeyPairGenerator#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -4555,7 +4555,7 @@ apis:
         link: true
       - index: 2
         type: java.security.SecureRandom
-  - api: org.bouncycastle.crypto.macs.Blake3Mac#<init>()
+  - api: org.bouncycastle.crypto.macs.Blake3Mac#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -4947,7 +4947,7 @@ apis:
         movedUnder: -1
     next:
       - org.bouncycastle.crypto.Mac#init(org.bouncycastle.crypto.CipherParameters)
-  - api: org.bouncycastle.crypto.macs.GOST28147Mac#<init>()
+  - api: org.bouncycastle.crypto.macs.GOST28147Mac#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -5098,7 +5098,7 @@ apis:
         movedUnder: -1
     next:
       - org.bouncycastle.crypto.Mac#init(org.bouncycastle.crypto.CipherParameters)
-  - api: org.bouncycastle.crypto.macs.KMAC#<init>()
+  - api: org.bouncycastle.crypto.macs.KMAC#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -5172,7 +5172,7 @@ apis:
         link: true
     next:
       - org.bouncycastle.crypto.Mac#init(org.bouncycastle.crypto.CipherParameters)
-  - api: org.bouncycastle.crypto.macs.SipHash#<init>()
+  - api: org.bouncycastle.crypto.macs.SipHash#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -5184,7 +5184,7 @@ apis:
         value: SipHash
     next:
       - org.bouncycastle.crypto.Mac#init(org.bouncycastle.crypto.CipherParameters)
-  - api: org.bouncycastle.crypto.macs.SipHash128#<init>()
+  - api: org.bouncycastle.crypto.macs.SipHash128#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -5238,7 +5238,7 @@ apis:
         type: org.bouncycastle.crypto.macs.SkeinMac
     next:
       - org.bouncycastle.crypto.Mac#init(org.bouncycastle.crypto.CipherParameters)
-  - api: org.bouncycastle.crypto.macs.VMPCMac#<init>()
+  - api: org.bouncycastle.crypto.macs.VMPCMac#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -5250,7 +5250,7 @@ apis:
         value: VMPCMac
     next:
       - org.bouncycastle.crypto.Mac#init(org.bouncycastle.crypto.CipherParameters)
-  - api: org.bouncycastle.crypto.macs.Zuc128Mac#<init>()
+  - api: org.bouncycastle.crypto.macs.Zuc128Mac#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -6587,7 +6587,7 @@ apis:
         type: org.bouncycastle.crypto.signers.DSAEncoding
     next:
       - "org.bouncycastle.crypto.Signer#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.signers.DSASigner#<init>()
+  - api: org.bouncycastle.crypto.signers.DSASigner#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -6602,7 +6602,7 @@ apis:
         value: DSASigner
     next:
       - "org.bouncycastle.crypto.DSA#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.signers.DSTU4145Signer#<init>()
+  - api: org.bouncycastle.crypto.signers.DSTU4145Signer#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -6617,7 +6617,7 @@ apis:
         value: DSTU4145Signer
     next:
       - "org.bouncycastle.crypto.DSA#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.signers.ECDSASigner#<init>()
+  - api: org.bouncycastle.crypto.signers.ECDSASigner#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -6632,7 +6632,7 @@ apis:
         value: ECDSASigner
     next:
       - "org.bouncycastle.crypto.DSA#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.signers.ECGOST3410Signer#<init>()
+  - api: org.bouncycastle.crypto.signers.ECGOST3410Signer#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -6647,7 +6647,7 @@ apis:
         value: ECGOST3410Signer
     next:
       - "org.bouncycastle.crypto.DSA#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.signers.ECGOST3410_2012Signer#<init>()
+  - api: org.bouncycastle.crypto.signers.ECGOST3410_2012Signer#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -6662,7 +6662,7 @@ apis:
         value: ECGOST3410_2012Signer
     next:
       - "org.bouncycastle.crypto.DSA#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.signers.ECNRSigner#<init>()
+  - api: org.bouncycastle.crypto.signers.ECNRSigner#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -6677,7 +6677,7 @@ apis:
         value: ECNRSigner
     next:
       - "org.bouncycastle.crypto.DSA#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.signers.Ed25519Signer#<init>()
+  - api: org.bouncycastle.crypto.signers.Ed25519Signer#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -6690,7 +6690,7 @@ apis:
         value: Ed25519Signer
     next:
       - "org.bouncycastle.crypto.Signer#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.signers.Ed25519ctxSigner#<init>()
+  - api: org.bouncycastle.crypto.signers.Ed25519ctxSigner#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -6703,7 +6703,7 @@ apis:
         value: Ed25519ctxSigner
     next:
       - "org.bouncycastle.crypto.Signer#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.signers.Ed25519phSigner#<init>()
+  - api: org.bouncycastle.crypto.signers.Ed25519phSigner#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -6716,7 +6716,7 @@ apis:
         value: Ed25519phSigner
     next:
       - "org.bouncycastle.crypto.Signer#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.signers.Ed448Signer#<init>()
+  - api: org.bouncycastle.crypto.signers.Ed448Signer#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -6729,7 +6729,7 @@ apis:
         value: Ed448Signer
     next:
       - "org.bouncycastle.crypto.Signer#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.signers.Ed448phSigner#<init>()
+  - api: org.bouncycastle.crypto.signers.Ed448phSigner#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -6742,7 +6742,7 @@ apis:
         value: Ed448phSigner
     next:
       - "org.bouncycastle.crypto.Signer#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.crypto.signers.GOST3410Signer#<init>()
+  - api: org.bouncycastle.crypto.signers.GOST3410Signer#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -7358,7 +7358,7 @@ apis:
         link: true
     next:
       - "org.bouncycastle.crypto.Signer#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.pqc.crypto.bike.BIKEKEMExtractor#<init>()
+  - api: org.bouncycastle.pqc.crypto.bike.BIKEKEMExtractor#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -7389,7 +7389,7 @@ apis:
         type: java.security.SecureRandom
     next:
       - org.bouncycastle.crypto.EncapsulatedSecretGenerator#generateEncapsulated(org.bouncycastle.crypto.params.AsymmetricKeyParameter)
-  - api: org.bouncycastle.pqc.crypto.cmce.CMCEKEMExtractor#<init>()
+  - api: org.bouncycastle.pqc.crypto.cmce.CMCEKEMExtractor#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -7420,7 +7420,7 @@ apis:
         type: java.security.SecureRandom
     next:
       - org.bouncycastle.crypto.EncapsulatedSecretGenerator#generateEncapsulated(org.bouncycastle.crypto.params.AsymmetricKeyParameter)
-  - api: org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumSigner#<init>()
+  - api: org.bouncycastle.pqc.crypto.crystals.dilithium.DilithiumSigner#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -7435,7 +7435,7 @@ apis:
         value: DilithiumSigner
     next:
       - "org.bouncycastle.crypto.MessageSigner#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.pqc.crypto.crystals.kyber.KyberKEMExtractor#<init>()
+  - api: org.bouncycastle.pqc.crypto.crystals.kyber.KyberKEMExtractor#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -7466,7 +7466,7 @@ apis:
         type: java.security.SecureRandom
     next:
       - org.bouncycastle.crypto.EncapsulatedSecretGenerator#generateEncapsulated(org.bouncycastle.crypto.params.AsymmetricKeyParameter)
-  - api: org.bouncycastle.pqc.crypto.falcon.FalconSigner#<init>()
+  - api: org.bouncycastle.pqc.crypto.falcon.FalconSigner#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -7481,7 +7481,7 @@ apis:
         value: FalconSigner
     next:
       - "org.bouncycastle.crypto.MessageSigner#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.pqc.crypto.frodo.FrodoKEMExtractor#<init>()
+  - api: org.bouncycastle.pqc.crypto.frodo.FrodoKEMExtractor#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -7512,7 +7512,7 @@ apis:
         type: java.security.SecureRandom
     next:
       - org.bouncycastle.crypto.EncapsulatedSecretGenerator#generateEncapsulated(org.bouncycastle.crypto.params.AsymmetricKeyParameter)
-  - api: org.bouncycastle.pqc.crypto.gemss.GeMSSSigner#<init>()
+  - api: org.bouncycastle.pqc.crypto.gemss.GeMSSSigner#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -7527,7 +7527,7 @@ apis:
         value: GeMSSSigner
     next:
       - "org.bouncycastle.crypto.MessageSigner#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.pqc.crypto.hqc.HQCKEMExtractor#<init>()
+  - api: org.bouncycastle.pqc.crypto.hqc.HQCKEMExtractor#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -7558,7 +7558,7 @@ apis:
         type: java.security.SecureRandom
     next:
       - org.bouncycastle.crypto.EncapsulatedSecretGenerator#generateEncapsulated(org.bouncycastle.crypto.params.AsymmetricKeyParameter)
-  - api: org.bouncycastle.pqc.crypto.lms.HSSSigner#<init>()
+  - api: org.bouncycastle.pqc.crypto.lms.HSSSigner#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -7573,7 +7573,7 @@ apis:
         value: HSSSigner
     next:
       - "org.bouncycastle.crypto.MessageSigner#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.pqc.crypto.lms.LMSContext#<init>()
+  - api: org.bouncycastle.pqc.crypto.lms.LMSContext#<init>(...)
     subtypes: false
     library: Bc
     context:
@@ -7583,7 +7583,7 @@ apis:
       factory: ValueActionFactory
       config:
         value: LMSContext
-  - api: org.bouncycastle.pqc.crypto.lms.LMSSigner#<init>()
+  - api: org.bouncycastle.pqc.crypto.lms.LMSSigner#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -7936,7 +7936,7 @@ apis:
         type: "byte[]"
       - index: 2
         type: "byte[]"
-  - api: org.bouncycastle.pqc.crypto.ntru.NTRUKEMExtractor#<init>()
+  - api: org.bouncycastle.pqc.crypto.ntru.NTRUKEMExtractor#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -7967,7 +7967,7 @@ apis:
         type: java.security.SecureRandom
     next:
       - org.bouncycastle.crypto.EncapsulatedSecretGenerator#generateEncapsulated(org.bouncycastle.crypto.params.AsymmetricKeyParameter)
-  - api: org.bouncycastle.pqc.crypto.ntruprime.NTRULPRimeKEMExtractor#<init>()
+  - api: org.bouncycastle.pqc.crypto.ntruprime.NTRULPRimeKEMExtractor#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -7998,7 +7998,7 @@ apis:
         type: java.security.SecureRandom
     next:
       - org.bouncycastle.crypto.EncapsulatedSecretGenerator#generateEncapsulated(org.bouncycastle.crypto.params.AsymmetricKeyParameter)
-  - api: org.bouncycastle.pqc.crypto.ntruprime.SNTRUPrimeKEMExtractor#<init>()
+  - api: org.bouncycastle.pqc.crypto.ntruprime.SNTRUPrimeKEMExtractor#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -8029,7 +8029,7 @@ apis:
         type: java.security.SecureRandom
     next:
       - org.bouncycastle.crypto.EncapsulatedSecretGenerator#generateEncapsulated(org.bouncycastle.crypto.params.AsymmetricKeyParameter)
-  - api: org.bouncycastle.pqc.crypto.picnic.PicnicSigner#<init>()
+  - api: org.bouncycastle.pqc.crypto.picnic.PicnicSigner#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -8044,7 +8044,7 @@ apis:
         value: PicnicSigner
     next:
       - "org.bouncycastle.crypto.MessageSigner#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.pqc.crypto.rainbow.RainbowSigner#<init>()
+  - api: org.bouncycastle.pqc.crypto.rainbow.RainbowSigner#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -8059,7 +8059,7 @@ apis:
         value: RainbowSigner
     next:
       - "org.bouncycastle.crypto.MessageSigner#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.pqc.crypto.saber.SABERKEMExtractor#<init>()
+  - api: org.bouncycastle.pqc.crypto.saber.SABERKEMExtractor#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -8179,7 +8179,7 @@ apis:
                 kind: ASSET_COLLECTION
     next:
       - "org.bouncycastle.crypto.MessageSigner#init(boolean, org.bouncycastle.crypto.CipherParameters)"
-  - api: org.bouncycastle.pqc.crypto.sphincsplus.SPHINCSPlusSigner#<init>()
+  - api: org.bouncycastle.pqc.crypto.sphincsplus.SPHINCSPlusSigner#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -8370,7 +8370,7 @@ apis:
       - index: 1
         type: org.bouncycastle.pqc.legacy.crypto.gmss.GMSSParameters
         link: true
-  - api: org.bouncycastle.pqc.legacy.crypto.gmss.GMSSSigner#<init>()
+  - api: org.bouncycastle.pqc.legacy.crypto.gmss.GMSSSigner#<init>(...)
     subtypes: true
     library: Bc
     context:
@@ -8754,7 +8754,7 @@ apis:
       - index: 1
         type: org.bouncycastle.pqc.legacy.crypto.ntru.NTRUSigningParameters
         link: true
-  - api: org.bouncycastle.pqc.legacy.crypto.qtesla.QTESLASigner#<init>()
+  - api: org.bouncycastle.pqc.legacy.crypto.qtesla.QTESLASigner#<init>(...)
     subtypes: true
     library: Bc
     context:

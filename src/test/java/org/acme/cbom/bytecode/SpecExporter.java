@@ -3,6 +3,7 @@ package org.acme.cbom.bytecode;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
+import com.ibm.engine.detection.IType;
 import com.ibm.engine.detection.MethodMatcher;
 import com.ibm.engine.model.IAction;
 import com.ibm.engine.model.context.DetectionContext;
@@ -29,6 +30,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.function.Predicate;
 import org.acme.cbom.BuildInfo;
 import org.acme.cbom.spec.ApiSpecs;
 import org.acme.cbom.spec.ApiSpecs.ApiSpec;
@@ -264,10 +266,14 @@ final class SpecExporter {
                 .build());
     }
 
-    /** The API methods a rule matches: {@code owner#name(parameter types)}. */
+    /**
+     * The API methods a rule matches: {@code owner#name(parameter types)}, or {@code
+     * owner#name(...)} for a matcher built without parameter types, which accepts any.
+     */
     private static List<String> apis(IDetectionRule<Loc> rule) {
         final MethodMatcher<Loc> m = RuleTable.matcher(rule);
-        final String params = "(" + String.join(", ", m.getParameterTypesSerializable()) + ")";
+        final String params = anyParameters(m) ? "(" + ApiSpecs.ANY_PARAMETERS + ")"
+                : "(" + String.join(", ", m.getParameterTypesSerializable()) + ")";
         final List<String> result = new ArrayList<>();
         for (String owner : m.getInvokedObjectTypeStringsSerializable()) {
             for (String name : m.getMethodNamesSerializable()) {
@@ -275,6 +281,26 @@ final class SpecExporter {
             }
         }
         return result;
+    }
+
+    /**
+     * Whether a matcher accepts any parameters: built without parameter types, its parameter
+     * predicate accepts any list, while one built with an empty list only accepts none. Both have
+     * no serialized parameter types, so the predicate is tested.
+     */
+    @SuppressWarnings("unchecked")
+    static boolean anyParameters(MethodMatcher<Loc> m) {
+        if (!m.getParameterTypesSerializable().isEmpty()) {
+            return false;
+        }
+        try {
+            final Field f = MethodMatcher.class.getDeclaredField("parameterTypes");
+            f.setAccessible(true);
+            final IType unknown = type -> false;
+            return ((Predicate<List<IType>>) f.get(m)).test(List.of(unknown));
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Can't read MethodMatcher.parameterTypes", e);
+        }
     }
 
     private static Base base(IDetectionRule<Loc> rule) {
@@ -332,7 +358,7 @@ final class SpecExporter {
         return new Factory(type.getSimpleName(), config, result);
     }
 
-    private static Context context(IDetectionContext c) {
+    static Context context(IDetectionContext c) {
         String kind = null;
         if (c instanceof ISupportKind<?> sk && sk.kind() != null) {
             kind = String.valueOf(sk.kind());

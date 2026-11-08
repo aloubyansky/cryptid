@@ -2,6 +2,9 @@ package org.acme.cbom.spec;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +28,31 @@ public record ApiSpecs(int specVersion, Source source, List<ApiSpec> apis) {
     /** The current format version. */
     public static final int VERSION = 1;
 
+    /** In an API method's parameter list, {@code owner#name(...)}: any parameter types. */
+    public static final String ANY_PARAMETERS = "...";
+
+    /** The classpath resource holding the specs. */
+    public static final String RESOURCE = "/crypto-api-specs.yaml";
+
+    /**
+     * Reads the specs shipped with the tool.
+     *
+     * @return the specs
+     * @throws IOException if the resource is missing or can't be parsed
+     */
+    public static ApiSpecs load() throws IOException {
+        try (InputStream in = ApiSpecs.class.getResourceAsStream(RESOURCE)) {
+            if (in == null) {
+                throw new IOException("Missing resource " + RESOURCE);
+            }
+            final ApiSpecs specs = new YAMLMapper().readValue(in, ApiSpecs.class);
+            if (specs.specVersion() != VERSION) {
+                throw new IOException(RESOURCE + " has format version " + specs.specVersion() + ", expected " + VERSION);
+            }
+            return specs;
+        }
+    }
+
     /**
      * Where specs come from.
      *
@@ -38,7 +66,8 @@ public record ApiSpecs(int specVersion, Source source, List<ApiSpec> apis) {
     /**
      * What calls to one API method contribute.
      *
-     * @param api the method: {@code owner#name(parameter types)}, with binary class names
+     * @param api the method: {@code owner#name(parameter types)}, with binary class names, or
+     *     {@code owner#name(...)} for a method with any parameter types
      * @param subtypes whether calls on subtypes of the owner match too
      * @param library the API family, e.g. {@code Jca}, {@code Bc}, {@code SSL}
      * @param context the kind of crypto object, and the default role of what the call contributes
