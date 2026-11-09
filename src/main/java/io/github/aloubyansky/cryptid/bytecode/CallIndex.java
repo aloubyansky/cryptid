@@ -86,6 +86,8 @@ public final class CallIndex {
     private Map<String, List<Site>> byDeclaring;
 
     /**
+     * Creates an empty index.
+     *
      * @param analyzedClasses internal names of all classes of all artifacts; only calls to these
      *     are indexed
      */
@@ -143,7 +145,13 @@ public final class CallIndex {
         }));
     }
 
-    /** {@code String} and {@code int}: the values detection rules turn into names and sizes. */
+    /**
+     * Whether arguments of a type are indexed: {@code String} and {@code int}, the values specs
+     * turn into names and sizes.
+     *
+     * @param type the parameter type
+     * @return {@code true} for {@code String} and {@code int}
+     */
     static boolean isResolvableType(ClassDesc type) {
         final String d = type.descriptorString();
         return d.equals("Ljava/lang/String;") || d.equals("I");

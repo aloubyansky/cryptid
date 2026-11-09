@@ -18,8 +18,8 @@ import java.util.stream.Stream;
 
 /**
  * Class hierarchy for rule matching: analyzed classes, plus library and JDK classes read on demand
- * from the class path and the runtime image. Provides {@link IType}s with sonar-java's naming,
- * e.g. {@code javax.crypto.Cipher}, {@code byte[]}, {@code int}.
+ * from JARs and the runtime image, for matching specs that accept subtypes. Names follow
+ * sonar-java's naming, e.g. {@code javax.crypto.Cipher}, {@code byte[]}, {@code int}.
  */
 public final class Types {
 
@@ -53,7 +53,12 @@ public final class Types {
         this.jars = jars;
     }
 
-    /** Makes the classes under a directory known to the hierarchy. */
+    /**
+     * Makes the classes under a directory known to the hierarchy, e.g. compiled test fixtures.
+     *
+     * @param dir the root of a class file tree
+     * @throws IOException if the directory can't be read
+     */
     public void addClasses(Path dir) throws IOException {
         try (Stream<Path> s = Files.walk(dir)) {
             for (Path p : s.filter(f -> f.toString().endsWith(".class")).toList()) {
@@ -81,7 +86,13 @@ public final class Types {
         });
     }
 
-    /** All supertypes of a class, including itself, as internal names. */
+    /**
+     * All supertypes of a class: superclasses and interfaces, transitively.
+     *
+     * @param internalName the class's internal name
+     * @return the internal names of the class and its supertypes; a class that can't be read is
+     *     included, without its supertypes
+     */
     Set<String> supertypes(String internalName) {
         final Set<String> result = new HashSet<>();
         final Deque<String> todo = new ArrayDeque<>(List.of(internalName));

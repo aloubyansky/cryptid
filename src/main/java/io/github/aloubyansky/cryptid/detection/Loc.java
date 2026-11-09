@@ -17,6 +17,12 @@ import org.sonar.plugins.java.api.tree.Tree;
  */
 public record Loc(String file, int line, String signature, String methodName) implements Tree {
 
+    /**
+     * The location of a call site.
+     *
+     * @param cs the call site
+     * @return its source file, line and called method
+     */
     public static Loc of(CallSite cs) {
         return new Loc(cs.sourceFile(), cs.line(), cs.signature(), cs.name());
     }

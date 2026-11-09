@@ -153,7 +153,12 @@ public final class CryptoApiMatcher {
         return true;
     }
 
-    /** Parameter types of a method descriptor as in the specs, e.g. {@code int, byte[], java.lang.String}. */
+    /**
+     * The parameter types of a method descriptor, written as in the specs.
+     *
+     * @param descriptor the descriptor, e.g. {@code (I[BLjava/lang/String;)V}
+     * @return e.g. {@code int, byte[], java.lang.String}
+     */
     static String parameters(String descriptor) {
         final StringBuilder sb = new StringBuilder();
         for (ClassDesc p : MethodTypeDesc.ofDescriptor(descriptor).parameterList()) {

@@ -164,7 +164,13 @@ public final class BytecodeScanner {
     /**
      * Scans a JAR from the candidate methods {@link #index} kept for it, without analyzing it again.
      *
+     * @param jar the JAR to scan
+     * @param locationPrefix prepended to source file paths in occurrence locations
+     * @param classpath JARs to resolve the scanned classes' supertypes from
+     * @param jarCache the shared JAR cache
+     * @param callIndex resolves values passed in from callers, or {@code null}
      * @param candidates the JAR's candidate methods from {@link #index}
+     * @return the CBOM of the JAR with statistics
      * @see #scan(Path, String, List, JarCache, CallIndex)
      */
     public Result scan(Path jar, String locationPrefix, List<Path> classpath, JarCache jarCache, CallIndex callIndex,

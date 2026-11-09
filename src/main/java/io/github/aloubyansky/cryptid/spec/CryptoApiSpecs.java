@@ -104,9 +104,13 @@ public record CryptoApiSpecs(int specVersion, Source source, List<ApiSpec> apis,
      * @param returnsReceiver whether the method returns the object it is called on, as fluent
      *     setters do, e.g. a builder's {@code setProvider}: calls on the result are calls on that
      *     object
+     * @param model the name of a model node of cryptid's own the call's action is, instead of
+     *     the node sonar-cryptography's translators would make of it, for algorithms they don't
+     *     model, e.g. {@code Argon2}
      */
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
-    @JsonPropertyOrder({"api", "subtypes", "library", "context", "root", "action", "args", "next", "nextRoles", "returnsReceiver"})
+    @JsonPropertyOrder({"api", "subtypes", "library", "context", "root", "action", "args", "next", "nextRoles", "returnsReceiver",
+            "model"})
     public record ApiSpec(
             String api,
             boolean subtypes,
@@ -117,7 +121,8 @@ public record CryptoApiSpecs(int specVersion, Source source, List<ApiSpec> apis,
             List<Arg> args,
             List<String> next,
             List<Role> nextRoles,
-            @JsonInclude(JsonInclude.Include.NON_DEFAULT) boolean returnsReceiver) {
+            @JsonInclude(JsonInclude.Include.NON_DEFAULT) boolean returnsReceiver,
+            String model) {
 
         /** Normalizes missing lists, which the YAML leaves out when empty, to empty lists. */
         public ApiSpec {
@@ -127,13 +132,23 @@ public record CryptoApiSpecs(int specVersion, Source source, List<ApiSpec> apis,
         }
 
         /**
-         * A spec of a method that doesn't return its receiver.
+         * A spec of a method that doesn't return its receiver, modeled by sonar-cryptography's
+         * translators, as every spec exported from its rules is.
          *
-         * @see #ApiSpec(String, boolean, String, Context, boolean, Factory, List, List, List, boolean)
+         * @param api the method pattern
+         * @param subtypes whether calls on subtypes of the owner match too
+         * @param library the API family
+         * @param context the kind of crypto object
+         * @param root whether a call reports a finding on its own
+         * @param action what the call itself states, or {@code null}
+         * @param args what the arguments contribute
+         * @param next API methods called on the created object that contribute to it
+         * @param nextRoles roles of those calls that differ from their own context
+         * @see #ApiSpec(String, boolean, String, Context, boolean, Factory, List, List, List, boolean, String)
          */
         public ApiSpec(String api, boolean subtypes, String library, Context context, boolean root, Factory action,
                 List<Arg> args, List<String> next, List<Role> nextRoles) {
-            this(api, subtypes, library, context, root, action, args, next, nextRoles, false);
+            this(api, subtypes, library, context, root, action, args, next, nextRoles, false, null);
         }
     }
 

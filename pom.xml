@@ -233,6 +233,20 @@
                 <configuration>
                     <parameters>true</parameters>
                 </configuration>
+                <executions>
+                    <execution>
+                        <!-- javadoc checks for the main sources, down to package-private members: broken
+                             references, HTML and syntax fail the build; missing comments are warnings.
+                             doclint can't exempt default constructors, which are left implicit, so
+                             their classes are reported as missing a comment. -->
+                        <id>default-compile</id>
+                        <configuration>
+                            <compilerArgs>
+                                <arg>-Xdoclint:all/package</arg>
+                            </compilerArgs>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <artifactId>maven-surefire-plugin</artifactId>

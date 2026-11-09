@@ -46,18 +46,43 @@ public record AVal(Set<Object> consts, boolean anyConst, long params, Set<Intege
     static final AVal UNKNOWN = new AVal(Set.of(), false, 0, Set.of(), false);
     static final AVal UNKNOWN_WIDE = new AVal(Set.of(), false, 0, Set.of(), true);
 
+    /**
+     * A value nothing is known about.
+     *
+     * @param size the number of stack slots it takes
+     * @return the unknown value of that size
+     */
     static AVal unknown(int size) {
         return size == 2 ? UNKNOWN_WIDE : UNKNOWN;
     }
 
+    /**
+     * A constant.
+     *
+     * @param value the constant, e.g. a {@code String} or an {@code Integer}
+     * @param size the number of stack slots it takes
+     * @return the value
+     */
     static AVal constant(Object value, int size) {
         return new AVal(Set.of(value), false, 0, Set.of(), size == 2);
     }
 
+    /**
+     * One of several constants.
+     *
+     * @param values the constants
+     * @return the value, taking one stack slot
+     */
     static AVal constants(Set<Object> values) {
         return new AVal(ordered(values), false, 0, Set.of(), false);
     }
 
+    /**
+     * The object a site creates.
+     *
+     * @param id the id of the creating site: a {@code new}, or a call returning an object
+     * @return the value referring to it
+     */
     static AVal origin(int id) {
         return new AVal(Set.of(), false, 0, Set.of(id), false);
     }
@@ -67,16 +92,28 @@ public record AVal(Set<Object> consts, boolean anyConst, long params, Set<Intege
      *
      * @param index the parameter index, not the local variable slot
      * @param size the number of slots the parameter takes
+     * @return the value, passed through from the parameter; parameters beyond {@link #MAX_PARAMS}
+     *     aren't tracked
      */
     static AVal param(int index, int size) {
         return new AVal(Set.of(), false, index < MAX_PARAMS ? 1L << index : 0, Set.of(), size == 2);
     }
 
+    /**
+     * This value, taking the given number of stack slots.
+     *
+     * @param size 1, or 2 for {@code long} and {@code double}
+     * @return this value if its size is already that, otherwise a copy
+     */
     AVal withSize(int size) {
         return (size == 2) == wide ? this : new AVal(consts, anyConst, params, origins, size == 2);
     }
 
-    /** The single constant value, or {@code null} if there are none or several. */
+    /**
+     * The constant, if the value is exactly one.
+     *
+     * @return the single constant value, or {@code null} if there are none or several
+     */
     Object single() {
         return consts.size() == 1 ? consts.iterator().next() : null;
     }
@@ -127,6 +164,7 @@ public record AVal(Set<Object> consts, boolean anyConst, long params, Set<Intege
      * An unmodifiable copy of a set that iterates in ascending {@link #ORDER}, independent of the
      * order elements were added in and of the JVM.
      *
+     * @param <E> the element type
      * @param set the elements
      * @return the ordered copy
      */

@@ -2,7 +2,9 @@ package io.github.aloubyansky.cryptid.detection;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.aloubyansky.cryptid.model.OwnModels;
 import io.github.aloubyansky.cryptid.reference.RuleSpecExporter;
 import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs.ApiSpec;
 import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs.Arg;
@@ -39,6 +41,10 @@ class SpecResourcesTest {
                 roles(arg.roles(), contexts);
             }
             roles(spec.nextRoles(), contexts);
+            if (spec.model() != null) {
+                assertTrue(OwnModels.names().contains(spec.model()), spec.api() + " names the unknown model " + spec.model());
+                assertNotNull(spec.action(), spec.api() + ": a model node is made of the call's action");
+            }
         }
         for (Context c : contexts) {
             assertEquals(c, RuleSpecExporter.context(CryptoContexts.context(c)));

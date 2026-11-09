@@ -65,6 +65,8 @@ public final class CryptoEventDetector {
     private Map<Point, Object> chosen = Map.of();
 
     /**
+     * Creates a detector for one JAR.
+     *
      * @param matcher the spec matcher
      * @param types the class hierarchy
      * @param locationPrefix prepended to source file paths, e.g. the artifact path {@code g/a/v};
@@ -297,7 +299,15 @@ public final class CryptoEventDetector {
         return locationPrefix + cs.sourceFile();
     }
 
-    /** The linked object's context: the first role of the link that applies, else its API's. */
+    /**
+     * The context a linked object plays its role in.
+     *
+     * @param roles the roles of the link: the linking argument's or the next calls'
+     * @param parent the context of the event linking it
+     * @param linked the spec of the API that created the linked object
+     * @return the first role that applies under the parent's context and to the linked API, else
+     *     the linked API's own context
+     */
     static Context role(List<Role> roles, Context parent, ApiSpec linked) {
         for (Role r : roles) {
             if ((r.when() == null || r.when().equals(parent)) && (r.api() == null || r.api().equals(linked.api()))) {

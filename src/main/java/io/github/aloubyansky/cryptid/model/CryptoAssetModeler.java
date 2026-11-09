@@ -48,6 +48,12 @@ public final class CryptoAssetModeler {
     private final Map<String, IContextTranslation<Loc>> translators = new HashMap<>();
     private final List<IReorganizerRule> reorganizerRules;
 
+    /**
+     * Loads sonar-cryptography's Java context translators and reorganizer rules. A modeler isn't
+     * thread-safe; use one per thread.
+     *
+     * @throws ReflectiveOperationException if a translator or the reorganizer rules can't be loaded
+     */
     @SuppressWarnings("unchecked")
     public CryptoAssetModeler() throws ReflectiveOperationException {
         // context type -> translator, in the order of JavaTranslator; class names are compile-time
@@ -132,7 +138,12 @@ public final class CryptoAssetModeler {
         return node.getChildren().values().stream().anyMatch(c -> hasKind(c, kinds));
     }
 
-    /** Reorganizes and enriches assembled nodes. */
+    /**
+     * Reorganizes and enriches assembled nodes, as sonar-cryptography does after translation.
+     *
+     * @param nodes the assembled nodes
+     * @return the final nodes; unmodifiable
+     */
     List<INode> finish(List<INode> nodes) {
         final List<INode> reorganized = new Reorganizer(reorganizerRules).reorganize(nodes);
         return List.copyOf(Enricher.enrich(reorganized));
@@ -152,8 +163,18 @@ public final class CryptoAssetModeler {
         if (t == null) {
             return Optional.empty();
         }
-        final Loc loc = value.getLocation();
-        return t.translate(library, value, context,
-                new DetectionLocation(file, loc.line(), 0, List.of(loc.signature(), loc.methodName()), library));
+        return t.translate(library, value, context, location(library, value.getLocation(), file));
+    }
+
+    /**
+     * Where a value is, as sonar-cryptography's model takes it.
+     *
+     * @param library the event's library
+     * @param loc the value's call site
+     * @param file the source file the node is located in, with the artifact path
+     * @return the location, with the called method as keywords and no column
+     */
+    static DetectionLocation location(IBundle library, Loc loc, String file) {
+        return new DetectionLocation(file, loc.line(), 0, List.of(loc.signature(), loc.methodName()), library);
     }
 }

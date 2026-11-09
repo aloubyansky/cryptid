@@ -4302,6 +4302,20 @@ apis:
         value: Zuc256Engine
     next:
       - "org.bouncycastle.crypto.StreamCipher#init(boolean, org.bouncycastle.crypto.CipherParameters)"
+  - api: org.bouncycastle.crypto.generators.Argon2BytesGenerator#<init>()
+    subtypes: true
+    library: Bc
+    context:
+      type: KeyContext
+      kind: NONE
+      properties:
+        kind: KDF
+    root: true
+    action:
+      factory: ValueActionFactory
+      config:
+        value: Argon2BytesGenerator
+    model: Argon2
   - api: org.bouncycastle.crypto.generators.HKDFBytesGenerator#<init>(org.bouncycastle.crypto.Digest)
     subtypes: true
     library: Bc

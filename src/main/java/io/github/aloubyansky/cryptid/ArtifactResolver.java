@@ -15,6 +15,7 @@ public class ArtifactResolver {
 
     private static final Logger log = Logger.getLogger(ArtifactResolver.class);
 
+    /** Resolves artifacts from the configured Maven repositories. */
     @Inject MavenArtifactResolver resolver;
 
     /**

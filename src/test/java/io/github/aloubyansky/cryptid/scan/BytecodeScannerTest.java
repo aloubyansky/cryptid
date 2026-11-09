@@ -25,6 +25,7 @@ import javax.tools.ToolProvider;
 import org.cyclonedx.model.Bom;
 import org.cyclonedx.model.Component;
 import org.cyclonedx.model.component.crypto.enums.CryptoFunction;
+import org.cyclonedx.model.component.crypto.enums.Primitive;
 import org.cyclonedx.model.component.evidence.Occurrence;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -321,6 +322,40 @@ class BytecodeScannerTest {
                     .findFirst().orElseThrow(() -> new AssertionError(names(appBom)));
             assertEquals(List.of(CryptoFunction.SIGN), rsa.getCryptoProperties().getAlgorithmProperties().getCryptoFunctions());
         }
+    }
+
+    private static final String ARGON2 = """
+            package org.acme.hash;
+
+            import org.bouncycastle.crypto.generators.Argon2BytesGenerator;
+            import org.bouncycastle.crypto.params.Argon2Parameters;
+
+            public class Hasher {
+                public byte[] hash(char[] password, byte[] salt) {
+                    Argon2Parameters parameters = new Argon2Parameters.Builder(Argon2Parameters.ARGON2_id)
+                            .withSalt(salt).withIterations(3).withMemoryAsKB(65536).build();
+                    Argon2BytesGenerator generator = new Argon2BytesGenerator();
+                    generator.init(parameters);
+                    byte[] result = new byte[32];
+                    generator.generateBytes(password, result);
+                    return result;
+                }
+            }
+            """;
+
+    /** Argon2 has no rule upstream and no model class; it is a password-based KDF of cryptid's own. */
+    @Test
+    void detectsArgon2() throws Exception {
+        final Path jar = compile("argon2", "org/acme/hash/Hasher.java", ARGON2, Path.of(System.getProperty("java.class.path")));
+        final Bom bom;
+        try (JarCache jars = new JarCache()) {
+            bom = new BytecodeScanner().scan(jar, "org.acme/hash/1.0", List.of(), jars, null).bom();
+        }
+        final Component argon2 = (bom.getComponents() == null ? List.<Component>of() : bom.getComponents()).stream()
+                .filter(c -> c.getName().equals("Argon2")).findFirst()
+                .orElseThrow(() -> new AssertionError(bom.getComponents() == null ? "no components" : names(bom).toString()));
+        assertEquals(Primitive.KDF, argon2.getCryptoProperties().getAlgorithmProperties().getPrimitive());
+        assertEquals(10, argon2.getEvidence().getOccurrences().get(0).getLine());
     }
 
     private static final String WRAPPER = """

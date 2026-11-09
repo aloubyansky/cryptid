@@ -47,12 +47,26 @@ final class AssetAssembler {
     /** Translates one action or value into a node, given the event's library and context. */
     @FunctionalInterface
     interface ValueTranslator {
+        /**
+         * Translates an action or value.
+         *
+         * @param library the event's library
+         * @param value the action or value
+         * @param context the event's context, which chooses the translator
+         * @param file the source file the node is located in
+         * @return the node, or empty if the translator makes none of it
+         */
         Optional<INode> translate(IBundle library, IValue<Loc> value, IDetectionContext context, String file);
     }
 
     private final ValueTranslator translator;
     private final List<INode> alternatives = new ArrayList<>();
 
+    /**
+     * Creates an assembler for one event tree.
+     *
+     * @param translator translates each action and value with its context's translator
+     */
     AssetAssembler(ValueTranslator translator) {
         this.translator = translator;
     }
@@ -75,7 +89,9 @@ final class AssetAssembler {
     /** An event's own nodes by argument index, {@code -1} for its action. */
     private Map<Integer, List<INode>> own(CryptoEvent d) {
         final Map<Integer, List<INode>> nodes = new TreeMap<>();
-        d.action().ifPresent(a -> translator.translate(d.library(), a, d.detectionContext(), d.file())
+        d.action().ifPresent(a -> (d.model().isPresent()
+                        ? OwnModels.create(d.model().get(), CryptoAssetModeler.location(d.library(), a.getLocation(), d.file()))
+                        : translator.translate(d.library(), a, d.detectionContext(), d.file()))
                 .ifPresent(n -> nodes.computeIfAbsent(-1, k -> new ArrayList<>()).add(n)));
         d.values().forEach((index, values) -> {
             for (IValue<Loc> v : values) {

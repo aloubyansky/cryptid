@@ -85,20 +85,41 @@ public final class CryptoObjectGraph {
         /** No call followed. */
         public static final Path ROOT = new Path(List.of());
 
+        /**
+         * Follows a call into its callee.
+         *
+         * @param cs the call
+         * @return this path with the call appended
+         */
         Path enter(CallSite cs) {
             final List<CallSite> f = new ArrayList<>(frames);
             f.add(cs);
             return new Path(List.copyOf(f));
         }
 
+        /**
+         * The innermost call followed.
+         *
+         * @return the last call site; the path must not be the root
+         */
         CallSite top() {
             return frames.get(frames.size() - 1);
         }
 
+        /**
+         * Returns from the innermost call followed.
+         *
+         * @return this path without its last call site; the path must not be the root
+         */
         Path leave() {
             return new Path(frames.subList(0, frames.size() - 1));
         }
 
+        /**
+         * Whether no call was followed.
+         *
+         * @return {@code true} for the method of the call being resolved
+         */
         boolean isRoot() {
             return frames.isEmpty();
         }
@@ -225,17 +246,30 @@ public final class CryptoObjectGraph {
         return new CryptoObjectGraph(methods, matcher, types);
     }
 
-    /** All calls to specified APIs, by method and then in bytecode order. */
+    /**
+     * All calls to specified APIs.
+     *
+     * @return the calls, by method and then in bytecode order; a call matching several specs once
+     *     per spec
+     */
     public List<CryptoApiCall> calls() {
         return Collections.unmodifiableList(calls);
     }
 
-    /** The calls that report findings on their own, by method and then in bytecode order. */
+    /**
+     * The calls that report findings on their own.
+     *
+     * @return the calls to root APIs, by method and then in bytecode order
+     */
     public List<CryptoApiCall> roots() {
         return calls.stream().filter(c -> c.spec().root()).toList();
     }
 
-    /** The objects created by, or acted on by, calls to specified APIs, by method. */
+    /**
+     * The objects created by, or acted on by, calls to specified APIs.
+     *
+     * @return the objects, by method and then by origin
+     */
     public Collection<CryptoObject> objects() {
         final List<CryptoObject> result = new ArrayList<>();
         objects.values().forEach(m -> result.addAll(m.values()));

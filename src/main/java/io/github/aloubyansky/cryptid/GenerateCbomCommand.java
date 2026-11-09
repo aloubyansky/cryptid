@@ -28,6 +28,13 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 
+/**
+ * The {@code cryptid} command: reads a CycloneDX SBOM, resolves the JARs of its Maven components,
+ * analyzes their bytecode in two phases (an index of calls across all JARs, then detection per
+ * JAR, both in parallel), and writes one CBOM with the crypto assets found, linked to the
+ * components whose JARs they occur in. Per-artifact results are kept in the work directory and
+ * reused by later runs unless {@code --rescan} is given.
+ */
 @TopCommand
 @Command(
         name = "cryptid",
@@ -39,6 +46,7 @@ public class GenerateCbomCommand implements Callable<Integer> {
 
     private static final Logger log = Logger.getLogger(GenerateCbomCommand.class);
 
+    /** Which JARs a component's classes' supertypes are resolved from, for specs matching subtypes. */
     enum ClasspathMode {
         /** the component's JAR and its transitive dependencies from the SBOM graph */
         deps,
@@ -48,15 +56,18 @@ public class GenerateCbomCommand implements Callable<Integer> {
         none
     }
 
+    /** The input SBOM. */
     @Parameters(index = "0", paramLabel = "SBOM", description = "Input CycloneDX SBOM (JSON or XML)")
     Path sbomFile;
 
+    /** Where the CBOM is written. */
     @Option(
             names = {"-o", "--output"},
             defaultValue = "cbom.json",
             description = "Output CBOM file (default: ${DEFAULT-VALUE})")
     Path output;
 
+    /** The directory for per-artifact CBOMs, or {@code null} for a temporary one. */
     @Option(
             names = "--work-dir",
             description =
@@ -64,6 +75,7 @@ public class GenerateCbomCommand implements Callable<Integer> {
                             + " before (default: a temporary directory)")
     Path workDir;
 
+    /** Which JARs supertypes are resolved from. */
     @Option(
             names = "--classpath",
             defaultValue = "deps",
@@ -73,16 +85,21 @@ public class GenerateCbomCommand implements Callable<Integer> {
                             + " components missing from the SBOM dependency graph")
     ClasspathMode classpathMode;
 
+    /** The number of threads, or {@code null} for one per available CPU. */
     @Option(
             names = "--threads",
             description = "Threads resolving and analyzing artifacts (default: the available CPUs)")
     Integer threads;
 
+    /** Whether artifacts already analyzed in the work directory are analyzed again. */
     @Option(names = "--rescan", description = "Re-analyze artifacts already analyzed in --work-dir")
     boolean rescan;
 
+    /** Reads the input SBOM. */
     @Inject SbomReader sbomReader;
+    /** Resolves the components' JARs. */
     @Inject ArtifactResolver resolver;
+    /** Merges the per-artifact CBOMs. */
     @Inject CbomAssembler assembler;
 
     /**

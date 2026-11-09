@@ -4,8 +4,8 @@ Keycloak 26.8.2, measured on 2026-11-09, against [crypto-finder](https://github.
 
 | | cryptid | crypto-finder |
 | --- | --- | --- |
-| Occurrences | 3,015 | 302 |
-| Components | 963 crypto assets, 75 libraries | 155, 116 of them certificates |
+| Occurrences | 3,017 | 302 |
+| Components | 965 crypto assets, 75 libraries | 155, 116 of them certificates |
 
 crypto-finder's occurrences were matched to cryptid's by source path and line (within 3 lines). Of its 75 algorithm and related-material occurrences, 31 are found at the same line, 16 more in the same file.
 
@@ -18,6 +18,7 @@ crypto-finder's occurrences were matched to cryptid's by source path and line (w
 - **Bouncy Castle's content signers** (2026-11-09). `JcaContentSignerBuilder` has specs now: its constructors, which take the signature algorithm, and `build(PrivateKey)`, which signs. Bouncy Castle spells some algorithms its own way, so an `aliases` table in the specs maps them to the JCA names the translators read (`SHA256WithRSAEncryption` to `SHA256withRSA`, `SHA256WITHRSAANDMGF1` to RSA-PSS), ignoring case and keeping other names as they are. Keycloak calls `build` after `setProvider`, which returns the builder, so specs can now say `returnsReceiver`: calls on the result are calls on the receiver. All 10 of crypto-finder's findings in `BCCertificateUtilsProvider` and `BCFIPSCertificateUtilsProvider` (it classifies them as protocols) are matched at the same line, with `sign`, and Netty's self-signed certificate generator is found too.
 
   This also turned up values reported twice. Inside bcpkix, `JcaContentSignerBuilder(String)` passes the algorithm on to another specified constructor, whose parameter the call index resolved to Keycloak's constant, reporting it at Keycloak's call site a second time, without the action. A value resolved from a caller is now dropped when the caller's call is itself a finding: its own scan reports the value, with the events on the object.
+- **Argon2** (2026-11-09). sonar-cryptography has no rule for Bouncy Castle's `Argon2BytesGenerator` and no model class for Argon2, and its mappers would make a message digest named `Argon2BytesGenerator` of it. The spec now names a model node of cryptid's own (`model: Argon2`, in `OwnModels`), a password-based key derivation function, so the node is chosen by the API called, not by matching a name. Keycloak's `Argon2PasswordHashProvider:130`, the default password hashing since Keycloak 24, and Bouncy Castle's own `ARGON2$BaseArgon2` are reported. The variant (Argon2id, i or d) and the cost parameters aren't: Keycloak reads them from its configuration at runtime, and `Argon2Parameters` has no spec yet.
 
 ## Open
 
@@ -25,7 +26,6 @@ In the modules the distribution ships, in the order worth doing:
 
 | Miss | Occurrences | Cause | Fix |
 | --- | --- | --- | --- |
-| Argon2 in `Argon2PasswordHashProvider` | 1 | No rule upstream, and no model class the mappers reach. | A spec, and a node of our own keyed on the spec, not on the value's name. |
 | PBKDF2 in `Pbkdf2PasswordHashProvider`, SHA-1 in `SHAPasswordEncoder` | 3 | The algorithm is a constructor parameter stored in a field. | *Values derived from parameters* in the backlog. |
 | RSA-OAEP with SHA-256 in `DefaultRsaKeyEncryption256JWEAlgorithmProvider` | 1 | The `Cipher` comes from the superclass through an overridden `initCipher`, with its name in a field. | Overriding dispatch in the object graph, and fields from constructor parameters. |
 | IVs of `AesCbcHmacShaEncryptionProvider` and `AesGcmEncryptionProvider` | 4 | The ciphers are found; the IV isn't modeled as its own asset. | Low priority. |
