@@ -36,7 +36,8 @@ class SampleSbomIT {
                                 "Found 5 Maven components",
                                 // sample-app isn't published
                                 "Resolved 4 of 5 artifacts",
-                                "Loaded 515 crypto API specs",
+                                // not the exact count: the specs are hand-maintained and grow
+                                "crypto API specs",
                                 "Analyzed 4 artifacts",
                                 ", 0 failed",
                                 "2 of 4 analyzed components contain cryptographic assets")

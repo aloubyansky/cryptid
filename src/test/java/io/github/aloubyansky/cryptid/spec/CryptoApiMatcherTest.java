@@ -30,17 +30,25 @@ import org.bouncycastle.crypto.engines.AESEngine;
 import org.junit.jupiter.api.Test;
 
 /**
- * Checks that the specs match exactly the calls sonar-cryptography's rules match: on every call
- * site of Bouncy Castle's provider JAR (on the test classpath), the API methods matched through
- * {@link CryptoApiMatcher} equal those of all rules, roots and nested ones, whose {@link MethodMatcher}
+ * Checks that the specs match the calls sonar-cryptography's rules match: on every call site of
+ * Bouncy Castle's provider JAR (on the test classpath), the API methods matched through {@link
+ * CryptoApiMatcher} equal those of all rules, roots and nested ones, whose {@link MethodMatcher}
  * accepts the call.
+ *
+ * <p>The specs are hand-maintained and cover API methods the rules don't have (see {@code
+ * docs/coverage-gaps.md}), so the comparison is over the API methods the rules know; matching one
+ * of our own entries is not a difference.
  */
 class CryptoApiMatcherTest {
+
+    /** The entries bootstrapped from sonar-cryptography 1.7.0's rules; ours come on top. */
+    private static final int BOOTSTRAPPED = 515;
 
     @Test
     void loadsTheShippedSpecs() throws Exception {
         final CryptoApiSpecs specs = CryptoApiSpecs.load();
-        assertEquals(515, specs.apis().size());
+        assertTrue(specs.apis().size() >= BOOTSTRAPPED,
+                "entries lost: " + specs.apis().size() + " < " + BOOTSTRAPPED);
         assertEquals("sonar-cryptography", specs.source().name());
     }
 
@@ -66,6 +74,8 @@ class CryptoApiMatcherTest {
         final List<IDetectionRule<Loc>> rules = allRules(SonarCryptographyRules.javaRules());
         final RuleTable ruleTable = new RuleTable(rules);
         final Types types = new Types(CryptoApiMatcherTest.class.getClassLoader());
+        // the API methods the rules know; our own entries can't be compared with them
+        final Set<String> fromRules = SonarCryptographyRules.apiMethods();
 
         int calls = 0;
         int matched = 0;
@@ -78,10 +88,11 @@ class CryptoApiMatcherTest {
                     calls++;
                     final Set<String> bySpecs = new TreeSet<>();
                     matcher.match(cs, types).forEach(s -> bySpecs.add(s.api()));
-                    final Set<String> byRules = byRules(cs, ruleTable, types);
                     if (!bySpecs.isEmpty()) {
                         matched++;
                     }
+                    bySpecs.retainAll(fromRules);
+                    final Set<String> byRules = byRules(cs, ruleTable, types);
                     if (!bySpecs.equals(byRules) && differences.size() < 20) {
                         differences.add(cs + ": specs " + bySpecs + ", rules " + byRules);
                     }

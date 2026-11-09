@@ -91,7 +91,9 @@ public final class CryptoAssetModeler {
             return Optional.empty();
         }
         final Loc loc = value.getLocation();
-        return t.translate(library, value, context,
-                new DetectionLocation(file, loc.line(), 0, List.of(loc.signature(), loc.methodName()), library));
+        final DetectionLocation location =
+                new DetectionLocation(file, loc.line(), 0, List.of(loc.signature(), loc.methodName()), library);
+        final Optional<INode> own = OwnNodes.translate(value, location);
+        return own.isPresent() ? own : t.translate(library, value, context, location);
     }
 }

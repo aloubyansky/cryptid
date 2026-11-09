@@ -9,7 +9,7 @@ cryptid generates a CBOM (Cryptography Bill of Materials) from an SBOM. Give it 
 - Follows values through a method (constants, fields, string concatenation) and from callers to the crypto call, across JARs and through interfaces, and reports a value where it's chosen.
 - Links each asset to the SBOM component it's found in.
 
-A Keycloak distribution's SBOM (548 JARs, 88,000 classes) takes about 20 seconds and gives 792 crypto assets with 2,589 occurrences in 74 components.
+A Keycloak distribution's SBOM (548 JARs, 88,000 classes) takes about 20 seconds and gives 816 crypto assets with 2,616 occurrences in 74 components.
 
 ## Building
 
@@ -121,12 +121,13 @@ The tests include:
 | `spec` | `CryptoApiSpecs`, `CryptoApiMatcher`: the API specs and matching calls to them |
 | `bytecode` | `Analyzer`, `CallIndex`: the abstract interpretation of bytecode |
 
-The specs in `src/main/resources/crypto-api-specs.yaml` were exported from sonar-cryptography's Java detection rules by `RuleSpecExporter` (test sources); `RuleSpecExportTest` keeps them in sync.
+The specs in `src/main/resources/crypto-api-specs.yaml` were bootstrapped from sonar-cryptography's Java detection rules by `RuleSpecExporter` (test sources) and are now hand-maintained: they carry corrections and entries for APIs those rules don't cover. `RuleSpecDriftTest` keeps the file in its canonical form and reports how it differs from a sonar-cryptography version's rules, in `target/spec-drift-report.txt`.
 
 More detail:
 - [Architecture](docs/architecture.md): the pipeline, input and output, integration with sonar-cryptography, what the JAR contains;
 - [Detection redesign](docs/detection-redesign.md): the specs and object model, and the migration to them;
-- [Design review](docs/design-review.md): findings, the refactoring plan and the backlog.
+- [Design review](docs/design-review.md): findings, the refactoring plan and the backlog;
+- [Coverage gaps](docs/coverage-gaps.md): what a source scanner finds in Keycloak that cryptid doesn't, and why.
 
 ## Licensing
 

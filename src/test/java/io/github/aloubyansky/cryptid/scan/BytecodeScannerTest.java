@@ -201,6 +201,64 @@ class BytecodeScannerTest {
         assertTrue(byLine.getOrDefault(8, "").contains("AES"), byLine.toString());
     }
 
+    private static final String ARGON2 = """
+            package org.acme.hash;
+
+            import org.bouncycastle.crypto.generators.Argon2BytesGenerator;
+            import org.bouncycastle.crypto.params.Argon2Parameters;
+
+            public class Hasher {
+                public byte[] hash(char[] password, byte[] salt) {
+                    Argon2Parameters parameters = new Argon2Parameters.Builder(Argon2Parameters.ARGON2_id)
+                            .withVersion(Argon2Parameters.ARGON2_VERSION_13)
+                            .withSalt(salt)
+                            .withParallelism(4)
+                            .withMemoryAsKB(65536)
+                            .withIterations(3)
+                            .build();
+                    Argon2BytesGenerator generator = new Argon2BytesGenerator();
+                    generator.init(parameters);
+                    byte[] hash = new byte[32];
+                    generator.generateBytes(password, hash);
+                    return hash;
+                }
+            }
+            """;
+
+    /**
+     * Argon2 is Keycloak's default password hashing, through Bouncy Castle's lightweight API.
+     * sonar-cryptography 1.7.0 has no rule for it, so the bootstrapped specs had none either; see
+     * {@code docs/coverage-gaps.md}.
+     */
+    @Test
+    void detectsArgon2FromBouncyCastlesLightweightApi() throws Exception {
+        final Path bc = bouncyCastleJar();
+        final Path jar = compile("argon2", "org/acme/hash/Hasher.java", ARGON2, bc);
+        final Bom bom;
+        try (JarCache jars = new JarCache()) {
+            bom = new BytecodeScanner().scan(jar, "org.acme/hash/1.0", List.of(bc), jars, null).bom();
+        }
+        // a password-based KDF, not the implementation class under a message digest, which is what
+        // BcDerivationFunctionMapper's default branch would make of a name it doesn't know
+        assertEquals(List.of("Argon2 | ALGORITHM | KDF | [KEYDERIVE]"), bom.getComponents().stream()
+                .map(c -> c.getName() + " | " + c.getCryptoProperties().getAssetType()
+                        + " | " + c.getCryptoProperties().getAlgorithmProperties().getPrimitive()
+                        + " | " + c.getCryptoProperties().getAlgorithmProperties().getCryptoFunctions())
+                .toList());
+        final Occurrence where = bom.getComponents().get(0).getEvidence().getOccurrences().get(0);
+        assertEquals("org.acme/hash/1.0/org/acme/hash/Hasher.java", where.getLocation());
+    }
+
+    /** The bcprov jar on the test class path, to compile and resolve the snippet against. */
+    private static Path bouncyCastleJar() {
+        for (String entry : System.getProperty("java.class.path").split(java.io.File.pathSeparator)) {
+            if (entry.contains("bcprov")) {
+                return Path.of(entry);
+            }
+        }
+        throw new AssertionError("bcprov is not on the test class path");
+    }
+
     /** Asset names with their occurrences, for comparing CBOMs. */
     private static List<String> names(Bom bom) {
         final List<String> result = new ArrayList<>();
