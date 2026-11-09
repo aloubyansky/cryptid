@@ -243,7 +243,17 @@ public final class CryptoObjectGraph {
         return at.created() < 0 ? List.of() : related(at, Set.of(at.created()), 0, path);
     }
 
-    private List<Reached> related(CallSite at, Set<Integer> origins, long params, Path path) {
+    /**
+     * Returns the calls of the given objects of a call's method and of the objects its parameters
+     * are, e.g. of one of the objects a value may be.
+     *
+     * @param at the call, giving the method
+     * @param origins ids of sites of that method creating the objects
+     * @param params the method's parameters, as a bit set
+     * @param path the path {@code at} was reached by
+     * @return the calls, as for {@link #related(CallSite, AVal, Path)}
+     */
+    public List<Reached> related(CallSite at, Set<Integer> origins, long params, Path path) {
         if (origins.isEmpty() && params == 0) {
             return List.of();
         }

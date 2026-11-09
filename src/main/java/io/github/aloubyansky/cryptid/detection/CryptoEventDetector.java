@@ -32,11 +32,11 @@ import java.util.Set;
  * through linking arguments, in the roles the specs give them.
  *
  * <p>Event trees are built the way the rule-based detection built sonar-cryptography's detection
- * stores: multi-valued arguments give
- * one finding per value combination (up to {@link #MAX_VARIANTS}), and arguments passed
- * in from callers are resolved through the {@link CallIndex} into findings located at the caller.
- * Unlike rule trees, a link accepts any object a specified API creates, not only those a rule
- * lists.
+ * stores: multi-valued arguments give one finding per value combination (up to {@link
+ * #MAX_VARIANTS}), and arguments passed in from callers are resolved through the {@link CallIndex}
+ * into findings located at the caller. Unlike rule trees, a link accepts any object a specified
+ * API creates, not only those a rule lists, and a link that may be one of several such objects is
+ * a choice too, giving one finding per object.
  */
 public final class CryptoEventDetector {
 
@@ -53,8 +53,11 @@ public final class CryptoEventDetector {
     private final String locationPrefix;
     private final CallIndex callIndex;
 
-    /** A detectable argument of a call: the call site and the parameter position. */
-    private record Point(CallSite call, int index) {}
+    /**
+     * A choice in a finding: the constant of a detectable argument, or the object of a linking
+     * argument, of a call site's parameter.
+     */
+    private record Point(CallSite call, int index, boolean object) {}
 
     private List<Finding> resolved = new ArrayList<>();
     private Map<Point, List<Object>> multiValued;
@@ -164,7 +167,7 @@ public final class CryptoEventDetector {
     }
 
     private Collection<Object> values(CallSite cs, int index, AVal arg) {
-        final Point point = new Point(cs, index);
+        final Point point = new Point(cs, index, false);
         final Object v = chosen.get(point);
         if (v != null) {
             return List.of(v);
@@ -216,7 +219,7 @@ public final class CryptoEventDetector {
                     }
                 }
                 if (arg.link()) {
-                    follow(store, k, graph.related(cs, value, path), arg.roles(), context, graph, depth);
+                    follow(store, k, linked(cs, k, value, path, graph), arg.roles(), context, graph, depth);
                 }
             }
             if (!spec.next().isEmpty() && cs.created() >= 0) {
@@ -229,6 +232,35 @@ public final class CryptoEventDetector {
                 follow(store, -1, next, spec.nextRoles(), context, graph, depth);
             }
         }
+    }
+
+    /**
+     * The calls of the objects a linking argument may be. When it may be one of several objects
+     * with calls to specified APIs, e.g. a parameter spec chosen in a {@code switch}, each is a
+     * choice, as each constant of a multi-valued argument is: one finding per object, instead of
+     * one finding holding them all, where translation would keep one of them.
+     */
+    private List<Reached> linked(CallSite cs, int index, AVal value, Path path, CryptoObjectGraph graph) {
+        if (value.origins().size() < 2) {
+            return graph.related(cs, value, path);
+        }
+        final Point point = new Point(cs, index, true);
+        final Object origin = chosen.get(point);
+        if (origin != null) {
+            return graph.related(cs, Set.of((Integer) origin), value.params(), path);
+        }
+        if (multiValued != null) {
+            final List<Object> objects = new ArrayList<>();
+            for (int o : value.origins()) {
+                if (!graph.related(cs, Set.of(o), 0, path).isEmpty()) {
+                    objects.add(o);
+                }
+            }
+            if (objects.size() > 1) {
+                multiValued.putIfAbsent(point, objects);
+            }
+        }
+        return graph.related(cs, value, path);
     }
 
     /**
