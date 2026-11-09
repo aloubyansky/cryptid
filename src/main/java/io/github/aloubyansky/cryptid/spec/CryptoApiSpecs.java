@@ -21,9 +21,32 @@ import java.util.TreeMap;
  * @param specVersion the format version
  * @param source where the specs come from
  * @param apis one entry per API method, sorted by {@link ApiSpec#api()}
+ * @param names tables translating the names of a vocabulary to the names the translators read, by
+ *     table name, e.g. the W3C XML Encryption URIs to JCA names; see {@link Factory#names()}
  */
-@JsonPropertyOrder({"specVersion", "source", "apis"})
-public record CryptoApiSpecs(int specVersion, Source source, List<ApiSpec> apis) {
+@JsonInclude(JsonInclude.Include.NON_EMPTY)
+@JsonPropertyOrder({"specVersion", "source", "apis", "names"})
+public record CryptoApiSpecs(int specVersion, Source source, List<ApiSpec> apis, Map<String, Map<String, String>> names) {
+
+    /** Normalizes missing tables to an empty map; keeps tables and their entries sorted. */
+    public CryptoApiSpecs {
+        final Map<String, Map<String, String>> tables = new TreeMap<>();
+        if (names != null) {
+            names.forEach((table, entries) -> tables.put(table, sorted(entries)));
+        }
+        names = Collections.unmodifiableMap(tables);
+    }
+
+    /**
+     * Specs without name tables.
+     *
+     * @param specVersion the format version
+     * @param source where the specs come from
+     * @param apis one entry per API method
+     */
+    public CryptoApiSpecs(int specVersion, Source source, List<ApiSpec> apis) {
+        this(specVersion, source, apis, Map.of());
+    }
 
     /** The current format version. */
     public static final int VERSION = 1;
@@ -124,14 +147,28 @@ public record CryptoApiSpecs(int specVersion, Source source, List<ApiSpec> apis)
      * @param factory the factory class's simple name, or {@code lambda} for a rule-specific function
      * @param config the factory's configuration fields, e.g. {@code value: AESEngine}
      * @param result for a rule-specific function, what it produces, e.g. {@code Mode GCM}
+     * @param names for a value, the table of {@link CryptoApiSpecs#names()} its constants are
+     *     translated with before the factory sees them; constants not in the table are dropped, as
+     *     not names of the vocabulary
      */
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
-    @JsonPropertyOrder({"factory", "config", "result"})
-    public record Factory(String factory, Map<String, String> config, String result) {
+    @JsonPropertyOrder({"factory", "config", "result", "names"})
+    public record Factory(String factory, Map<String, String> config, String result, String names) {
 
         /** Normalizes missing configuration to an empty map; keeps keys sorted. */
         public Factory {
             config = sorted(config);
+        }
+
+        /**
+         * A factory reading constants as they are.
+         *
+         * @param factory the factory class's simple name, or {@code lambda}
+         * @param config the factory's configuration fields
+         * @param result for a rule-specific function, what it produces
+         */
+        public Factory(String factory, Map<String, String> config, String result) {
+            this(factory, config, result, null);
         }
     }
 

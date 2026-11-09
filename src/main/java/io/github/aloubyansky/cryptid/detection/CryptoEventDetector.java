@@ -204,7 +204,11 @@ public final class CryptoEventDetector {
                 final AVal value = cs.args()[k];
                 if (arg.value() != null) {
                     final IValueFactory<Loc> factory = (IValueFactory<Loc>) ValueFactories.create(arg.value());
-                    for (Object c : values(cs, k, value)) {
+                    for (Object constant : values(cs, k, value)) {
+                        final Object c = matcher.name(arg.value(), constant);
+                        if (c == null) {
+                            continue;
+                        }
                         factory.apply(new ResolvedValue<>(c, loc)).ifPresent(v -> {
                             if (arg.movedUnder() != null) {
                                 final CryptoEvent sub = CryptoEvent.of(spec, context, file);
@@ -309,7 +313,11 @@ public final class CryptoEventDetector {
         for (CallIndex.Hit hit : callIndex.resolve(cs.method(), params)) {
             final CallIndex.Site site = hit.site();
             final Loc at = new Loc(site.file(), site.line(), site.signature(), site.name());
-            factory.apply(new ResolvedValue<>(hit.value(), at)).ifPresent(v -> {
+            final Object c = matcher.name(arg.value(), hit.value());
+            if (c == null) {
+                continue;
+            }
+            factory.apply(new ResolvedValue<>(c, at)).ifPresent(v -> {
                 final CryptoEvent d = CryptoEvent.of(spec, context, site.file());
                 d.addValue(index, v);
                 resolved.add(new Finding(at, cs, d, false));

@@ -121,7 +121,7 @@ The tests include:
 | `spec` | `CryptoApiSpecs`, `CryptoApiMatcher`: the API specs and matching calls to them |
 | `bytecode` | `Analyzer`, `CallIndex`: the abstract interpretation of bytecode |
 
-The specs in `src/main/resources/crypto-api-specs.yaml` were exported from sonar-cryptography's Java detection rules by `RuleSpecExporter` (test sources); `RuleSpecExportTest` keeps them in sync.
+The specs in `src/main/resources/crypto-api-specs.yaml` were first exported from sonar-cryptography's Java detection rules by `RuleSpecExporter` (test sources) and are now hand-maintained, with corrections and additions such as xmlsec's `XMLCipher`. `RuleSpecDriftTest` checks that the file is canonical (sorted by `api`, no duplicates, the mapper's layout) and that every API method the rules match has an entry, and reports additions and differences in `target/spec-drift-report.txt`, with the rules' export in `target/crypto-api-specs-exported.yaml` for a diff. A `names` table translates a vocabulary the translators don't read, such as the W3C XML Encryption URIs, to JCA names.
 
 More detail:
 - [Architecture](docs/architecture.md): the pipeline, input and output, integration with sonar-cryptography, what the JAR contains;

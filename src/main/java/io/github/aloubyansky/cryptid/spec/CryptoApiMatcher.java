@@ -36,14 +36,22 @@ public final class CryptoApiMatcher {
 
     /** {@code name/parameter count}, or {@code name/...} for any parameters -> specs, in api order. */
     private final Map<String, List<Entry>> byMethod = new HashMap<>();
+    private final Map<String, Map<String, String>> names;
 
     /**
      * Indexes specs.
      *
      * @param specs the specs
+     * @throws IllegalArgumentException if a value names a table the specs don't have
      */
     public CryptoApiMatcher(CryptoApiSpecs specs) {
+        this.names = specs.names();
         for (ApiSpec spec : specs.apis()) {
+            for (CryptoApiSpecs.Arg arg : spec.args()) {
+                if (arg.value() != null && arg.value().names() != null && !names.containsKey(arg.value().names())) {
+                    throw new IllegalArgumentException(spec.api() + " names the missing table " + arg.value().names());
+                }
+            }
             final String api = spec.api();
             final int hash = api.indexOf('#');
             final int paren = api.indexOf('(', hash);
@@ -54,6 +62,18 @@ public final class CryptoApiMatcher {
             byMethod.computeIfAbsent(name + "/" + (types == null ? CryptoApiSpecs.ANY_PARAMETERS : types.size()), k -> new ArrayList<>())
                     .add(new Entry(api.substring(0, hash), types, spec));
         }
+    }
+
+    /**
+     * Translates a constant with a value's name table.
+     *
+     * @param value the value's factory spec
+     * @param constant the argument's constant
+     * @return the constant, translated if the value names a table, or {@code null} if it isn't in
+     *     the table
+     */
+    public Object name(CryptoApiSpecs.Factory value, Object constant) {
+        return value.names() == null ? constant : names.get(value.names()).get(String.valueOf(constant));
     }
 
     /**

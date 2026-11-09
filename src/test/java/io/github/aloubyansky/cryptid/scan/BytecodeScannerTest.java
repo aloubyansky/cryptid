@@ -24,6 +24,7 @@ import javax.tools.JavaCompiler;
 import javax.tools.ToolProvider;
 import org.cyclonedx.model.Bom;
 import org.cyclonedx.model.Component;
+import org.cyclonedx.model.component.crypto.enums.CryptoFunction;
 import org.cyclonedx.model.component.evidence.Occurrence;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -147,6 +148,76 @@ class BytecodeScannerTest {
         final List<String> names = bom.getComponents().stream().map(Component::getName).toList();
         assertTrue(names.stream().anyMatch(n -> n.startsWith("HMAC")), names.toString());
         assertTrue(names.stream().noneMatch(n -> n.contains("RSA")), names.toString());
+    }
+
+    /** The part of xmlsec's API the fixture uses; cryptid doesn't depend on xmlsec. */
+    private static final String XMLCIPHER_STUB = """
+            package org.apache.xml.security.encryption;
+
+            import java.security.Key;
+
+            public class XMLCipher {
+                public static final String AES_128 = "http://www.w3.org/2001/04/xmlenc#aes128-cbc";
+                public static final String AES_256 = "http://www.w3.org/2001/04/xmlenc#aes256-cbc";
+                public static final String RSA_OAEP_11 = "http://www.w3.org/2009/xmlenc11#rsa-oaep";
+                public static final int ENCRYPT_MODE = 1;
+                public static final int WRAP_MODE = 3;
+
+                public static XMLCipher getInstance(String transformation) {
+                    return new XMLCipher();
+                }
+
+                public static XMLCipher getInstance(String transformation, String canon, String digestMethod) {
+                    return new XMLCipher();
+                }
+
+                public void init(int mode, Key key) {
+                }
+            }
+            """;
+
+    private static final String XML_ENCRYPTION = """
+            package org.acme.saml;
+
+            import java.security.Key;
+            import org.apache.xml.security.encryption.XMLCipher;
+
+            public class Encrypt {
+                private static String url(int keySize) {
+                    switch (keySize) {
+                        case 256: return XMLCipher.AES_256;
+                        default: return XMLCipher.AES_128;
+                    }
+                }
+
+                public void encrypt(Key secret, Key publicKey, int keySize) {
+                    XMLCipher keyCipher = XMLCipher.getInstance(XMLCipher.RSA_OAEP_11, null, null);
+                    keyCipher.init(XMLCipher.WRAP_MODE, publicKey);
+                    XMLCipher cipher = XMLCipher.getInstance(url(keySize));
+                    cipher.init(XMLCipher.ENCRYPT_MODE, secret);
+                }
+
+                public void unknown() {
+                    XMLCipher.getInstance("http://example.com/not-an-algorithm");
+                }
+            }
+            """;
+
+    /** xmlsec's algorithm URIs are translated to the JCA names xmlsec uses; other URIs are dropped. */
+    @Test
+    void detectsXmlEncryptionAlgorithms() throws Exception {
+        final Path stub = compile("xmlsec", "org/apache/xml/security/encryption/XMLCipher.java", XMLCIPHER_STUB, null);
+        final Path jar = compile("saml", "org/acme/saml/Encrypt.java", XML_ENCRYPTION, stub);
+        final Bom bom;
+        try (JarCache jars = new JarCache()) {
+            bom = new BytecodeScanner().scan(jar, "org.acme/saml/1.0", List.of(stub), jars, null).bom();
+        }
+        final Map<String, Component> byName = new TreeMap<>();
+        bom.getComponents().forEach(c -> byName.put(c.getName(), c));
+        assertTrue(byName.keySet().containsAll(Set.of("AES-128-CBC-ISO 10126", "AES-256-CBC-ISO 10126", "RSA-OAEP")), byName.keySet().toString());
+        assertTrue(byName.keySet().stream().noneMatch(n -> n.contains("example.com")), byName.keySet().toString());
+        final Component aes = byName.get("AES-128-CBC-ISO 10126");
+        assertEquals(List.of(CryptoFunction.ENCRYPT), aes.getCryptoProperties().getAlgorithmProperties().getCryptoFunctions());
     }
 
     private static final String WRAPPER = """

@@ -16,8 +16,8 @@ updates:
           - "org.apache.maven.plugins:*"
           - "org.codehaus.mojo:*"
     ignore:
-      # sonar-cryptography isn't on Maven Central; upgrading it means building it from source,
-      # regenerating crypto-api-specs.yaml and reviewing the difference (see README)
+      # sonar-cryptography isn't on Maven Central; upgrading it means building it from source and
+      # porting what RuleSpecDriftTest reports into the hand-maintained specs (see README)
       - dependency-name: "com.ibm:*"
       # test-only, at the versions sonar-cryptography 1.7.0 was built against
       - dependency-name: "org.sonarsource.*:*"

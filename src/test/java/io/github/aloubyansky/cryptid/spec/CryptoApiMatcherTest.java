@@ -33,14 +33,15 @@ import org.junit.jupiter.api.Test;
  * Checks that the specs match exactly the calls sonar-cryptography's rules match: on every call
  * site of Bouncy Castle's provider JAR (on the test classpath), the API methods matched through
  * {@link CryptoApiMatcher} equal those of all rules, roots and nested ones, whose {@link MethodMatcher}
- * accepts the call.
+ * accepts the call. Entries the rules don't have, our additions, aren't compared.
  */
 class CryptoApiMatcherTest {
 
     @Test
     void loadsTheShippedSpecs() throws Exception {
         final CryptoApiSpecs specs = CryptoApiSpecs.load();
-        assertEquals(515, specs.apis().size());
+        // the rules' API methods, and our additions
+        assertTrue(specs.apis().stream().map(ApiSpec::api).toList().containsAll(SonarCryptographyRules.apiMethods()));
         assertEquals("sonar-cryptography", specs.source().name());
     }
 
@@ -66,6 +67,7 @@ class CryptoApiMatcherTest {
         final List<IDetectionRule<Loc>> rules = allRules(SonarCryptographyRules.javaRules());
         final RuleTable ruleTable = new RuleTable(rules);
         final Types types = new Types(CryptoApiMatcherTest.class.getClassLoader());
+        final Set<String> ruleApis = SonarCryptographyRules.apiMethods();
 
         int calls = 0;
         int matched = 0;
@@ -78,6 +80,8 @@ class CryptoApiMatcherTest {
                     calls++;
                     final Set<String> bySpecs = new TreeSet<>();
                     matcher.match(cs, types).forEach(s -> bySpecs.add(s.api()));
+                    // entries the rules don't have are ours, beyond what the rules match
+                    bySpecs.retainAll(ruleApis);
                     final Set<String> byRules = byRules(cs, ruleTable, types);
                     if (!bySpecs.isEmpty()) {
                         matched++;
