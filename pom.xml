@@ -14,7 +14,7 @@
 
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
-        <quarkus.platform.version>3.40.1</quarkus.platform.version>
+        <quarkus.platform.version>3.40.1.1</quarkus.platform.version>
 
         <quarkus-maven-resolver.version>0.0.5</quarkus-maven-resolver.version>
         <!-- sonar-cryptography's CBOM model, translators and output (Apache-2.0); not published to
