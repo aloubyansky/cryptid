@@ -17,6 +17,7 @@ import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs.ApiSpec;
 import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs.Arg;
 import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs.Context;
 import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs.Role;
+import java.lang.constant.MethodTypeDesc;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -306,12 +307,30 @@ public final class CryptoEventDetector {
         return linked.context();
     }
 
+    /**
+     * Whether the caller's call is a finding of its own: a call to a root API, e.g. a library
+     * constructor delegating to another one passes on the value its caller gave it. The caller's
+     * finding reports the value, with the events on the object, so resolving it here would report
+     * it again with less.
+     */
+    private boolean reportedAtCaller(CallIndex.Site site) {
+        final String signature = site.signature();
+        final String owner = signature.substring(0, signature.indexOf('#')).replace('.', '/');
+        final String descriptor = signature.substring(signature.indexOf('('));
+        final CallSite call = new CallSite(-1, site.callerMethod(), site.file(), owner, site.name(), descriptor, false,
+                site.line(), MethodTypeDesc.ofDescriptor(descriptor).parameterCount());
+        return matcher.match(call, types).stream().anyMatch(ApiSpec::root);
+    }
+
     @SuppressWarnings("unchecked")
     private void resolveFromCallers(ApiSpec spec, Context context, Arg arg, IValueFactory<Loc> factory, CallSite cs,
             long params) {
         final int index = arg.movedUnder() != null ? arg.movedUnder() : arg.index();
         for (CallIndex.Hit hit : callIndex.resolve(cs.method(), params)) {
             final CallIndex.Site site = hit.site();
+            if (reportedAtCaller(site)) {
+                continue;
+            }
             final Loc at = new Loc(site.file(), site.line(), site.signature(), site.name());
             final Object c = matcher.name(arg.value(), hit.value());
             if (c == null) {

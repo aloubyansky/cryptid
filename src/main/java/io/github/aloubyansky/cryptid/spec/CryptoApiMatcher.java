@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -48,8 +49,18 @@ public final class CryptoApiMatcher {
         this.names = specs.names();
         for (ApiSpec spec : specs.apis()) {
             for (CryptoApiSpecs.Arg arg : spec.args()) {
-                if (arg.value() != null && arg.value().names() != null && !names.containsKey(arg.value().names())) {
-                    throw new IllegalArgumentException(spec.api() + " names the missing table " + arg.value().names());
+                if (arg.value() == null) {
+                    continue;
+                }
+                for (String table : new String[] {arg.value().names(), arg.value().aliases()}) {
+                    if (table != null && !names.containsKey(table)) {
+                        throw new IllegalArgumentException(spec.api() + " names the missing table " + table);
+                    }
+                }
+                // aliases are looked up in upper case
+                final String aliases = arg.value().aliases();
+                if (aliases != null && names.get(aliases).keySet().stream().anyMatch(k -> !k.equals(k.toUpperCase(Locale.ROOT)))) {
+                    throw new IllegalArgumentException("Alias table " + aliases + " has keys not in upper case");
                 }
             }
             final String api = spec.api();
@@ -69,11 +80,18 @@ public final class CryptoApiMatcher {
      *
      * @param value the value's factory spec
      * @param constant the argument's constant
-     * @return the constant, translated if the value names a table, or {@code null} if it isn't in
-     *     the table
+     * @return the constant, translated if the value names a table; for {@link
+     *     CryptoApiSpecs.Factory#names()}, {@code null} if it isn't in the table
      */
     public Object name(CryptoApiSpecs.Factory value, Object constant) {
-        return value.names() == null ? constant : names.get(value.names()).get(String.valueOf(constant));
+        if (value.names() != null) {
+            return names.get(value.names()).get(String.valueOf(constant));
+        }
+        if (value.aliases() != null) {
+            final String name = names.get(value.aliases()).get(String.valueOf(constant).toUpperCase(Locale.ROOT));
+            return name == null ? constant : name;
+        }
+        return constant;
     }
 
     /**

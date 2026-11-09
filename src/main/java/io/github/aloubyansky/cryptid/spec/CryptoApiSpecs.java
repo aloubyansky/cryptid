@@ -101,9 +101,12 @@ public record CryptoApiSpecs(int specVersion, Source source, List<ApiSpec> apis,
      * @param next API methods called on the object this call creates that contribute to it, in
      *     the order sonar-cryptography's rules list them, which its translation depends on
      * @param nextRoles roles of those calls that differ from their own context
+     * @param returnsReceiver whether the method returns the object it is called on, as fluent
+     *     setters do, e.g. a builder's {@code setProvider}: calls on the result are calls on that
+     *     object
      */
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
-    @JsonPropertyOrder({"api", "subtypes", "library", "context", "root", "action", "args", "next", "nextRoles"})
+    @JsonPropertyOrder({"api", "subtypes", "library", "context", "root", "action", "args", "next", "nextRoles", "returnsReceiver"})
     public record ApiSpec(
             String api,
             boolean subtypes,
@@ -113,13 +116,24 @@ public record CryptoApiSpecs(int specVersion, Source source, List<ApiSpec> apis,
             Factory action,
             List<Arg> args,
             List<String> next,
-            List<Role> nextRoles) {
+            List<Role> nextRoles,
+            @JsonInclude(JsonInclude.Include.NON_DEFAULT) boolean returnsReceiver) {
 
         /** Normalizes missing lists, which the YAML leaves out when empty, to empty lists. */
         public ApiSpec {
             args = args == null ? List.of() : List.copyOf(args);
             next = next == null ? List.of() : List.copyOf(next);
             nextRoles = nextRoles == null ? List.of() : List.copyOf(nextRoles);
+        }
+
+        /**
+         * A spec of a method that doesn't return its receiver.
+         *
+         * @see #ApiSpec(String, boolean, String, Context, boolean, Factory, List, List, List, boolean)
+         */
+        public ApiSpec(String api, boolean subtypes, String library, Context context, boolean root, Factory action,
+                List<Arg> args, List<String> next, List<Role> nextRoles) {
+            this(api, subtypes, library, context, root, action, args, next, nextRoles, false);
         }
     }
 
@@ -150,10 +164,14 @@ public record CryptoApiSpecs(int specVersion, Source source, List<ApiSpec> apis,
      * @param names for a value, the table of {@link CryptoApiSpecs#names()} its constants are
      *     translated with before the factory sees them; constants not in the table are dropped, as
      *     not names of the vocabulary
+     * @param aliases for a value, the table of {@link CryptoApiSpecs#names()} with other names for
+     *     the names the translators read, e.g. Bouncy Castle's {@code SHA256WITHRSAENCRYPTION} for
+     *     {@code SHA256withRSA}; looked up ignoring case, with keys in upper case, and constants not
+     *     in the table are kept as they are
      */
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
-    @JsonPropertyOrder({"factory", "config", "result", "names"})
-    public record Factory(String factory, Map<String, String> config, String result, String names) {
+    @JsonPropertyOrder({"factory", "config", "result", "names", "aliases"})
+    public record Factory(String factory, Map<String, String> config, String result, String names, String aliases) {
 
         /** Normalizes missing configuration to an empty map; keeps keys sorted. */
         public Factory {
@@ -168,7 +186,7 @@ public record CryptoApiSpecs(int specVersion, Source source, List<ApiSpec> apis,
          * @param result for a rule-specific function, what it produces
          */
         public Factory(String factory, Map<String, String> config, String result) {
-            this(factory, config, result, null);
+            this(factory, config, result, null, null);
         }
     }
 

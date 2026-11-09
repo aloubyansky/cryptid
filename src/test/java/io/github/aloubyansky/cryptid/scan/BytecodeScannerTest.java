@@ -220,6 +220,109 @@ class BytecodeScannerTest {
         assertEquals(List.of(CryptoFunction.ENCRYPT), aes.getCryptoProperties().getAlgorithmProperties().getCryptoFunctions());
     }
 
+    private static final String CONTENT_SIGNER = """
+            package org.acme.cert;
+
+            import java.security.PrivateKey;
+            import org.bouncycastle.operator.ContentSigner;
+            import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
+
+            public class Certs {
+                public ContentSigner rsa(PrivateKey key) throws Exception {
+                    JcaContentSignerBuilder builder = new JcaContentSignerBuilder("SHA256WithRSAEncryption");
+                    return builder.build(key);
+                }
+
+                public ContentSigner ec(PrivateKey key) throws Exception {
+                    return new JcaContentSignerBuilder("SHA256WithECDSA").setProvider("BC").build(key);
+                }
+
+                public ContentSigner pss(PrivateKey key) throws Exception {
+                    return new JcaContentSignerBuilder("SHA384WITHRSAANDMGF1").build(key);
+                }
+            }
+            """;
+
+    /** Bouncy Castle's names for signature algorithms are translated to the JCA names the translators read. */
+    @Test
+    void detectsBouncyCastleContentSigners() throws Exception {
+        final Path jar = compile("cert", "org/acme/cert/Certs.java", CONTENT_SIGNER, Path.of(System.getProperty("java.class.path")));
+        final Bom bom;
+        try (JarCache jars = new JarCache()) {
+            bom = new BytecodeScanner().scan(jar, "org.acme/cert/1.0", List.of(), jars, null).bom();
+        }
+        final Map<String, Component> byName = new TreeMap<>();
+        bom.getComponents().forEach(c -> byName.put(c.getName(), c));
+        assertTrue(byName.keySet().containsAll(Set.of("RSA-PKCS1-1.5-SHA-256", "ECDSA-SHA-256", "RSA-PSS", "SHA-384")), byName.keySet().toString());
+        // build(key) signs, also through setProvider, which returns the builder
+        assertEquals(List.of(CryptoFunction.SIGN),
+                byName.get("RSA-PKCS1-1.5-SHA-256").getCryptoProperties().getAlgorithmProperties().getCryptoFunctions());
+        assertEquals(List.of(CryptoFunction.SIGN),
+                byName.get("ECDSA-SHA-256").getCryptoProperties().getAlgorithmProperties().getCryptoFunctions());
+    }
+
+    /** A library API whose constructor delegates to another specified one, as bcpkix's does. */
+    private static final String DELEGATING_API = """
+            package org.bouncycastle.operator.jcajce;
+
+            import java.security.PrivateKey;
+            import java.security.spec.AlgorithmParameterSpec;
+
+            public class JcaContentSignerBuilder {
+                public JcaContentSignerBuilder(String signatureAlgorithm) {
+                    this(signatureAlgorithm, (AlgorithmParameterSpec) null);
+                }
+
+                public JcaContentSignerBuilder(String signatureAlgorithm, AlgorithmParameterSpec params) {
+                }
+
+                public Object build(PrivateKey key) {
+                    return null;
+                }
+            }
+            """;
+
+    private static final String API_CALLER = """
+            package org.acme.certs;
+
+            import java.security.PrivateKey;
+            import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
+
+            public class Signer {
+                public Object signer(PrivateKey key) {
+                    return new JcaContentSignerBuilder("SHA256withRSA").build(key);
+                }
+            }
+            """;
+
+    /**
+     * A value an API passes on inside its library isn't reported at the caller again when the
+     * caller's call is itself a finding, with its own events.
+     */
+    @Test
+    void doesNotReportCallersOfApisTwice() throws Exception {
+        final Path lib = compile("signer-lib", "org/bouncycastle/operator/jcajce/JcaContentSignerBuilder.java", DELEGATING_API, null);
+        final Path app = compile("signer-app", "org/acme/certs/Signer.java", API_CALLER, lib);
+        final BytecodeScanner scanner = new BytecodeScanner();
+        try (JarCache jars = new JarCache()) {
+            final Set<String> classes = new HashSet<>(jars.classNames(lib));
+            classes.addAll(jars.classNames(app));
+            final CallIndex index = new CallIndex(classes);
+            scanner.index(lib, "org.acme/lib/1.0", List.of(), jars, index, false);
+            scanner.index(app, "org.acme/app/1.0", List.of(lib), jars, index, false);
+            index.finish();
+            final Bom libBom = scanner.scan(lib, "org.acme/lib/1.0", List.of(), jars, index).bom();
+            final List<String> inApp = libBom.getComponents() == null ? List.of() : libBom.getComponents().stream()
+                    .filter(c -> c.getEvidence().getOccurrences().stream().anyMatch(o -> o.getLocation().startsWith("org.acme/app/")))
+                    .map(Component::getName).toList();
+            assertEquals(List.of(), inApp);
+            final Bom appBom = scanner.scan(app, "org.acme/app/1.0", List.of(lib), jars, index).bom();
+            final Component rsa = appBom.getComponents().stream().filter(c -> c.getName().equals("RSA-PKCS1-1.5-SHA-256"))
+                    .findFirst().orElseThrow(() -> new AssertionError(names(appBom)));
+            assertEquals(List.of(CryptoFunction.SIGN), rsa.getCryptoProperties().getAlgorithmProperties().getCryptoFunctions());
+        }
+    }
+
     private static final String WRAPPER = """
             package org.acme.wrap;
 

@@ -7471,6 +7471,126 @@ apis:
       - index: 0
         type: org.bouncycastle.crypto.Digest
         link: true
+  - api: org.bouncycastle.operator.jcajce.JcaContentSignerBuilder#<init>(java.lang.String)
+    subtypes: false
+    library: Jca
+    context:
+      type: SignatureContext
+      kind: NONE
+    root: true
+    args:
+      - index: 0
+        type: java.lang.String
+        value:
+          factory: AlgorithmFactory
+          aliases: bc-signature-aliases
+    next:
+      - org.bouncycastle.operator.jcajce.JcaContentSignerBuilder#build(java.security.PrivateKey)
+  - api: "org.bouncycastle.operator.jcajce.JcaContentSignerBuilder#<init>(java.lang.String, java.security.PublicKey)"
+    subtypes: false
+    library: Jca
+    context:
+      type: SignatureContext
+      kind: NONE
+    root: true
+    args:
+      - index: 0
+        type: java.lang.String
+        value:
+          factory: AlgorithmFactory
+          aliases: bc-signature-aliases
+      - index: 1
+        type: java.security.PublicKey
+    next:
+      - org.bouncycastle.operator.jcajce.JcaContentSignerBuilder#build(java.security.PrivateKey)
+  - api: "org.bouncycastle.operator.jcajce.JcaContentSignerBuilder#<init>(java.lang.String, java.security.spec.AlgorithmParameterSpec)"
+    subtypes: false
+    library: Jca
+    context:
+      type: SignatureContext
+      kind: NONE
+    root: true
+    args:
+      - index: 0
+        type: java.lang.String
+        value:
+          factory: AlgorithmFactory
+          aliases: bc-signature-aliases
+      - index: 1
+        type: java.security.spec.AlgorithmParameterSpec
+    next:
+      - org.bouncycastle.operator.jcajce.JcaContentSignerBuilder#build(java.security.PrivateKey)
+  - api: "org.bouncycastle.operator.jcajce.JcaContentSignerBuilder#<init>(java.lang.String, java.security.spec.AlgorithmParameterSpec, org.bouncycastle.asn1.x509.AlgorithmIdentifier)"
+    subtypes: false
+    library: Jca
+    context:
+      type: SignatureContext
+      kind: NONE
+    root: true
+    args:
+      - index: 0
+        type: java.lang.String
+        value:
+          factory: AlgorithmFactory
+          aliases: bc-signature-aliases
+      - index: 1
+        type: java.security.spec.AlgorithmParameterSpec
+      - index: 2
+        type: org.bouncycastle.asn1.x509.AlgorithmIdentifier
+    next:
+      - org.bouncycastle.operator.jcajce.JcaContentSignerBuilder#build(java.security.PrivateKey)
+  - api: "org.bouncycastle.operator.jcajce.JcaContentSignerBuilder#<init>(java.lang.String, org.bouncycastle.asn1.x509.AlgorithmIdentifier)"
+    subtypes: false
+    library: Jca
+    context:
+      type: SignatureContext
+      kind: NONE
+    root: true
+    args:
+      - index: 0
+        type: java.lang.String
+        value:
+          factory: AlgorithmFactory
+          aliases: bc-signature-aliases
+      - index: 1
+        type: org.bouncycastle.asn1.x509.AlgorithmIdentifier
+    next:
+      - org.bouncycastle.operator.jcajce.JcaContentSignerBuilder#build(java.security.PrivateKey)
+  - api: org.bouncycastle.operator.jcajce.JcaContentSignerBuilder#build(java.security.PrivateKey)
+    subtypes: false
+    library: Jca
+    context:
+      type: SignatureContext
+      kind: NONE
+    root: false
+    action:
+      factory: SignatureActionFactory
+      config:
+        action: SIGN
+  - api: org.bouncycastle.operator.jcajce.JcaContentSignerBuilder#setProvider(java.lang.String)
+    subtypes: false
+    library: Jca
+    context:
+      type: SignatureContext
+      kind: NONE
+    root: false
+    returnsReceiver: true
+  - api: org.bouncycastle.operator.jcajce.JcaContentSignerBuilder#setProvider(java.security.Provider)
+    subtypes: false
+    library: Jca
+    context:
+      type: SignatureContext
+      kind: NONE
+    root: false
+    returnsReceiver: true
+  - api: org.bouncycastle.operator.jcajce.JcaContentSignerBuilder#setSecureRandom(java.security.SecureRandom)
+    subtypes: false
+    library: Jca
+    context:
+      type: SignatureContext
+      kind: NONE
+    root: false
+    returnsReceiver: true
   - api: "org.bouncycastle.pqc.crypto.DigestingMessageSigner#<init>(org.bouncycastle.pqc.crypto.MessageSigner, org.bouncycastle.crypto.Digest)"
     subtypes: false
     library: Bc
@@ -8923,6 +9043,20 @@ apis:
     next:
       - "org.bouncycastle.crypto.MessageSigner#init(boolean, org.bouncycastle.crypto.CipherParameters)"
 names:
+  bc-signature-aliases:
+    MD2WITHRSAENCRYPTION: MD2withRSA
+    MD5WITHRSAENCRYPTION: MD5withRSA
+    RIPEMD160WITHRSAENCRYPTION: RIPEMD160withRSA
+    SHA1WITHRSAANDMGF1: SHA1WITHRSASSA-PSS
+    SHA1WITHRSAENCRYPTION: SHA1withRSA
+    SHA224WITHRSAANDMGF1: SHA224WITHRSASSA-PSS
+    SHA224WITHRSAENCRYPTION: SHA224withRSA
+    SHA256WITHRSAANDMGF1: SHA256WITHRSASSA-PSS
+    SHA256WITHRSAENCRYPTION: SHA256withRSA
+    SHA384WITHRSAANDMGF1: SHA384WITHRSASSA-PSS
+    SHA384WITHRSAENCRYPTION: SHA384withRSA
+    SHA512WITHRSAANDMGF1: SHA512WITHRSASSA-PSS
+    SHA512WITHRSAENCRYPTION: SHA512withRSA
   w3c-xml-encryption:
     http://www.w3.org/2001/04/xmldsig-more#camellia128-cbc: Camellia/CBC/ISO10126Padding
     http://www.w3.org/2001/04/xmldsig-more#camellia192-cbc: Camellia/CBC/ISO10126Padding

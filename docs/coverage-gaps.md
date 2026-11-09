@@ -4,8 +4,8 @@ Keycloak 26.8.2, measured on 2026-11-09, against [crypto-finder](https://github.
 
 | | cryptid | crypto-finder |
 | --- | --- | --- |
-| Occurrences | 2,992 | 302 |
-| Components | 954 crypto assets, 75 libraries | 155, 116 of them certificates |
+| Occurrences | 3,015 | 302 |
+| Components | 963 crypto assets, 75 libraries | 155, 116 of them certificates |
 
 crypto-finder's occurrences were matched to cryptid's by source path and line (within 3 lines). Of its 75 algorithm and related-material occurrences, 31 are found at the same line, 16 more in the same file.
 
@@ -15,6 +15,9 @@ crypto-finder's occurrences were matched to cryptid's by source path and line (w
 - **Assets merged by name** (2026-11-09). sonar-cryptography's `CBOMOutputFile` merges two assets of the same name in a JAR, keeping the first one's properties, so more findings made more assets wrong: the `AES-128` of Keycloak's `SecretKeySpec` took the `sign` function of a signature variant. `AssetCollector` gives each finding its own output and merges by content. 346 occurrences that were already in the CBOM got their own properties back, e.g. Threefish's sizes, RC4's decrypt, and `BlockCipherMac`'s CBC MAC instead of "unknown, OAEP".
 
 - **XML encryption** (2026-11-09). xmlsec's `XMLCipher.getInstance` and `getProviderInstance` have specs now, the first of cryptid's own after the specs became hand-maintained. Their algorithms are W3C URIs, which a `names` table in the specs translates to the JCA names xmlsec uses (`JCEMapper`), with the key size from the URI (`AES_128/CBC/ISO10126Padding`); URIs not in the table are dropped. `XMLEncryptionUtil` now reports AES-128, 192 and 256-CBC with `encrypt` and RSA 1.5 for the data, RSA-OAEP and AES key wrap for the key transport, and `BaseSAML2BindingBuilder` AES-256-GCM: 12 occurrences. All 11 of crypto-finder's `saml-core` findings are in those files; it reports the lines referencing the constants, cryptid the call sites. Its other 5, in `services`, aren't uses: `SamlProtocolUtils` compares a client's configured algorithm with the constants, and `SAMLEncryptionAlgorithms` is an enum storing them in fields from its constructor, the field case below.
+- **Bouncy Castle's content signers** (2026-11-09). `JcaContentSignerBuilder` has specs now: its constructors, which take the signature algorithm, and `build(PrivateKey)`, which signs. Bouncy Castle spells some algorithms its own way, so an `aliases` table in the specs maps them to the JCA names the translators read (`SHA256WithRSAEncryption` to `SHA256withRSA`, `SHA256WITHRSAANDMGF1` to RSA-PSS), ignoring case and keeping other names as they are. Keycloak calls `build` after `setProvider`, which returns the builder, so specs can now say `returnsReceiver`: calls on the result are calls on the receiver. All 10 of crypto-finder's findings in `BCCertificateUtilsProvider` and `BCFIPSCertificateUtilsProvider` (it classifies them as protocols) are matched at the same line, with `sign`, and Netty's self-signed certificate generator is found too.
+
+  This also turned up values reported twice. Inside bcpkix, `JcaContentSignerBuilder(String)` passes the algorithm on to another specified constructor, whose parameter the call index resolved to Keycloak's constant, reporting it at Keycloak's call site a second time, without the action. A value resolved from a caller is now dropped when the caller's call is itself a finding: its own scan reports the value, with the events on the object.
 
 ## Open
 
@@ -22,7 +25,6 @@ In the modules the distribution ships, in the order worth doing:
 
 | Miss | Occurrences | Cause | Fix |
 | --- | --- | --- | --- |
-| `JcaContentSignerBuilder("SHA256WithECDSA")` in `crypto-default` | 5 | No spec for Bouncy Castle's PKIX operator API. | A spec with the signature context; check that the mappers know Bouncy Castle's names (`SHA256WithRSAEncryption`). |
 | Argon2 in `Argon2PasswordHashProvider` | 1 | No rule upstream, and no model class the mappers reach. | A spec, and a node of our own keyed on the spec, not on the value's name. |
 | PBKDF2 in `Pbkdf2PasswordHashProvider`, SHA-1 in `SHAPasswordEncoder` | 3 | The algorithm is a constructor parameter stored in a field. | *Values derived from parameters* in the backlog. |
 | RSA-OAEP with SHA-256 in `DefaultRsaKeyEncryption256JWEAlgorithmProvider` | 1 | The `Cipher` comes from the superclass through an overridden `initCipher`, with its name in a field. | Overriding dispatch in the object graph, and fields from constructor parameters. |

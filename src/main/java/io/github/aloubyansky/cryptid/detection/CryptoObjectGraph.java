@@ -9,6 +9,7 @@ import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs.ApiSpec;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -118,6 +119,14 @@ public final class CryptoObjectGraph {
     private final Map<String, Map<Integer, List<CryptoApiCall>>> parameterEvents = new LinkedHashMap<>();
     /** method -> the call sites in the graph calling it */
     private final Map<String, List<CallSite>> callers = new LinkedHashMap<>();
+    /** The objects a value refers to: origins in its method, and the method's parameters. */
+    private record Refs(Set<Integer> origins, long params) {}
+
+    /**
+     * method -> the results of calls returning their receiver -> the receiver's objects, e.g. the
+     * builder {@code setProvider} returns
+     */
+    private final Map<String, Map<Integer, Refs>> receivers = new LinkedHashMap<>();
     /** A call's position in {@link #calls}, for returning calls of a method in bytecode order. */
     private final Map<CryptoApiCall, Integer> positions = new IdentityHashMap<>();
 
@@ -126,25 +135,32 @@ public final class CryptoObjectGraph {
         for (Analyzer.MethodResult m : results) {
             final Map<Integer, List<CryptoApiCall>> creations = new TreeMap<>();
             final Map<Integer, List<CryptoApiCall>> events = new TreeMap<>();
+            final Map<Integer, Refs> returned = new HashMap<>();
             for (CallSite cs : m.calls()) {
                 final Analyzer.MethodResult callee = methods.get(signature(cs));
                 if (callee != null) {
                     callers.computeIfAbsent(callee.method(), k -> new ArrayList<>()).add(cs);
                 }
-                for (ApiSpec spec : matcher.match(cs, types)) {
+                final List<ApiSpec> specs = matcher.match(cs, types);
+                // calls run in bytecode order, so the receiver's own receivers are known
+                final Refs receiver = expand(returned, cs.receiver().origins(), cs.receiver().params());
+                if (cs.created() >= 0 && specs.stream().anyMatch(ApiSpec::returnsReceiver)) {
+                    returned.put(cs.created(), receiver);
+                }
+                for (ApiSpec spec : specs) {
                     final CryptoApiCall c = new CryptoApiCall(cs, spec);
                     positions.put(c, calls.size());
                     calls.add(c);
-                    if (cs.created() >= 0) {
+                    if (cs.created() >= 0 && !returned.containsKey(cs.created())) {
                         creations.computeIfAbsent(cs.created(), k -> new ArrayList<>()).add(c);
                     }
-                    for (int origin : cs.receiver().origins()) {
+                    for (int origin : receiver.origins()) {
                         // a constructor runs on the object its new allocated: that's its creation, not an event
                         if (origin != cs.created()) {
                             events.computeIfAbsent(origin, k -> new ArrayList<>()).add(c);
                         }
                     }
-                    for (int p : bits(cs.receiver().params())) {
+                    for (int p : bits(receiver.params())) {
                         parameterEvents.computeIfAbsent(m.method(), k -> new TreeMap<>())
                                 .computeIfAbsent(p, k -> new ArrayList<>()).add(c);
                     }
@@ -160,7 +176,29 @@ public final class CryptoObjectGraph {
             if (!objs.isEmpty()) {
                 objects.put(m.method(), Collections.unmodifiableMap(objs));
             }
+            if (!returned.isEmpty()) {
+                receivers.put(m.method(), returned);
+            }
         }
+    }
+
+    /** The objects of origins and parameters, with results of calls returning their receiver replaced by it. */
+    private static Refs expand(Map<Integer, Refs> returned, Set<Integer> origins, long params) {
+        if (returned.isEmpty() || origins.stream().noneMatch(returned::containsKey)) {
+            return new Refs(origins, params);
+        }
+        final Set<Integer> result = new java.util.TreeSet<>();
+        long p = params;
+        for (int o : origins) {
+            final Refs r = returned.get(o);
+            if (r == null) {
+                result.add(o);
+            } else {
+                result.addAll(r.origins());
+                p |= r.params();
+            }
+        }
+        return new Refs(result, p);
     }
 
     /**
@@ -283,6 +321,9 @@ public final class CryptoObjectGraph {
 
         /** The objects of a method, given by origins and parameters, as seen on a path. */
         void object(String method, Set<Integer> origins, long params, Path path, int hops) {
+            final Refs refs = expand(receivers.getOrDefault(method, Map.of()), origins, params);
+            origins = refs.origins();
+            params = refs.params();
             final Analyzer.MethodResult m = methods.get(method);
             for (int o : new java.util.TreeSet<>(origins)) {
                 if (!visited.add(method + "#o" + o + "@" + path.frames().size() + ":" + id(path))) {
