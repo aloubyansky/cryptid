@@ -123,7 +123,7 @@ Values merge at control-flow joins; static and instance fields reach a fixpoint 
 - a detectable argument with several possible constants yields one finding per value, up to 16 combinations per match;
 - a detectable argument passed in through the enclosing method's parameters is resolved through `CallIndex`, up to 6 caller hops, through superclasses and interfaces (a call to `T.m` reaches implementations of `m` in subtypes of `T`). Each value becomes a separate finding located at the caller, where the value is chosen.
 
-Objects are followed within one method; constant values across methods and JARs.
+Crypto objects are followed across the methods of a JAR (`CryptoObjectGraph`, through arguments and return values, up to 4 calls away); constant values across methods and JARs.
 
 ## What the runner JAR contains
 

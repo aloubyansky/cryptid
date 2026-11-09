@@ -103,7 +103,7 @@ public final class BytecodeScanner {
 
     /**
      * The methods of a JAR that may contain crypto events, kept by phase A for detection: those
-     * calling an API that reports on its own, with their call sites from the final round of the
+     * calling a specified API, with their call sites from the final round of the
      * field fixpoint. Detecting on them gives the same findings as re-analyzing the JAR, without
      * interpreting it again.
      *
@@ -179,13 +179,12 @@ public final class BytecodeScanner {
         final CryptoAssetModeler modeler = modelers.get();
         final CBOMOutputFile output = new CBOMOutputFile();
         int findings = 0;
-        for (Analyzer.MethodResult m : methods) {
-            for (Finding f : detector.detect(m)) {
-                final List<INode> nodes = modeler.process(f.event());
-                if (!nodes.isEmpty()) {
-                    output.add(nodes);
-                    findings++;
-                }
+        // all methods at once, so that crypto objects are followed between them
+        for (Finding f : detector.detect(methods)) {
+            final List<INode> nodes = modeler.process(f.event());
+            if (!nodes.isEmpty()) {
+                output.add(nodes);
+                findings++;
             }
         }
         final Bom bom = output.getBom();

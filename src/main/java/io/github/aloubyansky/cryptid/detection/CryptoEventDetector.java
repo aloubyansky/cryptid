@@ -10,6 +10,8 @@ import io.github.aloubyansky.cryptid.bytecode.CallIndex;
 import io.github.aloubyansky.cryptid.bytecode.CallSite;
 import io.github.aloubyansky.cryptid.bytecode.Types;
 import io.github.aloubyansky.cryptid.detection.CryptoObjectGraph.CryptoApiCall;
+import io.github.aloubyansky.cryptid.detection.CryptoObjectGraph.Path;
+import io.github.aloubyansky.cryptid.detection.CryptoObjectGraph.Reached;
 import io.github.aloubyansky.cryptid.spec.CryptoApiMatcher;
 import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs.ApiSpec;
 import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs.Arg;
@@ -73,18 +75,17 @@ public final class CryptoEventDetector {
     }
 
     /**
-     * Whether a method calls an API that reports findings on its own: {@link #detect} finds
-     * nothing in any other method.
+     * Whether a method calls a specified API: detection in a set of methods finds events only in
+     * such methods. An event can be in a method without root APIs, e.g. {@code init} in a helper
+     * the object is passed to, so these methods are kept too.
      *
      * @param method the method
-     * @return {@code true} if {@link #detect} may find something in it
+     * @return {@code true} if the method may contain crypto events
      */
     public boolean mayDetect(Analyzer.MethodResult method) {
         for (CallSite cs : method.calls()) {
-            for (ApiSpec spec : matcher.match(cs, types)) {
-                if (spec.root()) {
-                    return true;
-                }
+            if (!matcher.match(cs, types).isEmpty()) {
+                return true;
             }
         }
         return false;
@@ -98,11 +99,21 @@ public final class CryptoEventDetector {
      *     values its callers pass
      */
     public List<Finding> detect(Analyzer.MethodResult method) {
-        final CryptoObjectGraph graph = CryptoObjectGraph.of(method, matcher, types);
-        final String file = locationPrefix + method.sourceFile();
+        return detect(List.of(method));
+    }
+
+    /**
+     * Detects the findings of methods, following crypto objects between them.
+     *
+     * @param methods the methods, e.g. a JAR's methods that may contain crypto events
+     * @return the findings, by method, call site and then API, followed after each by the findings
+     *     of values its callers pass
+     */
+    public List<Finding> detect(List<Analyzer.MethodResult> methods) {
+        final CryptoObjectGraph graph = CryptoObjectGraph.of(methods, matcher, types);
         final List<Finding> findings = new ArrayList<>();
         for (CryptoApiCall root : graph.roots()) {
-            for (CryptoEvent d : variants(root, graph, file)) {
+            for (CryptoEvent d : variants(root, graph)) {
                 findings.add(new Finding(Loc.of(root.site()), root.site(), d));
             }
             findings.addAll(resolved);
@@ -111,10 +122,12 @@ public final class CryptoEventDetector {
         return findings;
     }
 
-    private List<CryptoEvent> variants(CryptoApiCall root, CryptoObjectGraph graph, String file) {
+    private List<CryptoEvent> variants(CryptoApiCall root, CryptoObjectGraph graph) {
+        final String file = file(root.site());
+        final List<Reached> start = List.of(new Reached(root, Path.ROOT));
         multiValued = new LinkedHashMap<>();
         final CryptoEvent merged = CryptoEvent.of(root.spec(), root.spec().context(), file);
-        process(merged, List.of(root.site()), graph, file, 0);
+        process(merged, start, graph, 0);
         final Map<Point, List<Object>> points = multiValued;
         multiValued = null;
         long count = 1;
@@ -142,7 +155,7 @@ public final class CryptoEventDetector {
         for (Map<Point, Object> c : combinations) {
             chosen = c;
             final CryptoEvent d = CryptoEvent.of(root.spec(), root.spec().context(), file);
-            process(d, List.of(root.site()), graph, file, 0);
+            process(d, start, graph, 0);
             events.add(d);
         }
         chosen = Map.of();
@@ -163,10 +176,13 @@ public final class CryptoEventDetector {
     }
 
     @SuppressWarnings("unchecked")
-    private void process(CryptoEvent store, List<CallSite> calls, CryptoObjectGraph graph, String file, int depth) {
+    private void process(CryptoEvent store, List<Reached> calls, CryptoObjectGraph graph, int depth) {
         final ApiSpec spec = store.spec();
         final Context context = store.context();
-        for (CallSite cs : calls) {
+        final String file = store.file();
+        for (Reached reached : calls) {
+            final CallSite cs = reached.call().site();
+            final Path path = reached.path();
             final Loc loc = Loc.of(cs);
             if (spec.action() != null) {
                 final Object factory = ValueFactories.create(spec.action());
@@ -200,17 +216,17 @@ public final class CryptoEventDetector {
                     }
                 }
                 if (arg.link()) {
-                    follow(store, k, graph.related(value.origins()), arg.roles(), context, graph, file, depth);
+                    follow(store, k, graph.related(cs, value, path), arg.roles(), context, graph, depth);
                 }
             }
             if (!spec.next().isEmpty() && cs.created() >= 0) {
                 // in the spec's order, then call order: translation attaches them in this order,
                 // e.g. a signature's verify action before the parameters set on it
-                final List<CryptoApiCall> next = graph.related(Set.of(cs.created())).stream()
-                        .filter(c -> spec.next().contains(c.spec().api()))
-                        .sorted(Comparator.comparingInt(c -> spec.next().indexOf(c.spec().api())))
+                final List<Reached> next = graph.createdBy(cs, path).stream()
+                        .filter(r -> spec.next().contains(r.call().spec().api()))
+                        .sorted(Comparator.comparingInt(r -> spec.next().indexOf(r.call().spec().api())))
                         .toList();
-                follow(store, -1, next, spec.nextRoles(), context, graph, file, depth);
+                follow(store, -1, next, spec.nextRoles(), context, graph, depth);
             }
         }
     }
@@ -219,20 +235,28 @@ public final class CryptoEventDetector {
      * Attaches the related calls to the parent, one child event per API, holding all its
      * calls, as rule trees held all calls of a rule.
      */
-    private void follow(CryptoEvent parent, int index, List<CryptoApiCall> related, List<Role> roles, Context parentContext,
-            CryptoObjectGraph graph, String file, int depth) {
+    private void follow(CryptoEvent parent, int index, List<Reached> related, List<Role> roles, Context parentContext,
+            CryptoObjectGraph graph, int depth) {
         if (related.isEmpty() || depth >= MAX_DEPTH) {
             return;
         }
-        final Map<ApiSpec, List<CallSite>> byApi = new LinkedHashMap<>();
-        for (CryptoApiCall c : related) {
-            byApi.computeIfAbsent(c.spec(), k -> new ArrayList<>()).add(c.site());
+        // one child event per API and source file, holding all its calls there, as rule trees
+        // held all calls of a rule; calls in other files are events of their own file
+        final Map<ApiSpec, Map<String, List<Reached>>> byApi = new LinkedHashMap<>();
+        for (Reached r : related) {
+            byApi.computeIfAbsent(r.call().spec(), k -> new LinkedHashMap<>())
+                    .computeIfAbsent(file(r.call().site()), k -> new ArrayList<>()).add(r);
         }
-        for (Map.Entry<ApiSpec, List<CallSite>> e : byApi.entrySet()) {
-            final CryptoEvent child = CryptoEvent.of(e.getKey(), role(roles, parentContext, e.getKey()), file);
+        byApi.forEach((spec, byFile) -> byFile.forEach((file, calls) -> {
+            final CryptoEvent child = CryptoEvent.of(spec, role(roles, parentContext, spec), file);
             parent.attach(index, child);
-            process(child, e.getValue(), graph, file, depth + 1);
-        }
+            process(child, calls, graph, depth + 1);
+        }));
+    }
+
+    /** The source file of a call, prefixed with the artifact path. */
+    private String file(CallSite cs) {
+        return locationPrefix + cs.sourceFile();
     }
 
     /** The linked object's context: the first role of the link that applies, else its API's. */

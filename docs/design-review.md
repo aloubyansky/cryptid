@@ -10,7 +10,7 @@ Findings from reviewing the implementation against its [architecture](architectu
 | F4 | The tool's own classpath leaks into the analysis | design | open |
 | F5 | Results round-trip through JSON and string heuristics | design | open |
 | F6 | Dead and unused weight | cleanup | partly done |
-| F7 | Object flow stops at method boundaries | limit | open |
+| F7 | Object flow stops at method boundaries | limit | done |
 
 ## F1. Results vary between runs (fixed)
 
@@ -60,6 +60,8 @@ Per-artifact nodes become a CycloneDX `Bom`, are edited, written as JSON and par
 
 Constant values resolve across methods (`CallIndex`), but next and depending rules follow objects within one method only. A `Cipher` created in a factory method and initialized by its caller loses its `init` details.
 
+Done: `CryptoObjectGraph` is built over all candidate methods of a JAR and follows objects through arguments into callees and through return values back to callers, up to 4 calls away, along a call path. A parameter resolves to the argument of the caller on the path; at the start of a path it doesn't climb to all callers, since each caller is a finding of its own. See [the step 6 findings](detection-redesign.md#step-6-findings-objects-across-methods).
+
 ## A more direct design for Java
 
 [Detection redesign](detection-redesign.md) proposes going further than the steps below: API specifications as data and an object graph of crypto objects, instead of rule trees, which also removes the SonarSource libraries.
@@ -103,7 +105,7 @@ Order of work, one step at a time, each checked by `SampleSbomIT`, `Reproducibil
 5. **Our own detection tree and translation walk**: reproduce `ITranslator.translate`'s traversal over `Detection`, calling the context translators directly (needs a close reading of how `ITranslator.translate` attaches child nodes). Then remove `StoreAccess`, `ScanContext` and `InputFile`; the `Tree` marker stays while the two `JcaGCMParameterSpec` lambdas need it.
 6. **In-memory assembly (F5)**: pass `Site`-keyed results to the assembler; JSON only as a cache; drop the UUID and prefix heuristics.
 7. **JDK-only supertypes and cleanup (F4, F6)**: read JDK classes from `jrt:/`; move `com.ibm:rules` to test scope; stop attaching empty child stores.
-8. **Later: object flow across methods (F7)**, by recording receivers and returns of objects created by matched calls in the call index, as for constant arguments.
+8. **Object flow across methods (F7)**: done, in the object graph instead of the call index.
 
 Step 7 is independent and low-risk; 4 to 6 change internals behind stable inputs and outputs.
 
@@ -117,7 +119,10 @@ Gaps and improvements beyond the findings above, moved here from the README on 2
 - **Positions.** Multi-line `new X(...)` expressions report the statement's first line; classes without line tables (Bouncy Castle's release JARs) report no line; there are no column offsets. Emitting `symbol` (the enclosing method) and de-duplicating on it plus the bytecode offset would identify occurrences more robustly.
 - **Memory and archives.** `JarCache` keeps every JAR open for the whole run and reads them with `java.util.zip.ZipFile`, skipping multi-release variants; smallrye-common-archive, with a bound on open archives and a more compact call index, would cut the peak (5.5 GB on Keycloak).
 - **Shaded code.** Binaries include classes that sources JARs lack; keycloak-admin-cli shades keycloak-common, so its copies are reported as separate locations. Whether to attribute shaded code to the shading component or to the original library is open.
-- **Work directory cache.** Per-artifact CBOMs aren't invalidated when other artifacts of the SBOM change.
+- **Work directory cache.** Per-artifact CBOMs aren't invalidated when other artifacts of the SBOM change, nor when cryptid itself changes: a rebuilt cryptid reuses the CBOMs of the previous build (all 548 Keycloak artifacts on 2026-11-09). Keying them by cryptid's version and a hash of the specs would fix it; until then, use a fresh work directory to compare builds.
+- **Key sizes in bytes read as bits.** The spec of Bouncy Castle's `KeyParameter(byte[], int, int)`, from sonar-cryptography's rule, reads the length as a `BIT` key size, but it is in bytes: `OpenSSHPrivateKeyUtil` reports AES-16, AES-24 and AES-32 instead of 128, 192 and 256 bits (exposed by F7). The translators take a size as is, even with the `BYTE` unit, so the fix needs a conversion to bits and a way to correct exported specs, e.g. an override file applied when the specs load. Other byte-length parameters should be checked for the same error, and the fix reported upstream.
+- **One finding for several possible objects.** An argument that may be one of several objects (webauthn4j's `SignatureUtil` passes one of three `PSSParameterSpec`s chosen in a `switch` to `setParameter`) gives one event holding all of them, and translation keeps one, depending on order. Splitting findings per object, as they are split per constant value, would report each.
+- **Object flow limits (F7).** Objects aren't followed through fields, into other JARs, or into overriding methods (callees are matched by exact signature), and at most 4 calls away. A returned object goes to all callers at the start of a path, so a factory's finding merges the events of all its callers.
 - **Distribution.** A legal confirmation of the `org.sonar.plugins.java.api.tree.Tree` marker interface. (`NOTICE` and the JAR's `META-INF/THIRD-PARTY.txt` were added on 2026-11-09.)
 - **Upstream changes to sonar-cryptography** that would remove the remaining workarounds: a value factory instead of the two `Tree`-typed lambdas in `JcaGCMParameterSpec` (drops the marker), `Set.of` instead of `SetUtils` in `MethodMatcher`, an `IScanContext` without `InputFile`, a public `DetectionStore` builder (the last three only matter to the test reference now).
 

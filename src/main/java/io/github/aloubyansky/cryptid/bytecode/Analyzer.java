@@ -65,7 +65,20 @@ import java.util.stream.Stream;
 public final class Analyzer {
 
     /** A method's call sites, in bytecode order. */
-    public record MethodResult(String className, String method, String sourceFile, List<CallSite> calls) {}
+    /**
+     * A method's call sites and what it may return.
+     *
+     * @param className the class
+     * @param method the method, {@code owner.name+descriptor}
+     * @param sourceFile the class's source file, with its package path
+     * @param calls the call sites, in bytecode order
+     * @param returned what the method may return: the objects (origins of this method) and the
+     *     parameters it returns; unknown for methods returning nothing or a primitive
+     */
+    public record MethodResult(String className, String method, String sourceFile, List<CallSite> calls, AVal returned) {}
+
+    /** A method's call sites and its returned value, from one interpretation. */
+    private record Interpretation(List<CallSite> calls, AVal returned) {}
 
     private final List<ClassModel> classes = new ArrayList<>();
     private final Map<String, AVal> fields = new HashMap<>();
@@ -153,14 +166,17 @@ public final class Analyzer {
                 for (MethodModel mm : cm.methods()) {
                     final String method = className + "." + mm.methodName().stringValue() + mm.methodType().stringValue();
                     final List<CallSite> calls = new ArrayList<>();
-                    mm.code().ifPresent(code -> {
+                    AVal returned = AVal.UNKNOWN;
+                    if (mm.code().isPresent()) {
                         try {
-                            calls.addAll(interpret(method, source, mm, code));
+                            final Interpretation in = interpret(method, source, mm, mm.code().get());
+                            calls.addAll(in.calls());
+                            returned = in.returned();
                         } catch (RuntimeException e) {
                             failedMethods++;
                         }
-                    });
-                    results.add(new MethodResult(className, method, source, calls));
+                    }
+                    results.add(new MethodResult(className, method, source, calls, returned));
                 }
             }
             if (!fieldsChanged) {
@@ -243,7 +259,7 @@ public final class Analyzer {
         }
     }
 
-    private List<CallSite> interpret(String method, String source, MethodModel mm, CodeModel code) {
+    private Interpretation interpret(String method, String source, MethodModel mm, CodeModel code) {
         final List<CodeElement> elements = code.elementList();
         final Map<Label, Integer> labels = new HashMap<>();
         final List<int[]> handlers = new ArrayList<>();
@@ -278,6 +294,7 @@ public final class Analyzer {
         final Deque<Integer> work = new ArrayDeque<>();
         work.add(0);
         final Map<Integer, CallSite> calls = new LinkedHashMap<>();
+        AVal returned = AVal.UNKNOWN;
         final Map<Integer, Integer> newSites = new HashMap<>();
 
         while (!work.isEmpty()) {
@@ -378,6 +395,9 @@ public final class Analyzer {
                     }
                     i = elements.size();
                 } else if (el instanceof ReturnInstruction r) {
+                    if (r.opcode() == Opcode.ARETURN && !s.stack.isEmpty()) {
+                        returned = returned.merge(s.stack.get(s.stack.size() - 1));
+                    }
                     i = elements.size();
                 } else if (el instanceof ThrowInstruction t) {
                     i = elements.size();
@@ -386,7 +406,7 @@ public final class Analyzer {
                 }
             }
         }
-        return new ArrayList<>(calls.values());
+        return new Interpretation(new ArrayList<>(calls.values()), returned);
     }
 
     private static void flow(State[] states, Deque<Integer> work, Integer target, State s) {

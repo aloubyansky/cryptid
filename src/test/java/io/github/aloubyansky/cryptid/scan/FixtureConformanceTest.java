@@ -185,14 +185,13 @@ public class FixtureConformanceTest {
         index.addCalls(methods, "");
         index.finish();
         final CryptoEventDetector detector = new CryptoEventDetector(new CryptoApiMatcher(CryptoApiSpecs.load()), types, "", index);
-        for (Analyzer.MethodResult m : methods) {
-            for (Finding f : detector.detect(m)) {
-                final List<INode> nodes = modeler.process(f.event());
-                for (Issue<Loc> issue : new InventoryRule<Loc>().report(f.loc(), nodes)) {
-                    actualByFile.computeIfAbsent(issue.tree().file(), k -> new TreeMap<>())
-                            .computeIfAbsent(issue.tree().line(), k -> new ArrayList<>())
-                            .add(issue.message());
-                }
+        // all methods of the unit at once, as the scanner does, so objects are followed between them
+        for (Finding f : detector.detect(methods)) {
+            final List<INode> nodes = modeler.process(f.event());
+            for (Issue<Loc> issue : new InventoryRule<Loc>().report(f.loc(), nodes)) {
+                actualByFile.computeIfAbsent(issue.tree().file(), k -> new TreeMap<>())
+                        .computeIfAbsent(issue.tree().line(), k -> new ArrayList<>())
+                        .add(issue.message());
             }
         }
     }

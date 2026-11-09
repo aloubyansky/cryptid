@@ -233,20 +233,24 @@ class ObjectGraphEquivalenceTest {
                 }
             }
             if (arg.link() && depth < MAX_DEPTH) {
-                for (CryptoApiCall linked : graph.related(value.origins())) {
+                for (CryptoApiCall linked : calls(graph.related(cs, value, CryptoObjectGraph.Path.ROOT))) {
                     final Context c = role(arg.roles(), ctx, linked.spec());
                     lines(graph, linked, c, path + "/" + arg.index() + ":" + c + "/" + linked.spec().library(), depth + 1, out);
                 }
             }
         }
         if (!spec.next().isEmpty() && cs.created() >= 0 && depth < MAX_DEPTH) {
-            for (CryptoApiCall next : graph.related(Set.of(cs.created()))) {
+            for (CryptoApiCall next : calls(graph.createdBy(cs, CryptoObjectGraph.Path.ROOT))) {
                 if (spec.next().contains(next.spec().api())) {
                     final Context c = role(spec.nextRoles(), ctx, next.spec());
                     lines(graph, next, c, path + "/-1:" + c + "/" + next.spec().library(), depth + 1, out);
                 }
             }
         }
+    }
+
+    private static List<CryptoApiCall> calls(List<CryptoObjectGraph.Reached> reached) {
+        return reached.stream().map(CryptoObjectGraph.Reached::call).toList();
     }
 
     /** The linked object's context: a role of the link if one applies, else its API's context. */
