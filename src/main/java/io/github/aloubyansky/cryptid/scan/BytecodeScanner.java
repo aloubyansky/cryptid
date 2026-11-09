@@ -1,7 +1,6 @@
 package io.github.aloubyansky.cryptid.scan;
 
 import com.ibm.mapper.model.INode;
-import com.ibm.output.cyclondx.CBOMOutputFile;
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
 import io.github.aloubyansky.cryptid.bytecode.CallIndex;
 import io.github.aloubyansky.cryptid.bytecode.JarCache;
@@ -177,17 +176,18 @@ public final class BytecodeScanner {
             List<Analyzer.MethodResult> methods, int failedMethods) {
         final CryptoEventDetector detector = new CryptoEventDetector(matcher, types(jar, classpath, jarCache), locationPrefix, callIndex);
         final CryptoAssetModeler modeler = modelers.get();
-        final CBOMOutputFile output = new CBOMOutputFile();
+        final AssetCollector output = new AssetCollector();
         int findings = 0;
         // all methods at once, so that crypto objects are followed between them
         for (Finding f : detector.detect(methods)) {
             final List<INode> nodes = modeler.process(f.event());
-            if (!nodes.isEmpty()) {
+            // a variant whose value the API wouldn't take, e.g. a MAC name for a signature
+            if (!nodes.isEmpty() && (!f.variant() || CryptoAssetModeler.fitsApi(f.event(), nodes))) {
                 output.add(nodes);
                 findings++;
             }
         }
-        final Bom bom = output.getBom();
+        final Bom bom = output.bom();
         clearUnknownPositions(bom);
         return new Result(bom, jarCache.classNames(jar).size(), findings, failedMethods);
     }

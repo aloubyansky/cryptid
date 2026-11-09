@@ -132,7 +132,7 @@ public class GenerateCbomCommand implements Callable<Integer> {
                 notJars++;
                 continue;
             }
-            byArtifact.computeIfAbsent(c.artifactKey(), k -> new ArrayList<>()).add(c);
+            byArtifact.computeIfAbsent(c.artifactKey(), k -> new ArrayList<>(1)).add(c);
         }
         if (notJars > 0) {
             log.infof("Skipping %d components that aren't JARs", notJars);

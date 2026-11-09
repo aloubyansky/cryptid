@@ -9,5 +9,7 @@ import io.github.aloubyansky.cryptid.bytecode.CallSite;
  *     caller's call site
  * @param call the matched call
  * @param event its event tree
+ * @param variant whether it is one of several findings of the call, one per combination of the
+ *     values its arguments may have; such a value may be one the API rejects at runtime
  */
-public record Finding(Loc loc, CallSite call, CryptoEvent event) {}
+public record Finding(Loc loc, CallSite call, CryptoEvent event, boolean variant) {}

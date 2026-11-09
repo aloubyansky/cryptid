@@ -116,8 +116,9 @@ public final class CryptoEventDetector {
         final CryptoObjectGraph graph = CryptoObjectGraph.of(methods, matcher, types);
         final List<Finding> findings = new ArrayList<>();
         for (CryptoApiCall root : graph.roots()) {
-            for (CryptoEvent d : variants(root, graph)) {
-                findings.add(new Finding(Loc.of(root.site()), root.site(), d));
+            final List<CryptoEvent> events = variants(root, graph);
+            for (CryptoEvent d : events) {
+                findings.add(new Finding(Loc.of(root.site()), root.site(), d, events.size() > 1));
             }
             findings.addAll(resolved);
             resolved = new ArrayList<>();
@@ -311,7 +312,7 @@ public final class CryptoEventDetector {
             factory.apply(new ResolvedValue<>(hit.value(), at)).ifPresent(v -> {
                 final CryptoEvent d = CryptoEvent.of(spec, context, site.file());
                 d.addValue(index, v);
-                resolved.add(new Finding(at, cs, d));
+                resolved.add(new Finding(at, cs, d, false));
             });
         }
     }

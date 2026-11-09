@@ -61,10 +61,15 @@ import java.util.stream.Stream;
  * <p>Field values are analyzed flow-insensitively: a field's value is the union of all values
  * stored into it anywhere, computed to a fixpoint over all classes. That resolves constants held
  * in fields, including assignment cycles between fields.
+ *
+ * <p>Constants a method returns reach its call sites the same way, in the same fixpoint, where the
+ * call can only run that method: static, private and final methods, and methods of final classes.
+ * A method returning its parameter returns the caller's argument. That resolves mapping methods,
+ * e.g. {@code Signature.getInstance(javaName(alg))} with {@code javaName} a {@code switch}
+ * returning algorithm names.
  */
 public final class Analyzer {
 
-    /** A method's call sites, in bytecode order. */
     /**
      * A method's call sites and what it may return.
      *
@@ -82,7 +87,12 @@ public final class Analyzer {
 
     private final List<ClassModel> classes = new ArrayList<>();
     private final Map<String, AVal> fields = new HashMap<>();
-    private boolean fieldsChanged;
+    /** method -> the constants it may return, and the parameters it may return unchanged */
+    private final Map<String, AVal> returns = new HashMap<>();
+    /** Methods a call runs exactly: static, private, final, or of a final class. */
+    private final Set<String> exactMethods = new HashSet<>();
+    /** Whether a field value or a returned value changed in the current round. */
+    private boolean changed;
     private int nextId;
     /** Stable ids for allocation and call sites, by method and element index. */
     private final Map<String, Integer> siteIds = new HashMap<>();
@@ -142,7 +152,16 @@ public final class Analyzer {
             return; // not a parseable class file
         }
         classes.add(cm);
-        analyzedClasses.add(cm.thisClass().asInternalName());
+        final String className = cm.thisClass().asInternalName();
+        analyzedClasses.add(className);
+        final boolean finalClass = cm.flags().has(AccessFlag.FINAL);
+        for (MethodModel mm : cm.methods()) {
+            final String name = mm.methodName().stringValue();
+            if (!name.startsWith("<") && (finalClass || mm.flags().has(AccessFlag.STATIC)
+                    || mm.flags().has(AccessFlag.PRIVATE) || mm.flags().has(AccessFlag.FINAL))) {
+                exactMethods.add(className + "." + name + mm.methodType().stringValue());
+            }
+        }
     }
 
     private final Set<String> analyzedClasses = new HashSet<>();
@@ -158,7 +177,7 @@ public final class Analyzer {
     public List<MethodResult> analyze() {
         List<MethodResult> results = List.of();
         for (int round = 0; round < 10; round++) {
-            fieldsChanged = false;
+            changed = false;
             results = new ArrayList<>();
             for (ClassModel cm : classes) {
                 final String className = cm.thisClass().asInternalName();
@@ -176,10 +195,13 @@ public final class Analyzer {
                             failedMethods++;
                         }
                     }
+                    if (exactMethods.contains(method)) {
+                        putReturn(method, returned);
+                    }
                     results.add(new MethodResult(className, method, source, calls, returned));
                 }
             }
-            if (!fieldsChanged) {
+            if (!changed) {
                 break;
             }
         }
@@ -478,8 +500,37 @@ public final class Analyzer {
         final AVal merged = prev == null ? v.withSize(1) : prev.merge(v.withSize(1));
         if (prev == null || merged != prev) {
             fields.put(key, merged);
-            fieldsChanged = true;
+            changed = true;
         }
+    }
+
+    /** Records what a method returns: its constants and parameters, not its own objects. */
+    private void putReturn(String method, AVal returned) {
+        final AVal v = new AVal(returned.consts(), returned.anyConst(), returned.params(), Set.of(), false);
+        final AVal prev = returns.get(method);
+        final AVal merged = prev == null ? v : prev.merge(v);
+        if (prev == null || merged != prev) {
+            returns.put(method, merged);
+            changed = true;
+        }
+    }
+
+    /**
+     * What a call returns, as far as known from the method it runs: its constants, and the
+     * arguments it returns unchanged, with their constants and the caller's parameters.
+     */
+    private AVal returnedBy(InvokeInstruction ii, AVal[] args) {
+        final AVal r = returns.get(ii.owner().asInternalName() + "." + ii.name().stringValue() + ii.type().stringValue());
+        if (r == null) {
+            return AVal.UNKNOWN;
+        }
+        AVal result = new AVal(r.consts(), r.anyConst(), 0, Set.of(), false);
+        for (int p = 0; p < args.length && p < AVal.MAX_PARAMS; p++) {
+            if ((r.params() & (1L << p)) != 0) {
+                result = result.merge(new AVal(args[p].consts(), args[p].anyConst(), args[p].params(), Set.of(), false));
+            }
+        }
+        return result;
     }
 
     private void invoke(State s, InvokeInstruction ii, String method, String source, int index, int line,
@@ -511,7 +562,7 @@ public final class Analyzer {
             }
         } else if (!t.returnType().descriptorString().equals("V")) {
             cs.created = id;
-            result = stringResult(cs, receiver, args);
+            result = stringResult(cs, receiver, args).merge(returnedBy(ii, args));
         }
         if (!t.returnType().descriptorString().equals("V")) {
             s.push(result.withSize(TypeKind.from(t.returnType()).slotSize()));

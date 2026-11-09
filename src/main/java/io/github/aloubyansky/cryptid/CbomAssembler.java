@@ -1,9 +1,6 @@
 package io.github.aloubyansky.cryptid;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.MapperFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
+import io.github.aloubyansky.cryptid.scan.AssetCollector;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -19,7 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.regex.Pattern;
 import org.cyclonedx.Version;
 import org.cyclonedx.exception.GeneratorException;
 import org.cyclonedx.generators.BomGeneratorFactory;
@@ -104,11 +100,11 @@ public class CbomAssembler {
                 // the same asset at the same occurrence can come from several artifacts, e.g. a
                 // wrapper shaded into another JAR resolving the same callers: keep the first
                 if (asset.getEvidence() != null && asset.getEvidence().getOccurrences() != null) {
-                    final String content = contentKey(asset);
+                    final String content = AssetCollector.contentKey(asset);
                     final List<Occurrence> fresh = new ArrayList<>();
                     String duplicateOf = null;
                     for (var o : asset.getEvidence().getOccurrences()) {
-                        final String previous = seen.putIfAbsent(occurrenceKey(content, o), asset.getBomRef());
+                        final String previous = seen.putIfAbsent(AssetCollector.occurrenceKey(content, o), asset.getBomRef());
                         if (previous == null) {
                             fresh.add(o);
                         } else if (duplicateOf == null) {
@@ -181,56 +177,15 @@ public class CbomAssembler {
         }
     }
 
-    private static final ObjectMapper CONTENT_JSON = new ObjectMapper()
-            .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true)
-            .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
-
-    /**
-     * Returns what identifies an asset apart from where it occurs: its name and crypto properties,
-     * without the random UUIDs in names and references. Two assets at one location are duplicates
-     * only if this is equal, e.g. not keys of different sizes.
-     *
-     * @param asset the crypto asset
-     * @return the content key
-     */
-    static String contentKey(Component asset) {
-        String props;
-        try {
-            props = asset.getCryptoProperties() == null ? "" : CONTENT_JSON.writeValueAsString(asset.getCryptoProperties());
-        } catch (JsonProcessingException e) {
-            props = String.valueOf(asset.getCryptoProperties());
-        }
-        final String name = asset.getName() == null ? "" : asset.getName();
-        return NAME_UUID.matcher(name).replaceAll("") + "|" + ANY_UUID.matcher(props).replaceAll("");
-    }
-
     /** A run-independent sort key for an asset: its content key and its occurrences. */
     private static String sortKey(Component asset) {
-        final StringBuilder sb = new StringBuilder(contentKey(asset));
+        final StringBuilder sb = new StringBuilder(AssetCollector.contentKey(asset));
         if (asset.getEvidence() != null && asset.getEvidence().getOccurrences() != null) {
             for (var o : asset.getEvidence().getOccurrences()) {
                 sb.append('|').append(o.getLocation()).append(':').append(o.getLine()).append(':').append(o.getAdditionalContext());
             }
         }
         return sb.toString();
-    }
-
-    private static final Pattern ANY_UUID =
-            Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
-
-    /** Random UUIDs some asset names embed, e.g. {@code key@<uuid>}. */
-    private static final Pattern NAME_UUID =
-            Pattern.compile("@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
-
-    /**
-     * Returns the key identifying an occurrence of an asset across per-artifact CBOMs.
-     *
-     * @param contentKey the asset's {@link #contentKey}
-     * @param o one of its occurrences
-     * @return the content key with location, line and offset
-     */
-    static String occurrenceKey(String contentKey, Occurrence o) {
-        return contentKey + "|" + o.getLocation() + "|" + o.getLine() + "|" + o.getOffset();
     }
 
     /**

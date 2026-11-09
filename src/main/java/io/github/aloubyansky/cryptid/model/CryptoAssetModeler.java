@@ -1,11 +1,23 @@
 package io.github.aloubyansky.cryptid.model;
 
 import com.ibm.engine.model.IValue;
+import com.ibm.engine.model.context.DigestContext;
 import com.ibm.engine.model.context.IDetectionContext;
+import com.ibm.engine.model.context.MacContext;
+import com.ibm.engine.model.context.SecretKeyContext;
+import com.ibm.engine.model.context.SignatureContext;
 import com.ibm.engine.rule.IBundle;
 import com.ibm.enricher.Enricher;
 import com.ibm.mapper.IContextTranslation;
 import com.ibm.mapper.model.INode;
+import com.ibm.mapper.model.IPrimitive;
+import com.ibm.mapper.model.KeyAgreement;
+import com.ibm.mapper.model.KeyEncapsulationMechanism;
+import com.ibm.mapper.model.Mac;
+import com.ibm.mapper.model.MessageDigest;
+import com.ibm.mapper.model.PublicKeyEncryption;
+import com.ibm.mapper.model.Signature;
+import com.ibm.mapper.model.Unknown;
 import com.ibm.mapper.reorganizer.IReorganizerRule;
 import com.ibm.mapper.reorganizer.Reorganizer;
 import com.ibm.mapper.utils.DetectionLocation;
@@ -68,6 +80,56 @@ public final class CryptoAssetModeler {
      */
     public List<INode> process(CryptoEvent root) {
         return finish(new AssetAssembler(this::translate).build(root));
+    }
+
+    /**
+     * Whether the model of an event is something its API can create: a {@code Signature}'s a
+     * signature, a {@code Mac}'s a MAC, a {@code MessageDigest}'s a digest. A model with a
+     * primitive of another kind and none of the API's comes from a value the API would reject at
+     * runtime, e.g. {@code Signature.getInstance("HmacSHA256")}, which a mapping method returning
+     * the names of a whole algorithm family can give. A secret key takes any name, but isn't for
+     * an asymmetric algorithm: a {@code SecretKeySpec} modeled with a signature, public-key
+     * encryption, key agreement or KEM doesn't fit. Events of other APIs, whose kinds vary, fit.
+     *
+     * @param root the event
+     * @param nodes its model, from {@link #process}
+     * @return {@code false} if the model is of a primitive the API doesn't create
+     */
+    public static boolean fitsApi(CryptoEvent root, List<INode> nodes) {
+        final IDetectionContext context = root.detectionContext();
+        final List<Class<? extends INode>> kinds;
+        if (context instanceof SignatureContext) {
+            kinds = List.of(Signature.class);
+        } else if (context instanceof MacContext) {
+            kinds = List.of(Mac.class);
+        } else if (context instanceof DigestContext) {
+            kinds = List.of(MessageDigest.class);
+        } else if (context instanceof SecretKeyContext) {
+            return nodes.stream().noneMatch(n -> hasKind(n, ASYMMETRIC));
+        } else {
+            return true;
+        }
+        boolean foreign = false;
+        for (INode node : nodes) {
+            final Class<? extends INode> kind = node.getKind();
+            if (kinds.stream().anyMatch(k -> k.isAssignableFrom(kind))) {
+                return true;
+            }
+            foreign |= IPrimitive.class.isAssignableFrom(kind) && !Unknown.class.isAssignableFrom(kind);
+        }
+        return !foreign;
+    }
+
+    private static final List<Class<? extends INode>> ASYMMETRIC =
+            List.of(Signature.class, PublicKeyEncryption.class, KeyAgreement.class, KeyEncapsulationMechanism.class);
+
+    /** Whether a node or one below it is of one of the kinds. */
+    private static boolean hasKind(INode node, List<Class<? extends INode>> kinds) {
+        final Class<? extends INode> kind = node.getKind();
+        if (kinds.stream().anyMatch(k -> k.isAssignableFrom(kind))) {
+            return true;
+        }
+        return node.getChildren().values().stream().anyMatch(c -> hasKind(c, kinds));
     }
 
     /** Reorganizes and enriches assembled nodes. */

@@ -78,6 +78,77 @@ class BytecodeScannerTest {
         assertEquals(1, result.classes());
     }
 
+    private static final String MAPPING = """
+            package org.acme.jose;
+
+            import java.security.Signature;
+
+            public class Signer {
+                // maps every algorithm of a family, not only those a signature takes
+                static String javaName(String alg) {
+                    switch (alg) {
+                        case "RS256": return "SHA256withRSA";
+                        case "HS256": return "HmacSHA256";
+                        case "A128": return "AES";
+                        default: throw new IllegalArgumentException(alg);
+                    }
+                }
+
+                public static Signature signature(String alg) throws Exception {
+                    return Signature.getInstance(javaName(alg));
+                }
+            }
+            """;
+
+    /**
+     * A value returned by a mapping method may be one the API rejects at runtime; such variants
+     * are dropped: a {@code Signature} isn't a MAC or a block cipher.
+     */
+    @Test
+    void dropsVariantsTheApiDoesNotTake() throws Exception {
+        final Path jar = compile("org/acme/jose/Signer.java", MAPPING);
+        final Bom bom;
+        try (JarCache jars = new JarCache()) {
+            bom = new BytecodeScanner().scan(jar, "org.acme/jose/1.0", List.of(), jars, null).bom();
+        }
+        final List<String> names = bom.getComponents().stream().map(Component::getName).toList();
+        assertTrue(names.stream().anyMatch(n -> n.contains("RSA")), names.toString());
+        assertTrue(names.stream().noneMatch(n -> n.startsWith("HMAC") || n.startsWith("AES")), names.toString());
+    }
+
+    private static final String SECRET = """
+            package org.acme.jose;
+
+            import javax.crypto.spec.SecretKeySpec;
+
+            public class Secrets {
+                static String javaName(String alg) {
+                    switch (alg) {
+                        case "RS256": return "SHA256withRSA";
+                        case "HS256": return "HmacSHA256";
+                        default: throw new IllegalArgumentException(alg);
+                    }
+                }
+
+                public static SecretKeySpec key(byte[] secret, String alg) {
+                    return new SecretKeySpec(secret, javaName(alg));
+                }
+            }
+            """;
+
+    /** A secret key isn't for an asymmetric algorithm, though {@code SecretKeySpec} takes any name. */
+    @Test
+    void dropsAsymmetricVariantsOfSecretKeys() throws Exception {
+        final Path jar = compile("org/acme/jose/Secrets.java", SECRET);
+        final Bom bom;
+        try (JarCache jars = new JarCache()) {
+            bom = new BytecodeScanner().scan(jar, "org.acme/jose/1.0", List.of(), jars, null).bom();
+        }
+        final List<String> names = bom.getComponents().stream().map(Component::getName).toList();
+        assertTrue(names.stream().anyMatch(n -> n.startsWith("HMAC")), names.toString());
+        assertTrue(names.stream().noneMatch(n -> n.contains("RSA")), names.toString());
+    }
+
     private static final String WRAPPER = """
             package org.acme.wrap;
 
