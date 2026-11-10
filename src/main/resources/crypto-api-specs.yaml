@@ -348,10 +348,12 @@ apis:
         type: java.lang.String
         value:
           factory: AlgorithmFactory
+          aliases: bc-signature-aliases
     next:
       - java.security.Signature#sign(...)
       - java.security.Signature#verify(...)
       - java.security.Signature#setParameter(java.security.spec.AlgorithmParameterSpec)
+    correction: "Bouncy Castle's provider registers its own signature names (SHA256withRSAandMGF1, SHA256WithRSAEncryption); the mappers don't read them"
   - api: "java.security.Signature#getInstance(java.lang.String, java.lang.String)"
     subtypes: true
     library: Jca
@@ -364,12 +366,14 @@ apis:
         type: java.lang.String
         value:
           factory: AlgorithmFactory
+          aliases: bc-signature-aliases
       - index: 1
         type: java.lang.String
     next:
       - java.security.Signature#sign(...)
       - java.security.Signature#verify(...)
       - java.security.Signature#setParameter(java.security.spec.AlgorithmParameterSpec)
+    correction: "Bouncy Castle's provider registers its own signature names (SHA256withRSAandMGF1, SHA256WithRSAEncryption); the mappers don't read them"
   - api: "java.security.Signature#getInstance(java.lang.String, java.security.Provider)"
     subtypes: true
     library: Jca
@@ -382,12 +386,14 @@ apis:
         type: java.lang.String
         value:
           factory: AlgorithmFactory
+          aliases: bc-signature-aliases
       - index: 1
         type: java.security.Provider
     next:
       - java.security.Signature#sign(...)
       - java.security.Signature#verify(...)
       - java.security.Signature#setParameter(java.security.spec.AlgorithmParameterSpec)
+    correction: "Bouncy Castle's provider registers its own signature names (SHA256withRSAandMGF1, SHA256WithRSAEncryption); the mappers don't read them"
   - api: java.security.Signature#setParameter(java.security.spec.AlgorithmParameterSpec)
     subtypes: true
     library: Jca

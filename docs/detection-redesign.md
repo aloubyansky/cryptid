@@ -214,6 +214,8 @@ The first corrections (2026-11-09) are byte lengths the rules read as bits. sona
 
 Equivalence: 4 call sites corrected, none lost. Two of sonar-cryptography's fixtures pass a size in bits as `KeyParameter`'s length and now differ from their annotations; they are recorded as `DIFF` in the fixture baseline (see the fixtures' `NOTICE.md`). Keycloak: 16 occurrences changed, none lost or new.
 
+The next one (2026-11-10) is a name table: the three JCA `Signature.getInstance` specs use the `aliases` table of Bouncy Castle's content signers, since Bouncy Castle's provider registers the same names in JCA (`SHA256withRSAandMGF1` for RSA-PSS, `SHA256WithRSAEncryption`). Equivalence and fixtures unchanged. Keycloak: its PS256, PS384 and PS512 signatures, 18 occurrences under raw names, are one RSA-PSS per call site with the three digests, at 6 sites.
+
 ## Open questions and risks
 
 - **Semantics hidden in the rule graph.** `shouldBeMovedUnder`, contexts and depending rules sometimes encode modeling decisions, for example which node a size belongs to. The exporter has to translate them into spec properties, and its report shows where it can't.

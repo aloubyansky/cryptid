@@ -262,6 +262,53 @@ class BytecodeScannerTest {
                 byName.get("ECDSA-SHA-256").getCryptoProperties().getAlgorithmProperties().getCryptoFunctions());
     }
 
+    private static final String JCA_PSS = """
+            package org.acme.jose;
+
+            import java.security.Signature;
+
+            public class Pss {
+                public byte[] ps256(byte[] data) throws Exception {
+                    Signature signature = Signature.getInstance("SHA256withRSAandMGF1");
+                    signature.update(data);
+                    return signature.sign();
+                }
+
+                public boolean ps512(byte[] data, byte[] sig) throws Exception {
+                    Signature signature = Signature.getInstance("SHA512withRSAandMGF1", "BC");
+                    signature.update(data);
+                    return signature.verify(sig);
+                }
+
+                public Signature rs256() throws Exception {
+                    return Signature.getInstance("SHA256WithRSAEncryption");
+                }
+            }
+            """;
+
+    /**
+     * The JCA names Bouncy Castle's provider registers for RSA-PSS ({@code SHA256withRSAandMGF1}, as
+     * Keycloak's PS256) and PKCS#1 are translated to names the translators read.
+     */
+    @Test
+    void detectsJcaProviderSignatureNames() throws Exception {
+        final Path jar = compile("org/acme/jose/Pss.java", JCA_PSS);
+        final Bom bom;
+        try (JarCache jars = new JarCache()) {
+            bom = new BytecodeScanner().scan(jar, "org.acme/jose/1.0", List.of(), jars, null).bom();
+        }
+        final Map<String, Component> byName = new TreeMap<>();
+        bom.getComponents().forEach(c -> byName.put(c.getName(), c));
+        assertTrue(byName.keySet().containsAll(Set.of("RSA-PSS", "SHA-256", "SHA-512", "RSA-PKCS1-1.5-SHA-256")), byName.keySet().toString());
+        assertTrue(byName.keySet().stream().noneMatch(n -> n.toUpperCase().contains("MGF1") || n.toUpperCase().contains("ENCRYPTION")),
+                byName.keySet().toString());
+        // two assets of that name: one signing, one verifying
+        final Set<CryptoFunction> functions = new HashSet<>();
+        bom.getComponents().stream().filter(c -> c.getName().equals("RSA-PSS"))
+                .forEach(c -> functions.addAll(c.getCryptoProperties().getAlgorithmProperties().getCryptoFunctions()));
+        assertEquals(Set.of(CryptoFunction.SIGN, CryptoFunction.VERIFY), functions);
+    }
+
     /** A library API whose constructor delegates to another specified one, as bcpkix's does. */
     private static final String DELEGATING_API = """
             package org.bouncycastle.operator.jcajce;
