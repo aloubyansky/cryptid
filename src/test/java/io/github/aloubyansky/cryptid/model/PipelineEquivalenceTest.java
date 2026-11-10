@@ -12,6 +12,7 @@ import io.github.aloubyansky.cryptid.detection.Finding;
 import io.github.aloubyansky.cryptid.detection.Loc;
 import io.github.aloubyansky.cryptid.reference.RuleDetector;
 import io.github.aloubyansky.cryptid.reference.SonarCryptographyRules;
+import io.github.aloubyansky.cryptid.reference.SpecCorrections;
 import io.github.aloubyansky.cryptid.scan.FixtureSupport;
 import io.github.aloubyansky.cryptid.spec.CryptoApiMatcher;
 import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs;
@@ -52,6 +53,7 @@ class PipelineEquivalenceTest {
         final CryptoAssetModeler modeler = new CryptoAssetModeler();
         final Map<String, List<INode>> before = new TreeMap<>();
         final Map<String, List<INode>> after = new TreeMap<>();
+        final Set<String> corrected = new TreeSet<>();
 
         int unit = 0;
         final String classpath = System.getProperty("java.class.path");
@@ -65,17 +67,23 @@ class PipelineEquivalenceTest {
                 analyzer.addClasses(classes);
                 final Types types = new Types(getClass().getClassLoader());
                 types.addClasses(classes);
-                compare(analyzer.analyze(), rules, matcher, types, modeler, before, after);
+                final List<Analyzer.MethodResult> methods = analyzer.analyze();
+                SpecCorrections.collect(methods, matcher, types, corrected);
+                compare(methods, rules, matcher, types, modeler, before, after);
             }
         }
         final Path bcprov = Path.of(AESEngine.class.getProtectionDomain().getCodeSource().getLocation().toURI());
         try (JarCache jars = new JarCache()) {
             final Analyzer analyzer = new Analyzer();
             analyzer.addJar(bcprov, jars);
-            compare(analyzer.analyze(), rules, matcher, new Types(getClass().getClassLoader()), modeler, before, after);
+            final Types types = new Types(getClass().getClassLoader());
+            final List<Analyzer.MethodResult> methods = analyzer.analyze();
+            SpecCorrections.collect(methods, matcher, types, corrected);
+            compare(methods, rules, matcher, types, modeler, before, after);
         }
 
         final List<String> lost = new ArrayList<>();
+        int corrections = 0;
         int nodes = 0;
         int refined = 0;
         int gained = 0;
@@ -100,7 +108,11 @@ class PipelineEquivalenceTest {
                         System.out.println("  refined " + key + ": " + render(node) + "\n      -> " + render(match));
                     }
                 }
-                if (match == null) {
+                if (match == null && SpecCorrections.reflects(node, corrected)) {
+                    // translated from a value of a corrected API: meant to differ from the rules'
+                    corrections++;
+                    System.out.println("  corrected " + key + ": " + render(node));
+                } else if (match == null) {
                     lost.add(key + ": " + render(node));
                 } else {
                     remaining.remove(match);
@@ -111,8 +123,8 @@ class PipelineEquivalenceTest {
                 System.out.println("  gained " + key + ": " + render(node));
             }
         }
-        System.out.printf("call sites: %d, translated nodes: %d, lost: %d, refined: %d, gained: %d%n",
-                keys.size(), nodes, lost.size(), refined, gained);
+        System.out.printf("call sites: %d, translated nodes: %d, lost: %d, refined: %d, gained: %d, corrected: %d%n",
+                keys.size(), nodes, lost.size(), refined, gained, corrections);
         assertTrue(lost.isEmpty(), lost.size() + " nodes lost, e.g.:\n  " + String.join("\n  ", lost.subList(0, Math.min(10, lost.size()))));
     }
 

@@ -16,6 +16,7 @@ import io.github.aloubyansky.cryptid.bytecode.Types;
 import io.github.aloubyansky.cryptid.detection.CryptoObjectGraph.CryptoApiCall;
 import io.github.aloubyansky.cryptid.reference.RuleDetector;
 import io.github.aloubyansky.cryptid.reference.RuleSpecExporter;
+import io.github.aloubyansky.cryptid.reference.SpecCorrections;
 import io.github.aloubyansky.cryptid.reference.SonarCryptographyRules;
 import io.github.aloubyansky.cryptid.scan.FixtureConformanceTest;
 import io.github.aloubyansky.cryptid.scan.FixtureSupport;
@@ -65,6 +66,7 @@ class ObjectGraphEquivalenceTest {
         final List<com.ibm.engine.rule.IDetectionRule<Loc>> rules = SonarCryptographyRules.javaRules();
         final Map<String, Set<String>> before = new TreeMap<>();
         final Map<String, Set<String>> after = new TreeMap<>();
+        final Set<String> corrected = new TreeSet<>();
 
         // the fixtures
         int unit = 0;
@@ -79,7 +81,9 @@ class ObjectGraphEquivalenceTest {
                 analyzer.addClasses(classes);
                 final Types types = new Types(getClass().getClassLoader());
                 types.addClasses(classes);
-                compare(analyzer.analyze(), rules, matcher, types, before, after);
+                final List<Analyzer.MethodResult> methods = analyzer.analyze();
+                SpecCorrections.collect(methods, matcher, types, corrected);
+                compare(methods, rules, matcher, types, before, after);
             }
         }
         // Bouncy Castle's own use of its APIs
@@ -87,10 +91,14 @@ class ObjectGraphEquivalenceTest {
         try (JarCache jars = new JarCache()) {
             final Analyzer analyzer = new Analyzer();
             analyzer.addJar(bcprov, jars);
-            compare(analyzer.analyze(), rules, matcher, new Types(getClass().getClassLoader()), before, after);
+            final Types types = new Types(getClass().getClassLoader());
+            final List<Analyzer.MethodResult> methods = analyzer.analyze();
+            SpecCorrections.collect(methods, matcher, types, corrected);
+            compare(methods, rules, matcher, types, before, after);
         }
 
         final List<String> missing = new ArrayList<>();
+        final List<String> corrections = new ArrayList<>();
         final List<String> extra = new ArrayList<>();
         final Set<String> keys = new TreeSet<>(before.keySet());
         keys.addAll(after.keySet());
@@ -103,6 +111,12 @@ class ObjectGraphEquivalenceTest {
             lost.removeAll(a);
             final Set<String> gained = new TreeSet<>(a);
             gained.removeAll(b);
+            // a value of a corrected API is meant to differ from the rules'
+            final Set<String> fixed = new TreeSet<>();
+            lost.removeIf(line -> corrected.stream().anyMatch(site -> line.endsWith(" @ " + site)) && fixed.add(line));
+            if (!fixed.isEmpty()) {
+                corrections.add(key + "\n      " + String.join("\n      ", fixed));
+            }
             if (!lost.isEmpty()) {
                 missing.add(key + "\n      " + String.join("\n      ", lost));
             }
@@ -110,8 +124,9 @@ class ObjectGraphEquivalenceTest {
                 extra.add(key + "\n      " + String.join("\n      ", gained));
             }
         }
-        System.out.printf("findings compared: %d, lines: %d, findings losing lines: %d, findings gaining lines: %d%n",
-                keys.size(), lines, missing.size(), extra.size());
+        System.out.printf("findings compared: %d, lines: %d, findings losing lines: %d, findings gaining lines: %d,"
+                        + " findings with corrected lines: %d%n", keys.size(), lines, missing.size(), extra.size(), corrections.size());
+        corrections.forEach(c -> System.out.println("  corrected: " + c));
         // gained lines are objects the rule trees don't link, e.g. GMac over a GCM cipher from
         // GCMBlockCipher.newInstance: listed for review, since they change the CBOM
         extra.forEach(e -> System.out.println("  gained: " + e));

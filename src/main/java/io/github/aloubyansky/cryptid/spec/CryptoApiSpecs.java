@@ -107,10 +107,12 @@ public record CryptoApiSpecs(int specVersion, Source source, List<ApiSpec> apis,
      * @param model the name of a model node of cryptid's own the call's action is, instead of
      *     the node sonar-cryptography's translators would make of it, for algorithms they don't
      *     model, e.g. {@code Argon2}
+     * @param correction for an entry exported from sonar-cryptography's rules and changed since,
+     *     why it differs from what the rules say, e.g. a length in bytes the rule reads as bits
      */
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     @JsonPropertyOrder({"api", "subtypes", "library", "context", "root", "action", "args", "next", "nextRoles", "returnsReceiver",
-            "model"})
+            "model", "correction"})
     public record ApiSpec(
             String api,
             boolean subtypes,
@@ -122,7 +124,8 @@ public record CryptoApiSpecs(int specVersion, Source source, List<ApiSpec> apis,
             List<String> next,
             List<Role> nextRoles,
             @JsonInclude(JsonInclude.Include.NON_DEFAULT) boolean returnsReceiver,
-            String model) {
+            String model,
+            String correction) {
 
         /** Normalizes missing lists, which the YAML leaves out when empty, to empty lists. */
         public ApiSpec {
@@ -144,11 +147,21 @@ public record CryptoApiSpecs(int specVersion, Source source, List<ApiSpec> apis,
          * @param args what the arguments contribute
          * @param next API methods called on the created object that contribute to it
          * @param nextRoles roles of those calls that differ from their own context
-         * @see #ApiSpec(String, boolean, String, Context, boolean, Factory, List, List, List, boolean, String)
+         * @see #ApiSpec(String, boolean, String, Context, boolean, Factory, List, List, List, boolean, String, String)
          */
         public ApiSpec(String api, boolean subtypes, String library, Context context, boolean root, Factory action,
                 List<Arg> args, List<String> next, List<Role> nextRoles) {
-            this(api, subtypes, library, context, root, action, args, next, nextRoles, false, null);
+            this(api, subtypes, library, context, root, action, args, next, nextRoles, false, null, null);
+        }
+
+        /**
+         * This spec without its {@link #correction()}, for comparing it with the rules' export.
+         *
+         * @return a copy without the correction, or this spec if it has none
+         */
+        public ApiSpec withoutCorrection() {
+            return correction == null ? this
+                    : new ApiSpec(api, subtypes, library, context, root, action, args, next, nextRoles, returnsReceiver, model, null);
         }
     }
 

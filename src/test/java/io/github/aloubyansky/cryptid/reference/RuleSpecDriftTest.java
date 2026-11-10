@@ -21,11 +21,12 @@ import org.junit.jupiter.api.Test;
  * and the layout {@link RuleSpecExporter#mapper()} writes, so that it reads back unchanged.
  *
  * <p>Against the rules, an API method a rule matches must have an entry; removing one is a decision
- * to make here, not by accident. Entries the rules don't have (our additions) and entries that
- * differ from the rules' (our corrections) are reported without failing, in {@code
- * target/spec-drift-report.txt}, and the rules' export is written to {@code
- * target/crypto-api-specs-exported.yaml} for a diff, e.g. when evaluating a sonar-cryptography
- * upgrade. The file is never rewritten.
+ * to make here, not by accident. An entry that differs from the rules' must say why in its {@code
+ * correction}, and an entry with a {@code correction} must differ, so that every deliberate
+ * difference is listed and no accidental one slips in. Entries the rules don't have (our
+ * additions) and corrections are reported in {@code target/spec-drift-report.txt}, and the rules'
+ * export is written to {@code target/crypto-api-specs-exported.yaml} for a diff, e.g. when
+ * evaluating a sonar-cryptography upgrade. The file is never rewritten.
  */
 class RuleSpecDriftTest {
 
@@ -75,15 +76,32 @@ class RuleSpecDriftTest {
         final List<String> missing = new ArrayList<>();
         final List<String> added = new ArrayList<>();
         final List<String> changed = new ArrayList<>();
+        final List<String> unlisted = new ArrayList<>();
+        final List<String> stale = new ArrayList<>();
         rules.forEach((api, spec) -> {
             final ApiSpec own = ours.get(api);
             if (own == null) {
                 missing.add(api);
-            } else if (!own.equals(spec)) {
-                changed.add(api);
+                return;
+            }
+            final boolean differs = !own.withoutCorrection().equals(spec);
+            if (differs && own.correction() == null) {
+                unlisted.add(api);
+            } else if (!differs && own.correction() != null) {
+                stale.add(api);
+            } else if (differs) {
+                changed.add(api + ": " + own.correction());
             }
         });
-        ours.keySet().stream().filter(api -> !rules.containsKey(api)).forEach(added::add);
+        ours.forEach((api, own) -> {
+            if (!rules.containsKey(api)) {
+                added.add(api);
+                if (own.correction() != null) {
+                    // an addition has nothing to correct
+                    stale.add(api);
+                }
+            }
+        });
 
         final StringBuilder report = new StringBuilder();
         report.append("Specs: ").append(ours.size()).append(" entries; rules of sonar-cryptography ")
@@ -91,6 +109,8 @@ class RuleSpecDriftTest {
         section(report, "Only in the rules", missing);
         section(report, "Only in the specs (additions)", added);
         section(report, "Different from the rules (corrections)", changed);
+        section(report, "Different from the rules without a correction", unlisted);
+        section(report, "With a correction but equal to the rules", stale);
         Files.createDirectories(REPORT.getParent());
         Files.writeString(REPORT, report.toString());
         Files.writeString(EXPORTED, RuleSpecExporter.yaml(export.specs()));
@@ -98,6 +118,10 @@ class RuleSpecDriftTest {
 
         assertTrue(missing.isEmpty(), "API methods of the rules without a spec entry, see " + REPORT + ":\n  "
                 + String.join("\n  ", missing));
+        assertTrue(unlisted.isEmpty(), "Entries differing from the rules without a correction saying why, see " + REPORT
+                + ":\n  " + String.join("\n  ", unlisted));
+        assertTrue(stale.isEmpty(), "Entries with a correction but equal to the rules, see " + REPORT + ":\n  "
+                + String.join("\n  ", stale));
     }
 
     private static void section(StringBuilder report, String title, List<String> apis) {

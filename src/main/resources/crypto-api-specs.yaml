@@ -6558,7 +6558,8 @@ apis:
         value:
           factory: KeySizeFactory
           config:
-            interpretAsUnitType: BIT
+            interpretAsUnitType: BYTE
+    correction: "the key length is in bytes (Bouncy Castle: keyLen); the rule reads it as bits"
   - api: "org.bouncycastle.crypto.params.ParametersWithID#<init>(org.bouncycastle.crypto.CipherParameters, byte[])"
     subtypes: true
     library: Bc
@@ -7038,10 +7039,11 @@ apis:
         value:
           factory: SaltSizeFactory
           config:
-            interpretAsUnitType: BIT
+            interpretAsUnitType: BYTE
         movedUnder: -1
     next:
       - "org.bouncycastle.crypto.Signer#init(boolean, org.bouncycastle.crypto.CipherParameters)"
+    correction: "the salt length is in bytes (Bouncy Castle: sLen, saltLength); the rule reads it as bits"
   - api: "org.bouncycastle.crypto.signers.ISO9796d2PSSSigner#<init>(org.bouncycastle.crypto.AsymmetricBlockCipher, org.bouncycastle.crypto.Digest, int, boolean)"
     subtypes: true
     library: Bc
@@ -7065,12 +7067,13 @@ apis:
         value:
           factory: SaltSizeFactory
           config:
-            interpretAsUnitType: BIT
+            interpretAsUnitType: BYTE
         movedUnder: -1
       - index: 3
         type: boolean
     next:
       - "org.bouncycastle.crypto.Signer#init(boolean, org.bouncycastle.crypto.CipherParameters)"
+    correction: "the salt length is in bytes (Bouncy Castle: sLen, saltLength); the rule reads it as bits"
   - api: "org.bouncycastle.crypto.signers.ISO9796d2Signer#<init>(org.bouncycastle.crypto.AsymmetricBlockCipher, org.bouncycastle.crypto.Digest)"
     subtypes: true
     library: Bc
@@ -7158,10 +7161,11 @@ apis:
         value:
           factory: SaltSizeFactory
           config:
-            interpretAsUnitType: BIT
+            interpretAsUnitType: BYTE
         movedUnder: -1
     next:
       - "org.bouncycastle.crypto.Signer#init(boolean, org.bouncycastle.crypto.CipherParameters)"
+    correction: "the salt length is in bytes (Bouncy Castle: sLen, saltLength); the rule reads it as bits"
   - api: "org.bouncycastle.crypto.signers.PSSSigner#<init>(org.bouncycastle.crypto.AsymmetricBlockCipher, org.bouncycastle.crypto.Digest, int, byte)"
     subtypes: true
     library: Bc
@@ -7185,12 +7189,13 @@ apis:
         value:
           factory: SaltSizeFactory
           config:
-            interpretAsUnitType: BIT
+            interpretAsUnitType: BYTE
         movedUnder: -1
       - index: 3
         type: byte
     next:
       - "org.bouncycastle.crypto.Signer#init(boolean, org.bouncycastle.crypto.CipherParameters)"
+    correction: "the salt length is in bytes (Bouncy Castle: sLen, saltLength); the rule reads it as bits"
   - api: "org.bouncycastle.crypto.signers.PSSSigner#<init>(org.bouncycastle.crypto.AsymmetricBlockCipher, org.bouncycastle.crypto.Digest, org.bouncycastle.crypto.Digest, byte[])"
     subtypes: true
     library: Bc
@@ -7284,10 +7289,11 @@ apis:
         value:
           factory: SaltSizeFactory
           config:
-            interpretAsUnitType: BIT
+            interpretAsUnitType: BYTE
         movedUnder: -1
     next:
       - "org.bouncycastle.crypto.Signer#init(boolean, org.bouncycastle.crypto.CipherParameters)"
+    correction: "the salt length is in bytes (Bouncy Castle: sLen, saltLength); the rule reads it as bits"
   - api: "org.bouncycastle.crypto.signers.PSSSigner#<init>(org.bouncycastle.crypto.AsymmetricBlockCipher, org.bouncycastle.crypto.Digest, org.bouncycastle.crypto.Digest, int, byte)"
     subtypes: true
     library: Bc
@@ -7319,12 +7325,13 @@ apis:
         value:
           factory: SaltSizeFactory
           config:
-            interpretAsUnitType: BIT
+            interpretAsUnitType: BYTE
         movedUnder: -1
       - index: 4
         type: byte
     next:
       - "org.bouncycastle.crypto.Signer#init(boolean, org.bouncycastle.crypto.CipherParameters)"
+    correction: "the salt length is in bytes (Bouncy Castle: sLen, saltLength); the rule reads it as bits"
   - api: org.bouncycastle.crypto.signers.RSADigestSigner#<init>(org.bouncycastle.crypto.Digest)
     subtypes: true
     library: Bc

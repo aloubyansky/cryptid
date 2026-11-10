@@ -358,6 +358,38 @@ class BytecodeScannerTest {
         assertEquals(10, argon2.getEvidence().getOccurrences().get(0).getLine());
     }
 
+    private static final String KEY_LENGTH = """
+            package org.acme.ssh;
+
+            import org.bouncycastle.crypto.BufferedBlockCipher;
+            import org.bouncycastle.crypto.DefaultBufferedBlockCipher;
+            import org.bouncycastle.crypto.engines.AESEngine;
+            import org.bouncycastle.crypto.modes.CBCBlockCipher;
+            import org.bouncycastle.crypto.params.KeyParameter;
+            import org.bouncycastle.crypto.params.ParametersWithIV;
+
+            public class Decrypt {
+                public BufferedBlockCipher aes256(byte[] key, byte[] iv) {
+                    BufferedBlockCipher cipher = new DefaultBufferedBlockCipher(CBCBlockCipher.newInstance(AESEngine.newInstance()));
+                    cipher.init(false, new ParametersWithIV(new KeyParameter(key, 0, 32), iv));
+                    return cipher;
+                }
+            }
+            """;
+
+    /** {@code KeyParameter}'s length is in bytes, which the rule read as bits (a correction in the specs). */
+    @Test
+    void readsKeyLengthsInBytes() throws Exception {
+        final Path jar = compile("ssh", "org/acme/ssh/Decrypt.java", KEY_LENGTH, Path.of(System.getProperty("java.class.path")));
+        final Bom bom;
+        try (JarCache jars = new JarCache()) {
+            bom = new BytecodeScanner().scan(jar, "org.acme/ssh/1.0", List.of(), jars, null).bom();
+        }
+        final List<String> names = names(bom);
+        assertTrue(names.stream().anyMatch(n -> n.startsWith("AES-256")), names.toString());
+        assertTrue(names.stream().noneMatch(n -> n.startsWith("AES-32")), names.toString());
+    }
+
     private static final String WRAPPER = """
             package org.acme.wrap;
 
