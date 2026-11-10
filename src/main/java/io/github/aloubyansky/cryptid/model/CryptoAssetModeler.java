@@ -93,9 +93,11 @@ public final class CryptoAssetModeler {
      * signature, a {@code Mac}'s a MAC, a {@code MessageDigest}'s a digest. A model with a
      * primitive of another kind and none of the API's comes from a value the API would reject at
      * runtime, e.g. {@code Signature.getInstance("HmacSHA256")}, which a mapping method returning
-     * the names of a whole algorithm family can give. A secret key takes any name, but isn't for
-     * an asymmetric algorithm: a {@code SecretKeySpec} modeled with a signature, public-key
-     * encryption, key agreement or KEM doesn't fit. Events of other APIs, whose kinds vary, fit.
+     * the names of a whole algorithm family, or a field holding a registry's names, can give. A
+     * secret key takes any name, but isn't for an asymmetric algorithm nor for a digest: a {@code
+     * SecretKeySpec} modeled with a signature, public-key encryption, key agreement or KEM, or with
+     * a digest of its own rather than one inside an HMAC, doesn't fit. Events of other APIs, whose
+     * kinds vary, fit.
      *
      * @param root the event
      * @param nodes its model, from {@link #process}
@@ -111,7 +113,7 @@ public final class CryptoAssetModeler {
         } else if (context instanceof DigestContext) {
             kinds = List.of(MessageDigest.class);
         } else if (context instanceof SecretKeyContext) {
-            return nodes.stream().noneMatch(n -> hasKind(n, ASYMMETRIC));
+            return nodes.stream().noneMatch(n -> hasKind(n, ASYMMETRIC) || isDigest(n));
         } else {
             return true;
         }
@@ -128,6 +130,18 @@ public final class CryptoAssetModeler {
 
     private static final List<Class<? extends INode>> ASYMMETRIC =
             List.of(Signature.class, PublicKeyEncryption.class, KeyAgreement.class, KeyEncapsulationMechanism.class);
+
+    /** Whether a node is a digest, or has one below it with no other primitive between, e.g. a key's. */
+    private static boolean isDigest(INode node) {
+        final Class<? extends INode> kind = node.getKind();
+        if (MessageDigest.class.isAssignableFrom(kind)) {
+            return true;
+        }
+        if (IPrimitive.class.isAssignableFrom(kind)) {
+            return false;
+        }
+        return node.getChildren().values().stream().anyMatch(CryptoAssetModeler::isDigest);
+    }
 
     /** Whether a node or one below it is of one of the kinds. */
     private static boolean hasKind(INode node, List<Class<? extends INode>> kinds) {

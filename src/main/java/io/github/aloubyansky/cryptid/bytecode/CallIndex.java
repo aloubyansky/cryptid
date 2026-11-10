@@ -52,8 +52,9 @@ public final class CallIndex {
      *
      * @param consts the constants it may be
      * @param params the caller's parameters it may be passed through from
+     * @param stored parameters of other methods it may be passed through from, by way of a field
      */
-    record Arg(Set<Object> consts, long params) {}
+    record Arg(Set<Object> consts, long params, Set<AVal.StoredParam> stored) {}
 
     /**
      * A call into an analyzed class.
@@ -123,13 +124,13 @@ public final class CallIndex {
                 Arg[] args = null;
                 for (int p = 0; p < cs.args.length && p < types.size(); p++) {
                     final AVal a = cs.args[p];
-                    if (!isResolvableType(types.get(p)) || (a.consts().isEmpty() && a.params() == 0)) {
+                    if (!isResolvableType(types.get(p)) || (a.consts().isEmpty() && a.params() == 0 && a.stored().isEmpty())) {
                         continue;
                     }
                     if (args == null) {
                         args = new Arg[cs.args.length];
                     }
-                    args[p] = new Arg(a.consts(), a.params());
+                    args[p] = new Arg(a.consts(), a.params(), a.stored());
                 }
                 if (args != null) {
                     local.computeIfAbsent(cs.owner + "." + cs.name + cs.descriptor, k -> new ArrayList<>())
@@ -285,6 +286,10 @@ public final class CallIndex {
                     hits.add(new Hit(c, site));
                 }
                 callerParams |= a.params();
+                // a field the caller passes on: from the callers of the method that stored it
+                for (AVal.StoredParam sp : a.stored()) {
+                    resolve(sp.method(), 1L << sp.index(), depth + 1, visited, hits);
+                }
             }
             if (callerParams != 0) {
                 resolve(site.callerMethod(), callerParams, depth + 1, visited, hits);

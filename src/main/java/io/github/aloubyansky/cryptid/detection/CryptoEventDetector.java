@@ -222,8 +222,14 @@ public final class CryptoEventDetector {
                             }
                         });
                     }
-                    if (value.params() != 0 && callIndex != null) {
-                        resolveFromCallers(spec, context, arg, factory, cs, value.params());
+                    if (callIndex != null) {
+                        if (value.params() != 0) {
+                            resolveFromCallers(spec, context, arg, factory, cs, cs.method(), value.params());
+                        }
+                        // a field set from a parameter, e.g. a constructor's: from the storing method's callers
+                        for (AVal.StoredParam p : value.stored()) {
+                            resolveFromCallers(spec, context, arg, factory, cs, p.method(), 1L << p.index());
+                        }
                     }
                 }
                 if (arg.link()) {
@@ -334,9 +340,9 @@ public final class CryptoEventDetector {
 
     @SuppressWarnings("unchecked")
     private void resolveFromCallers(ApiSpec spec, Context context, Arg arg, IValueFactory<Loc> factory, CallSite cs,
-            long params) {
+            String method, long params) {
         final int index = arg.movedUnder() != null ? arg.movedUnder() : arg.index();
-        for (CallIndex.Hit hit : callIndex.resolve(cs.method(), params)) {
+        for (CallIndex.Hit hit : callIndex.resolve(method, params)) {
             final CallIndex.Site site = hit.site();
             if (reportedAtCaller(site)) {
                 continue;
@@ -349,7 +355,7 @@ public final class CryptoEventDetector {
             factory.apply(new ResolvedValue<>(c, at)).ifPresent(v -> {
                 final CryptoEvent d = CryptoEvent.of(spec, context, site.file());
                 d.addValue(index, v);
-                resolved.add(new Finding(at, cs, d, false));
+                resolved.add(new Finding(at, cs, d, true));
             });
         }
     }

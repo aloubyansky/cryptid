@@ -92,7 +92,7 @@ An occurrence's `location` is the artifact path (`groupId/artifactId/version`) f
 ### Limitations
 
 - Only Java bytecode, and only the APIs in the specs (JCA/JCE, JSSE, Bouncy Castle). Other libraries, such as Google Tink or Conscrypt, need spec entries.
-- Values computed from a parameter (for example `"AES/" + mode`), or stored in a field from a constructor parameter, aren't resolved. Constants returned by static, private and final methods are. Crypto objects are followed between the methods of one JAR, up to 4 calls away, through arguments and return values, but not through fields or into other JARs.
+- Values computed from a parameter (for example `"AES/" + mode`) aren't resolved. Constants returned by static, private and final methods are, and so are values a constructor stores in a field from its parameter, from the constructor's callers; a field's values are merged over all objects, so every use of it gets all of them. Crypto objects are followed between the methods of one JAR, up to 4 calls away, through arguments and return values, but not through fields or into other JARs.
 - Calls of one API on an object in exclusive branches (for example `setParameter` with a different `PSSParameterSpec` in each branch of an `if` chain) are merged into one finding, so the CBOM shows one of them, not each. An argument that may be one of several objects gives one finding per object.
 - Where a value can be one of several constants, each one is reported, since the analysis doesn't follow branches.
 - Certificates aren't reported.

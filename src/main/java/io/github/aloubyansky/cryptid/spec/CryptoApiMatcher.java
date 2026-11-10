@@ -80,10 +80,15 @@ public final class CryptoApiMatcher {
      *
      * @param value the value's factory spec
      * @param constant the argument's constant
-     * @return the constant, translated if the value names a table; for {@link
-     *     CryptoApiSpecs.Factory#names()}, {@code null} if it isn't in the table
+     * @return the constant, translated if the value names a table; {@code null} for an empty
+     *     string, which names nothing (xmlsec's {@code JCEMapper} registers digests with {@code ""}
+     *     as their key algorithm), and for {@link CryptoApiSpecs.Factory#names()}, if it isn't in
+     *     the table
      */
     public Object name(CryptoApiSpecs.Factory value, Object constant) {
+        if ("".equals(constant)) {
+            return null;
+        }
         if (value.names() != null) {
             return names.get(value.names()).get(String.valueOf(constant));
         }

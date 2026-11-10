@@ -66,6 +66,28 @@ class AnalyzerTest {
             }
             """;
 
+    private static final String FIELDS = """
+            package org.acme;
+
+            import java.security.MessageDigest;
+
+            public class Holder {
+                private final String alg;
+
+                public Holder(String alg) {
+                    this.alg = alg;
+                }
+
+                public byte[] hash(String text) throws Exception {
+                    return MessageDigest.getInstance(alg).digest(text.getBytes());
+                }
+
+                public static byte[] run() throws Exception {
+                    return new Holder("SHA-256").hash("MD5");
+                }
+            }
+            """;
+
     @TempDir
     Path tmp;
 
@@ -78,11 +100,28 @@ class AnalyzerTest {
         assertEquals(Set.of("SHA-512"), arg(methods, "finalDigest", "getInstance"));
     }
 
+    /**
+     * A field set from the constructor's parameter isn't the reading method's parameter: its value
+     * mustn't resolve from the reading method's callers ({@code "MD5"} here), but from the
+     * constructor's.
+     */
+    @Test
+    void fieldsCarryTheStoringMethodsParameters() throws Exception {
+        final List<Analyzer.MethodResult> methods = analyze("org/acme/Holder.java", FIELDS);
+        final CallSite cs = call(methods, "hash", "getInstance");
+        assertEquals(0, cs.args()[0].params(), cs.args()[0].toString());
+        // but the constructor's parameter it was stored from
+        assertEquals(Set.of(new AVal.StoredParam("org/acme/Holder.<init>(Ljava/lang/String;)V", 0)), cs.args()[0].stored());
+    }
+
     private static Set<Object> arg(List<Analyzer.MethodResult> methods, String caller, String callee) {
+        return call(methods, caller, callee).args()[0].consts();
+    }
+
+    private static CallSite call(List<Analyzer.MethodResult> methods, String caller, String callee) {
         final Analyzer.MethodResult m = methods.stream().filter(r -> r.method().contains("." + caller + "("))
                 .findFirst().orElseThrow();
-        final CallSite cs = m.calls().stream().filter(c -> c.name().equals(callee)).findFirst().orElseThrow();
-        return cs.args()[0].consts();
+        return m.calls().stream().filter(c -> c.name().equals(callee)).findFirst().orElseThrow();
     }
 
     private List<Analyzer.MethodResult> analyze(String path, String source) throws Exception {

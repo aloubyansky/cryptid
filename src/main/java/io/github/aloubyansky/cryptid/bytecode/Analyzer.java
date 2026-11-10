@@ -350,7 +350,7 @@ public final class Analyzer {
                 } else if (el instanceof StackInstruction si) {
                     stack(s, si.opcode());
                 } else if (el instanceof FieldInstruction fi) {
-                    field(s, fi);
+                    field(s, fi, method);
                 } else if (el instanceof InvokeInstruction ii) {
                     invoke(s, ii, method, source, i, lines[i], calls, newSites);
                 } else if (el instanceof InvokeDynamicInstruction id) {
@@ -467,7 +467,7 @@ public final class Analyzer {
         }
     }
 
-    private void field(State s, FieldInstruction fi) {
+    private void field(State s, FieldInstruction fi, String method) {
         final String key = fi.owner().asInternalName() + "." + fi.name().stringValue();
         final int size = TypeKind.from(fi.typeSymbol()).slotSize();
         switch (fi.opcode()) {
@@ -487,17 +487,28 @@ public final class Analyzer {
                 s.pop();
                 s.push(fields.getOrDefault(key, AVal.UNKNOWN).withSize(size));
             }
-            case PUTSTATIC -> putField(key, s.pop());
+            case PUTSTATIC -> putField(key, s.pop(), method);
             default -> {
-                putField(key, s.pop());
+                putField(key, s.pop(), method);
                 s.pop();
             }
         }
     }
 
-    private void putField(String key, AVal v) {
+    /**
+     * Merges a stored value into a field's. The storing method's parameters become {@link
+     * AVal.StoredParam}s: a method reading the field has parameters of its own.
+     */
+    private void putField(String key, AVal stored, String method) {
+        final Set<AVal.StoredParam> params = new HashSet<>();
+        for (int p = 0; p < AVal.MAX_PARAMS; p++) {
+            if ((stored.params() & (1L << p)) != 0) {
+                params.add(new AVal.StoredParam(method, p));
+            }
+        }
+        final AVal v = new AVal(stored.consts(), stored.anyConst(), 0, AVal.union(stored.stored(), params), stored.origins(), false);
         final AVal prev = fields.get(key);
-        final AVal merged = prev == null ? v.withSize(1) : prev.merge(v.withSize(1));
+        final AVal merged = prev == null ? v : prev.merge(v);
         if (prev == null || merged != prev) {
             fields.put(key, merged);
             changed = true;
@@ -506,7 +517,7 @@ public final class Analyzer {
 
     /** Records what a method returns: its constants and parameters, not its own objects. */
     private void putReturn(String method, AVal returned) {
-        final AVal v = new AVal(returned.consts(), returned.anyConst(), returned.params(), Set.of(), false);
+        final AVal v = new AVal(returned.consts(), returned.anyConst(), returned.params(), returned.stored(), Set.of(), false);
         final AVal prev = returns.get(method);
         final AVal merged = prev == null ? v : prev.merge(v);
         if (prev == null || merged != prev) {
@@ -524,10 +535,10 @@ public final class Analyzer {
         if (r == null) {
             return AVal.UNKNOWN;
         }
-        AVal result = new AVal(r.consts(), r.anyConst(), 0, Set.of(), false);
+        AVal result = new AVal(r.consts(), r.anyConst(), 0, r.stored(), Set.of(), false);
         for (int p = 0; p < args.length && p < AVal.MAX_PARAMS; p++) {
             if ((r.params() & (1L << p)) != 0) {
-                result = result.merge(new AVal(args[p].consts(), args[p].anyConst(), args[p].params(), Set.of(), false));
+                result = result.merge(new AVal(args[p].consts(), args[p].anyConst(), args[p].params(), args[p].stored(), Set.of(), false));
             }
         }
         return result;

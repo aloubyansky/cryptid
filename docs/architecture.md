@@ -107,6 +107,7 @@ Green: this project. Blue: sonar-cryptography modules (Apache-2.0). Beige: other
 
 - up to 16 possible constants (more become "any constant"), kept in sorted order so results don't depend on the JVM run;
 - a bitmask of the enclosing method's parameters the value may be passed through from;
+- the parameters of other methods it may be passed through from by way of a field (`StoredParam`: the storing method and the parameter index, at most 16), e.g. a constructor's parameter kept in a field, which detection and `CallIndex` resolve from that method's callers;
 - the call sites that may have created the object;
 - whether it takes two stack slots.
 

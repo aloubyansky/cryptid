@@ -27,13 +27,28 @@ import java.util.Set;
  * @param params bit {@code p} set = the value may be the enclosing method's parameter {@code p},
  *     passed through unchanged (loads, stores, casts); values computed from a parameter don't
  *     carry it, since a caller's constant wouldn't be their value
+ * @param stored parameters of other methods the value may be passed through from, by way of a
+ *     field they were stored into, e.g. a constructor's parameter kept in a field; at most
+ *     {@value #MAX_STORED}
  * @param origins ids of the call sites that may have created the object
  * @param wide whether the value takes two stack slots ({@code long}, {@code double})
  */
-public record AVal(Set<Object> consts, boolean anyConst, long params, Set<Integer> origins, boolean wide) {
+public record AVal(Set<Object> consts, boolean anyConst, long params, Set<StoredParam> stored, Set<Integer> origins,
+        boolean wide) {
+
+    /**
+     * A parameter of a method that stored it into a field, passed through unchanged.
+     *
+     * @param method the storing method, as in {@link CallSite#method()}
+     * @param index the parameter index, not the local variable slot
+     */
+    public record StoredParam(String method, int index) {}
 
     /** Constants beyond this count are not tracked. */
     static final int MAX_CONSTS = 16;
+
+    /** Stored parameters beyond this count are not tracked. */
+    static final int MAX_STORED = 16;
 
     /** Parameters beyond this index aren't tracked. */
     static final int MAX_PARAMS = 63;
@@ -43,8 +58,8 @@ public record AVal(Set<Object> consts, boolean anyConst, long params, Set<Intege
     private static final Comparator<Object> ORDER = Comparator.<Object, String>comparing(o -> o.getClass().getName())
             .thenComparing((a, b) -> a instanceof Comparable ca ? ca.compareTo(b) : a.toString().compareTo(b.toString()));
 
-    static final AVal UNKNOWN = new AVal(Set.of(), false, 0, Set.of(), false);
-    static final AVal UNKNOWN_WIDE = new AVal(Set.of(), false, 0, Set.of(), true);
+    static final AVal UNKNOWN = new AVal(Set.of(), false, 0, Set.of(), Set.of(), false);
+    static final AVal UNKNOWN_WIDE = new AVal(Set.of(), false, 0, Set.of(), Set.of(), true);
 
     /**
      * A value nothing is known about.
@@ -64,7 +79,7 @@ public record AVal(Set<Object> consts, boolean anyConst, long params, Set<Intege
      * @return the value
      */
     static AVal constant(Object value, int size) {
-        return new AVal(Set.of(value), false, 0, Set.of(), size == 2);
+        return new AVal(Set.of(value), false, 0, Set.of(), Set.of(), size == 2);
     }
 
     /**
@@ -74,7 +89,7 @@ public record AVal(Set<Object> consts, boolean anyConst, long params, Set<Intege
      * @return the value, taking one stack slot
      */
     static AVal constants(Set<Object> values) {
-        return new AVal(ordered(values), false, 0, Set.of(), false);
+        return new AVal(ordered(values), false, 0, Set.of(), Set.of(), false);
     }
 
     /**
@@ -84,7 +99,7 @@ public record AVal(Set<Object> consts, boolean anyConst, long params, Set<Intege
      * @return the value referring to it
      */
     static AVal origin(int id) {
-        return new AVal(Set.of(), false, 0, Set.of(id), false);
+        return new AVal(Set.of(), false, 0, Set.of(), Set.of(id), false);
     }
 
     /**
@@ -96,7 +111,7 @@ public record AVal(Set<Object> consts, boolean anyConst, long params, Set<Intege
      *     aren't tracked
      */
     static AVal param(int index, int size) {
-        return new AVal(Set.of(), false, index < MAX_PARAMS ? 1L << index : 0, Set.of(), size == 2);
+        return new AVal(Set.of(), false, index < MAX_PARAMS ? 1L << index : 0, Set.of(), Set.of(), size == 2);
     }
 
     /**
@@ -106,7 +121,7 @@ public record AVal(Set<Object> consts, boolean anyConst, long params, Set<Intege
      * @return this value if its size is already that, otherwise a copy
      */
     AVal withSize(int size) {
-        return (size == 2) == wide ? this : new AVal(consts, anyConst, params, origins, size == 2);
+        return (size == 2) == wide ? this : new AVal(consts, anyConst, params, stored, origins, size == 2);
     }
 
     /**
@@ -132,7 +147,8 @@ public record AVal(Set<Object> consts, boolean anyConst, long params, Set<Intege
         final boolean sameConsts = any ? anyConst : consts.containsAll(o.consts);
         final boolean sameOrigins = origins.containsAll(o.origins);
         final boolean sameParams = (params | o.params) == params;
-        if (sameConsts && sameOrigins && sameParams && (wide || !o.wide)) {
+        final boolean sameStored = stored.containsAll(o.stored) || stored.size() >= MAX_STORED;
+        if (sameConsts && sameOrigins && sameParams && sameStored && (wide || !o.wide)) {
             return this;
         }
         Set<Object> c;
@@ -157,7 +173,21 @@ public record AVal(Set<Object> consts, boolean anyConst, long params, Set<Intege
             u.addAll(o.origins);
             r = ordered(u);
         }
-        return new AVal(c, anyResult, params | o.params, r, wide || o.wide);
+        return new AVal(c, anyResult, params | o.params, union(stored, o.stored), r, wide || o.wide);
+    }
+
+    /**
+     * Unites stored parameters, keeping at most {@value #MAX_STORED}, the first in {@link #ORDER},
+     * so the result is the same whatever order values merge in.
+     */
+    static Set<StoredParam> union(Set<StoredParam> a, Set<StoredParam> b) {
+        if (a.containsAll(b)) {
+            return a;
+        }
+        final Set<StoredParam> u = new HashSet<>(a);
+        u.addAll(b);
+        final List<StoredParam> sorted = new ArrayList<>(ordered(u));
+        return ordered(new HashSet<>(sorted.subList(0, Math.min(sorted.size(), MAX_STORED))));
     }
 
     /**

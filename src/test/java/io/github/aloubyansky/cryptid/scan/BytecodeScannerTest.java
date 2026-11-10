@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.stream.Stream;
@@ -128,6 +129,7 @@ class BytecodeScannerTest {
                     switch (alg) {
                         case "RS256": return "SHA256withRSA";
                         case "HS256": return "HmacSHA256";
+                        case "S256": return "SHA-256";
                         default: throw new IllegalArgumentException(alg);
                     }
                 }
@@ -138,9 +140,12 @@ class BytecodeScannerTest {
             }
             """;
 
-    /** A secret key isn't for an asymmetric algorithm, though {@code SecretKeySpec} takes any name. */
+    /**
+     * A secret key isn't for an asymmetric algorithm nor for a digest, though {@code SecretKeySpec}
+     * takes any name; an HMAC's digest is fine.
+     */
     @Test
-    void dropsAsymmetricVariantsOfSecretKeys() throws Exception {
+    void dropsAsymmetricAndDigestVariantsOfSecretKeys() throws Exception {
         final Path jar = compile("org/acme/jose/Secrets.java", SECRET);
         final Bom bom;
         try (JarCache jars = new JarCache()) {
@@ -149,6 +154,10 @@ class BytecodeScannerTest {
         final List<String> names = bom.getComponents().stream().map(Component::getName).toList();
         assertTrue(names.stream().anyMatch(n -> n.startsWith("HMAC")), names.toString());
         assertTrue(names.stream().noneMatch(n -> n.contains("RSA")), names.toString());
+        // SHA-256 only as the HMAC's digest, which isn't a key generator
+        final List<Component> digests = bom.getComponents().stream().filter(c -> c.getName().equals("SHA-256")).toList();
+        assertTrue(digests.stream().noneMatch(c -> c.getCryptoProperties().getAlgorithmProperties().getCryptoFunctions() != null
+                && c.getCryptoProperties().getAlgorithmProperties().getCryptoFunctions().contains(CryptoFunction.KEYGEN)), names.toString());
     }
 
     /** The part of xmlsec's API the fixture uses; cryptid doesn't depend on xmlsec. */
@@ -570,6 +579,137 @@ class BytecodeScannerTest {
         }
         result.sort(null);
         return result;
+    }
+
+    private static final String FIELD_FROM_CONSTRUCTOR = """
+            package org.acme.hash;
+
+            import java.security.MessageDigest;
+
+            public class Hasher {
+                private final String algorithm;
+
+                public Hasher(String algorithm) {
+                    this.algorithm = algorithm;
+                }
+
+                public byte[] hash(String text) throws Exception {
+                    return MessageDigest.getInstance(algorithm).digest(text.getBytes());
+                }
+            }
+            """;
+
+    private static final String FIELD_FACTORY = """
+            package org.acme.hash;
+
+            public class HasherFactory {
+                public Hasher create() {
+                    return new Hasher("SHA-512");
+                }
+
+                public static byte[] run() throws Exception {
+                    return new Hasher("SHA-256").hash("MD5");
+                }
+            }
+            """;
+
+    /**
+     * A value a constructor stores in a field, as Keycloak's {@code Pbkdf2PasswordHashProvider}
+     * keeps its algorithm, resolves from the constructor's callers, not from the callers of the
+     * method reading the field ({@code "MD5"} is the text hashed).
+     */
+    @Test
+    void resolvesFieldsSetFromConstructorParameters() throws Exception {
+        final Bom bom = scanWithCallers(jar("field", Map.of("Hasher", FIELD_FROM_CONSTRUCTOR, "HasherFactory", FIELD_FACTORY)));
+        final Map<String, Component> byName = new TreeMap<>();
+        bom.getComponents().forEach(c -> byName.put(c.getName(), c));
+        assertEquals(Set.of("SHA-256", "SHA-512"), byName.keySet());
+        // located where the value is chosen, as for parameters
+        final Set<Integer> lines = new HashSet<>();
+        byName.values().forEach(c -> c.getEvidence().getOccurrences().forEach(o -> lines.add(o.getLine())));
+        assertEquals(Set.of(5, 9), lines);
+    }
+
+    private static final String PASS_ON = """
+            package org.acme.hash;
+
+            import java.security.MessageDigest;
+
+            public class Keyed {
+                private final String algorithm;
+
+                public Keyed(String algorithm) {
+                    this.algorithm = algorithm;
+                }
+
+                public MessageDigest digest() throws Exception {
+                    return Digests.get(algorithm);
+                }
+
+                public static MessageDigest sha384() throws Exception {
+                    return new Keyed("SHA-384").digest();
+                }
+            }
+            """;
+
+    private static final String DIGESTS = """
+            package org.acme.hash;
+
+            import java.security.MessageDigest;
+
+            public class Digests {
+                public static MessageDigest get(String name) throws Exception {
+                    return MessageDigest.getInstance(name);
+                }
+            }
+            """;
+
+    /**
+     * A field passed on to a method calling the API, as Keycloak's {@code Pbkdf2PasswordHashProvider}
+     * passes its algorithm to {@code CryptoProvider.getSecretKeyFact}: the walk up the callers goes on
+     * to the callers of the constructor that stored it.
+     */
+    @Test
+    void resolvesFieldsPassedOn() throws Exception {
+        final Bom bom = scanWithCallers(jar("pass-on", Map.of("Keyed", PASS_ON, "Digests", DIGESTS)));
+        final Component digest = bom.getComponents().stream().filter(c -> c.getName().equals("SHA-384")).findFirst()
+                .orElseThrow(() -> new AssertionError(bom.getComponents().stream().map(Component::getName).toList()));
+        final Occurrence o = digest.getEvidence().getOccurrences().get(0);
+        assertEquals("org.acme/hash/1.0/org/acme/hash/Keyed.java", o.getLocation());
+        assertEquals(17, o.getLine());
+    }
+
+    /** Compiles classes of {@code org.acme.hash} into a JAR. */
+    private Path jar(String name, Map<String, String> sources) throws IOException {
+        final Path src = tmp.resolve(name + "-src/org/acme/hash");
+        Files.createDirectories(src);
+        final List<String> files = new ArrayList<>(List.of("-g", "-d", tmp.resolve(name + "-classes").toString()));
+        Files.createDirectories(tmp.resolve(name + "-classes"));
+        for (Map.Entry<String, String> e : sources.entrySet()) {
+            Files.writeString(src.resolve(e.getKey() + ".java"), e.getValue());
+            files.add(src.resolve(e.getKey() + ".java").toString());
+        }
+        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null, files.toArray(String[]::new)));
+        final Path jar = tmp.resolve(name + ".jar");
+        try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
+            for (String c : new TreeSet<>(sources.keySet())) {
+                out.putNextEntry(new JarEntry("org/acme/hash/" + c + ".class"));
+                out.write(Files.readAllBytes(tmp.resolve(name + "-classes/org/acme/hash/" + c + ".class")));
+                out.closeEntry();
+            }
+        }
+        return jar;
+    }
+
+    /** Scans a JAR with a call index of its own calls. */
+    private static Bom scanWithCallers(Path jar) {
+        final BytecodeScanner scanner = new BytecodeScanner();
+        try (JarCache jars = new JarCache()) {
+            final CallIndex index = new CallIndex(new HashSet<>(jars.classNames(jar)));
+            scanner.index(jar, "org.acme/hash/1.0", List.of(), jars, index, false);
+            index.finish();
+            return scanner.scan(jar, "org.acme/hash/1.0", List.of(), jars, index).bom();
+        }
     }
 
     private Path compile(String path, String source) throws IOException {
