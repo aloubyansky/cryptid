@@ -1,6 +1,5 @@
 package io.github.aloubyansky.cryptid.bytecode;
 
-import io.github.aloubyansky.cryptid.bytecode.CallIndex.ClassInfo;
 import io.github.aloubyansky.cryptid.bytecode.MethodFacts.Call;
 import io.github.aloubyansky.cryptid.bytecode.MethodFacts.Kind;
 import java.util.ArrayList;
@@ -34,7 +33,7 @@ public final class CallGraph {
     private static final int[] NONE = {};
 
     /** A method's facts while filling: symbol ids shifted left by one, the low bit set for a method handle's target. */
-    private record Raw(int[] exact, int[] virtual, int[] instantiated) {}
+    private record Raw(String artifact, int[] exact, int[] virtual, int[] instantiated) {}
 
     private final Set<String> analyzedClasses;
     private final Hierarchy hierarchy;
@@ -65,14 +64,27 @@ public final class CallGraph {
     }
 
     /**
-     * Records the facts of an artifact's methods. Of a method in several artifacts, the first
-     * facts recorded are kept.
+     * Records the facts of methods of no particular artifact, as {@link #addMethods(String, List)}
+     * with an empty artifact path.
      *
      * @param methods the methods' facts
      */
     public void addMethods(List<MethodFacts> methods) {
+        addMethods("", methods);
+    }
+
+    /**
+     * Records the facts of an artifact's methods. Of a method in several artifacts, the facts of
+     * the artifact whose path sorts first are kept, as {@link Hierarchy#add(String, Map)} keeps
+     * the class, so a class's methods all come from the copy the hierarchy has.
+     *
+     * @param artifact the artifact path, as given to the hierarchy
+     * @param methods the methods' facts
+     */
+    public void addMethods(String artifact, List<MethodFacts> methods) {
         for (MethodFacts m : methods) {
-            if (raw.containsKey(m.method())) {
+            final Raw recorded = raw.get(m.method());
+            if (recorded != null && recorded.artifact().compareTo(artifact) <= 0) {
                 continue;
             }
             final List<Integer> ex = new ArrayList<>();
@@ -90,7 +102,8 @@ public final class CallGraph {
                     in.add(symbol(type));
                 }
             }
-            raw.putIfAbsent(m.method(), new Raw(ints(ex), ints(vi), ints(in)));
+            raw.merge(m.method(), new Raw(artifact, ints(ex), ints(vi), ints(in)),
+                    (kept, added) -> kept.artifact().compareTo(added.artifact()) <= 0 ? kept : added);
         }
     }
 
@@ -111,12 +124,11 @@ public final class CallGraph {
 
     /** Resolves the recorded calls and assigns the ids. */
     public void finish() {
-        final Map<String, ClassInfo> classes = hierarchy.classes();
-        typeNames = classes.keySet().toArray(String[]::new);
+        typeNames = hierarchy.classNames().toArray(String[]::new);
         Arrays.sort(typeNames);
         final List<String> keys = new ArrayList<>();
         for (String type : typeNames) {
-            for (String member : classes.get(type).methods()) {
+            for (String member : hierarchy.get(type).methods()) {
                 keys.add(type + "." + member);
             }
         }

@@ -104,6 +104,17 @@ public final class CallIndex {
     }
 
     /**
+     * Records the classes of an artifact; of a class in several artifacts, the one of the
+     * artifact whose path sorts first is kept.
+     *
+     * @param artifact the artifact path, e.g. {@code g/a/v}
+     * @param infos class infos by internal name
+     */
+    public void addClasses(String artifact, Map<String, ClassInfo> infos) {
+        hierarchy.add(artifact, infos);
+    }
+
+    /**
      * The classes recorded with {@link #addClasses}.
      *
      * @return the class hierarchy, shared with the call graph

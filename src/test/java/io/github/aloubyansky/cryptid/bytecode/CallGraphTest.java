@@ -31,6 +31,12 @@ class CallGraphTest {
                 static class Big extends Square { public double area() { return 9; } }
                 static class Listy extends ArrayList<String> {}
 
+                interface I { default String m() { return "I"; } }
+                interface J extends I { default String m() { return "J"; } }
+                static class B implements J {}
+                static class C extends B implements I {}
+                static class C2 implements I, J {}
+
                 static double total(Shape s) { return s.area() + s.label().length(); }
 
                 static double run() {
@@ -78,6 +84,56 @@ class CallGraphTest {
         assertEquals(g.method("org/acme/G$Square.area()D"), g.dispatch(g.type("org/acme/G$Square"), area));
         assertEquals(label, g.dispatch(g.type("org/acme/G$Big"), label), "a default method");
         assertEquals(-1, g.dispatch(g.type("org/acme/G$Listy"), area), "not a Shape");
+    }
+
+    /** Of default methods overriding each other, the most specific interface's runs, wherever the class names it. */
+    @Test
+    void dispatchToTheMostSpecificDefaultMethod() throws Exception {
+        final CallGraph g = graph(false, 1);
+        final int im = g.method("org/acme/G$I.m()Ljava/lang/String;");
+        final int jm = g.method("org/acme/G$J.m()Ljava/lang/String;");
+        assertEquals(jm, g.dispatch(g.type("org/acme/G$C"), im));
+        assertEquals(jm, g.dispatch(g.type("org/acme/G$C2"), im));
+        assertEquals(jm, g.dispatch(g.type("org/acme/G$B"), im));
+    }
+
+    /**
+     * Of a class in two artifacts with different code, the copy of the artifact that sorts first
+     * is taken, whole, whichever is added first.
+     */
+    @Test
+    void differingCopiesOfAClass() throws Exception {
+        final String one = "package org.acme; public class V { static void one() {} static void two() {} static void v() { one(); } }";
+        final String two = one.replace("{ one(); }", "{ two(); }");
+        for (boolean reversed : new boolean[] {false, true}) {
+            final Analyzer a = analyzer("a", one);
+            final Analyzer b = analyzer("b", two);
+            final Hierarchy hierarchy = new Hierarchy();
+            final CallGraph g = new CallGraph(a.classInfos().keySet(), hierarchy);
+            if (reversed) {
+                hierarchy.add("g/b/1", b.classInfos());
+                g.addMethods("g/b/1", b.graphFacts());
+            }
+            hierarchy.add("g/a/1", a.classInfos());
+            g.addMethods("g/a/1", a.graphFacts());
+            if (!reversed) {
+                hierarchy.add("g/b/1", b.classInfos());
+                g.addMethods("g/b/1", b.graphFacts());
+            }
+            g.finish();
+            assertEquals(ids(g, "org/acme/V.one()V"), set(g.exactCallees(g.method("org/acme/V.v()V"))), "reversed: " + reversed);
+        }
+    }
+
+    private Analyzer analyzer(String name, String source) throws Exception {
+        final Path src = tmp.resolve(name + "-src/org/acme/V.java");
+        Files.createDirectories(src.getParent());
+        Files.writeString(src, source);
+        final Path classes = Files.createDirectories(tmp.resolve(name + "-classes"));
+        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null, "-g", "-d", classes.toString(), src.toString()));
+        final Analyzer analyzer = new Analyzer();
+        analyzer.addClasses(classes);
+        return analyzer;
     }
 
     @Test

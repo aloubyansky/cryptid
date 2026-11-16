@@ -132,9 +132,9 @@ public final class BytecodeScanner {
             CallGraph callGraph, boolean keepCandidates) {
         final Analyzer analyzer = new Analyzer();
         analyzer.addJar(jar, jarCache);
-        callIndex.addClasses(analyzer.classInfos());
+        callIndex.addClasses(locationPrefix, analyzer.classInfos());
         if (callGraph != null) {
-            callGraph.addMethods(analyzer.graphFacts());
+            callGraph.addMethods(locationPrefix, analyzer.graphFacts());
         }
         final List<Analyzer.MethodResult> methods = analyzer.analyze();
         callIndex.addCalls(methods, locationPrefix);
