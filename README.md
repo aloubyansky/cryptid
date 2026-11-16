@@ -126,7 +126,8 @@ The specs in `src/main/resources/crypto-api-specs.yaml` were first exported from
 More detail:
 - [Architecture](docs/architecture.md): the pipeline, input and output, integration with sonar-cryptography, what the JAR contains;
 - [Detection redesign](docs/detection-redesign.md): the specs and object model, and the migration to them;
-- [Design review](docs/design-review.md): findings, the refactoring plan and the backlog.
+- [Design review](docs/design-review.md): findings, the refactoring plan and the backlog;
+- [Reachability design](docs/reachability-design.md): what a complete CBOM needs and what cryptid covers of it, and the plan for marking findings as reached from the application's entry points (not implemented).
 
 ## Licensing
 
