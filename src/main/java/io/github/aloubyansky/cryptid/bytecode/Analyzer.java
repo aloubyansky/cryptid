@@ -38,6 +38,7 @@ import io.smallrye.classfile.instruction.TableSwitchInstruction;
 import io.smallrye.classfile.instruction.ThrowInstruction;
 import io.smallrye.classfile.instruction.TypeCheckInstruction;
 import java.io.IOException;
+import java.lang.constant.DirectMethodHandleDesc;
 import java.lang.constant.MethodTypeDesc;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -371,7 +372,7 @@ public final class Analyzer {
                 } else if (el instanceof InvokeInstruction ii) {
                     invoke(s, ii, method, source, i, lines[i], calls, newSites);
                 } else if (el instanceof InvokeDynamicInstruction id) {
-                    invokeDynamic(s, id);
+                    invokeDynamic(s, id, method, source, i, lines[i], calls);
                 } else if (el instanceof NewObjectInstruction n) {
                     final int id = siteId(method, i);
                     newSites.put(id, i);
@@ -624,8 +625,14 @@ public final class Analyzer {
         return AVal.origin(cs.id);
     }
 
-    /** String concatenation compiled to {@code makeConcatWithConstants}: folded when all arguments are constants. */
-    private static void invokeDynamic(State s, InvokeDynamicInstruction id) {
+    /**
+     * An {@code invokedynamic}. String concatenation compiled to {@code makeConcatWithConstants}
+     * is folded when all arguments are constants. A method reference is recorded as a call site
+     * of the referenced method, see {@link #methodReference}.
+     */
+    private void invokeDynamic(State s, InvokeDynamicInstruction id, String method, String source, int index, int line,
+            Map<Integer, CallSite> calls) {
+        methodReference(id, method, source, index, line, calls);
         final MethodTypeDesc t = id.typeSymbol();
         final AVal[] args = new AVal[t.parameterCount()];
         for (int p = args.length - 1; p >= 0; p--) {
@@ -661,6 +668,44 @@ public final class Analyzer {
             }
         }
         s.push(result);
+    }
+
+    /**
+     * Records a method reference ({@code SHA256Digest::new}) as a call site of the referenced
+     * method, with unknown receiver and arguments: what it is called with isn't known where the
+     * reference is created. A lambda isn't one: its body is a method of this class, with call
+     * sites of its own.
+     */
+    private void methodReference(InvokeDynamicInstruction id, String method, String source, int index, int line,
+            Map<Integer, CallSite> calls) {
+        final DirectMethodHandleDesc bootstrap = id.bootstrapMethod();
+        if (!bootstrap.owner().descriptorString().equals("Ljava/lang/invoke/LambdaMetafactory;")
+                || !bootstrap.methodName().equals("metafactory") && !bootstrap.methodName().equals("altMetafactory")
+                || id.bootstrapArgs().size() < 2
+                || !(id.bootstrapArgs().get(1) instanceof DirectMethodHandleDesc target)) {
+            return;
+        }
+        final boolean isStatic;
+        switch (target.kind()) {
+            case STATIC, INTERFACE_STATIC -> isStatic = true;
+            case VIRTUAL, INTERFACE_VIRTUAL, SPECIAL, INTERFACE_SPECIAL, CONSTRUCTOR -> isStatic = false;
+            default -> {
+                return;
+            }
+        }
+        final String owner = GraphFacts.internalName(target);
+        if (target.methodName().startsWith("lambda$") && owner.equals(method.substring(0, method.indexOf('.')))) {
+            return;
+        }
+        final boolean constructor = target.kind() == DirectMethodHandleDesc.Kind.CONSTRUCTOR;
+        final String descriptor = target.lookupDescriptor();
+        final int site = siteId(method, index);
+        final CallSite cs = calls.computeIfAbsent(index, k -> new CallSite(site, method, source, owner,
+                constructor ? "<init>" : target.methodName(), descriptor, isStatic, line,
+                MethodTypeDesc.ofDescriptor(descriptor).parameterCount()));
+        if (constructor || !descriptor.endsWith(")V")) {
+            cs.created = site;
+        }
     }
 
     private static void stack(State s, Opcode op) {

@@ -111,7 +111,7 @@ Green: this project. Blue: sonar-cryptography modules (Apache-2.0). Beige: other
 - the call sites that may have created the object;
 - whether it takes two stack slots.
 
-Values merge at control-flow joins; static and instance fields reach a fixpoint per JAR. String constants fold through concatenation (`makeConcatWithConstants`), `toUpperCase`, `toLowerCase`, `trim`, `valueOf` and similar, and array element constants are tracked. A library's static constants resolve by field name.
+Values merge at control-flow joins; static and instance fields reach a fixpoint per JAR. String constants fold through concatenation (`makeConcatWithConstants`), `toUpperCase`, `toLowerCase`, `trim`, `valueOf` and similar, and array element constants are tracked. A library's static constants resolve by field name. A method reference (`SHA256Digest::new`) is recorded as a call site of the referenced method with unknown receiver and arguments, so APIs that report by their type are detected; a lambda's body is a method of its own, with its own call sites.
 
 ### Detection
 

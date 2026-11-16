@@ -1,6 +1,7 @@
 package io.github.aloubyansky.cryptid.bytecode;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -88,8 +89,39 @@ class AnalyzerTest {
             }
             """;
 
+    private static final String REFS = """
+            package org.acme;
+
+            import java.security.MessageDigest;
+            import java.util.concurrent.Callable;
+            import java.util.function.Supplier;
+
+            public class Refs {
+                Supplier<StringBuilder> constructor() { return StringBuilder::new; }
+                Callable<MessageDigest> viaLambda() { return () -> MessageDigest.getInstance("SHA-256"); }
+                String concat(int i) { return "n" + i; }
+            }
+            """;
+
     @TempDir
     Path tmp;
+
+    @Test
+    void methodReferencesAreCallSites() throws Exception {
+        final List<Analyzer.MethodResult> methods = analyze("org/acme/Refs.java", REFS);
+        final CallSite cs = call(methods, "constructor", "<init>");
+        assertEquals("java/lang/StringBuilder", cs.owner());
+        assertEquals("()V", cs.descriptor());
+        assertFalse(cs.isStatic());
+        // a lambda's body is a method of its own, and its calls are that method's
+        assertEquals(List.of(), result(methods, "viaLambda").calls());
+        assertEquals("getInstance", result(methods, "lambda$viaLambda$").calls().get(0).name());
+        assertEquals(List.of(), result(methods, "concat").calls());
+    }
+
+    private static Analyzer.MethodResult result(List<Analyzer.MethodResult> methods, String name) {
+        return methods.stream().filter(r -> r.method().contains("." + name)).findFirst().orElseThrow();
+    }
 
     @Test
     void constantsReturnedByMethodsReachCallSites() throws Exception {

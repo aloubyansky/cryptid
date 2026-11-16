@@ -570,6 +570,30 @@ class BytecodeScannerTest {
     }
 
     /** Asset names with their occurrences, for comparing CBOMs. */
+    private static final String DIGEST_NEW = """
+            package org.acme.hash;
+
+            import java.util.function.Supplier;
+            import org.bouncycastle.crypto.Digest;
+            import org.bouncycastle.crypto.digests.SHA256Digest;
+
+            public class Digests {
+                Supplier<Digest> direct() { return () -> new SHA256Digest(); }
+            }
+            """;
+
+    private static final String DIGEST_REF = DIGEST_NEW.replace("() -> new SHA256Digest()", "SHA256Digest::new");
+
+    @Test
+    void detectsCryptoApisUsedAsMethodReferences() throws Exception {
+        final Path classpath = Path.of(System.getProperty("java.class.path"));
+        final List<String> direct = names(scanWithCallers(compile("direct", "org/acme/hash/Digests.java", DIGEST_NEW, classpath)));
+        final List<String> ref = names(scanWithCallers(compile("ref", "org/acme/hash/Digests.java", DIGEST_REF, classpath)));
+        assertEquals(1, direct.size(), direct.toString());
+        // the same asset at the same location, whether constructed in a lambda or referenced
+        assertEquals(direct, ref);
+    }
+
     private static List<String> names(Bom bom) {
         final List<String> result = new ArrayList<>();
         for (Component c : bom.getComponents()) {
