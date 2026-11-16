@@ -144,6 +144,23 @@ public final class Analyzer {
         return result;
     }
 
+    /**
+     * Returns what every method of every class read calls and instantiates, for the call graph.
+     * Read from the instructions, so it doesn't depend on {@link #analyze}.
+     *
+     * @return the facts of every method, in class then method order
+     */
+    public List<MethodFacts> graphFacts() {
+        final List<MethodFacts> result = new ArrayList<>();
+        for (ClassModel cm : classes) {
+            final String className = cm.thisClass().asInternalName();
+            for (MethodModel mm : cm.methods()) {
+                result.add(GraphFacts.of(className, mm));
+            }
+        }
+        return result;
+    }
+
     private void addClass(byte[] bytes) {
         final ClassModel cm;
         try {
