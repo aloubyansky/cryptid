@@ -2,10 +2,8 @@ package io.github.aloubyansky.cryptid.bytecode;
 
 import java.lang.constant.ClassDesc;
 import java.lang.constant.MethodTypeDesc;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -82,7 +80,7 @@ public final class CallIndex {
             .thenComparing(Site::signature);
 
     private final Set<String> analyzedClasses;
-    private final Map<String, ClassInfo> classes = new ConcurrentHashMap<>();
+    private final Hierarchy hierarchy = new Hierarchy();
     private final Map<String, List<Site>> byInvoked = new ConcurrentHashMap<>();
     private Map<String, List<Site>> byDeclaring;
 
@@ -102,7 +100,16 @@ public final class CallIndex {
      * @param infos class infos by internal name
      */
     public void addClasses(Map<String, ClassInfo> infos) {
-        infos.forEach(classes::putIfAbsent);
+        hierarchy.add(infos);
+    }
+
+    /**
+     * The classes recorded with {@link #addClasses}.
+     *
+     * @return the class hierarchy, shared with the call graph
+     */
+    public Hierarchy hierarchy() {
+        return hierarchy;
     }
 
     /**
@@ -164,70 +171,10 @@ public final class CallIndex {
      */
     public void finish() {
         final Map<String, List<Site>> result = new HashMap<>();
-        byInvoked.forEach((key, sites) -> result.computeIfAbsent(declaring(key), k -> new ArrayList<>()).addAll(sites));
+        byInvoked.forEach((key, sites) -> result.computeIfAbsent(hierarchy.declaring(key), k -> new ArrayList<>()).addAll(sites));
         // artifacts are indexed in parallel: order the sites, so values resolve in the same order in every run
         result.values().forEach(sites -> sites.sort(SITE_ORDER));
         byDeclaring = result;
-    }
-
-    private String declaring(String key) {
-        final int dot = key.indexOf('.');
-        final String owner = key.substring(0, dot);
-        final String member = key.substring(dot + 1);
-        // the superclass chain first, as the JVM resolves methods
-        for (String c = owner; c != null; ) {
-            final ClassInfo ci = classes.get(c);
-            if (ci == null) {
-                break;
-            }
-            if (ci.methods().contains(member)) {
-                return c + "." + member;
-            }
-            c = ci.superclass();
-        }
-        // then default methods of the interfaces
-        for (String t : supertypes(owner)) {
-            final ClassInfo ci = classes.get(t);
-            if (ci != null && ci.methods().contains(member)) {
-                return t + "." + member;
-            }
-        }
-        return key;
-    }
-
-    private final Map<String, List<String>> supertypes = new ConcurrentHashMap<>();
-
-    /**
-     * Returns the analyzed supertypes of a class, superclasses and interfaces, transitively,
-     * nearest first.
-     *
-     * @param owner the class's internal name
-     * @return the supertypes, without the class itself
-     */
-    private List<String> supertypes(String owner) {
-        return supertypes.computeIfAbsent(owner, o -> {
-            final List<String> result = new ArrayList<>();
-            final Set<String> seen = new HashSet<>(Set.of(o));
-            final Deque<String> todo = new ArrayDeque<>(List.of(o));
-            while (!todo.isEmpty()) {
-                final ClassInfo ci = classes.get(todo.poll());
-                if (ci == null) {
-                    continue;
-                }
-                final List<String> next = new ArrayList<>();
-                if (ci.superclass() != null) {
-                    next.add(ci.superclass());
-                }
-                next.addAll(ci.interfaces());
-                for (String n : next) {
-                    if (seen.add(n)) {
-                        result.add(n);
-                        todo.add(n);
-                    }
-                }
-            }
-            return List.copyOf(result);
-        });
     }
 
     /**
@@ -245,8 +192,8 @@ public final class CallIndex {
         if (member.startsWith("<init>") || member.startsWith("<clinit>")) {
             return result;
         }
-        for (String t : supertypes(owner)) {
-            final ClassInfo ci = classes.get(t);
+        for (String t : hierarchy.supertypes(owner)) {
+            final ClassInfo ci = hierarchy.get(t);
             if (ci != null && ci.methods().contains(member)) {
                 result.add(t + "." + member);
             }
