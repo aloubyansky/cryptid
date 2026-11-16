@@ -2,6 +2,7 @@ package io.github.aloubyansky.cryptid.scan;
 
 import com.ibm.mapper.model.INode;
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
+import io.github.aloubyansky.cryptid.bytecode.CallGraph;
 import io.github.aloubyansky.cryptid.bytecode.CallIndex;
 import io.github.aloubyansky.cryptid.bytecode.JarCache;
 import io.github.aloubyansky.cryptid.bytecode.Types;
@@ -122,15 +123,19 @@ public final class BytecodeScanner {
      * @param classpath JARs to resolve supertypes from, as for {@link #scan}
      * @param jarCache the shared JAR cache
      * @param callIndex the index to fill
+     * @param callGraph the call graph to fill, or {@code null} to index without building it
      * @param keepCandidates whether to return the JAR's candidate methods, for a JAR that will be
      *     scanned
      * @return the candidate methods, or {@code null} if not kept
      */
     public CandidateMethods index(Path jar, String locationPrefix, List<Path> classpath, JarCache jarCache, CallIndex callIndex,
-            boolean keepCandidates) {
+            CallGraph callGraph, boolean keepCandidates) {
         final Analyzer analyzer = new Analyzer();
         analyzer.addJar(jar, jarCache);
         callIndex.addClasses(analyzer.classInfos());
+        if (callGraph != null) {
+            callGraph.addMethods(analyzer.graphFacts());
+        }
         final List<Analyzer.MethodResult> methods = analyzer.analyze();
         callIndex.addCalls(methods, locationPrefix);
         if (!keepCandidates) {

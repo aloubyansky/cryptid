@@ -1,5 +1,6 @@
 package io.github.aloubyansky.cryptid;
 
+import io.github.aloubyansky.cryptid.bytecode.CallGraph;
 import io.github.aloubyansky.cryptid.bytecode.CallIndex;
 import io.github.aloubyansky.cryptid.bytecode.JarCache;
 import io.github.aloubyansky.cryptid.scan.BytecodeScanner;
@@ -191,12 +192,14 @@ public class GenerateCbomCommand implements Callable<Integer> {
                 final Set<String> allClasses = new HashSet<>();
                 allJars.forEach(j -> allClasses.addAll(jarCache.classNames(j)));
                 callIndex = new CallIndex(allClasses);
+                // nothing uses the call graph yet: see docs/reachability-design.md
+                final CallGraph callGraph = new CallGraph(allClasses, callIndex.hierarchy());
                 parallel(threadCount, resolved, g -> {
                     try {
                         // artifacts to be scanned keep what detection needs, so they aren't analyzed twice
                         final boolean scanned = rescan || !Files.exists(g.first().cbomFile(baseDir));
                         final BytecodeScanner.CandidateMethods f = scanner.index(g.jar(), g.first().artifactPath(),
-                                classpath(g, jarsByRef, allJars, closure), jarCache, callIndex, scanned);
+                                classpath(g, jarsByRef, allJars, closure), jarCache, callIndex, callGraph, scanned);
                         if (f != null) {
                             candidates.put(g.first().artifactPath(), f);
                         }
@@ -209,6 +212,9 @@ public class GenerateCbomCommand implements Callable<Integer> {
                 log.infof("Indexed %d calls between %d classes in %d ms; %d methods may contain crypto events",
                         callIndex.size(), allClasses.size(), System.currentTimeMillis() - t0,
                         candidates.values().stream().mapToInt(f -> f.methods().size()).sum());
+                callGraph.finish();
+                log.infof("Call graph: %d methods, %d calls (%d through method handles), %d instantiations",
+                        callGraph.methodCount(), callGraph.edgeCount(), callGraph.handleEdgeCount(), callGraph.instantiationCount());
             } else {
                 callIndex = null;
             }

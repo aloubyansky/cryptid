@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
+import io.github.aloubyansky.cryptid.bytecode.CallGraph;
 import io.github.aloubyansky.cryptid.bytecode.CallIndex;
 import io.github.aloubyansky.cryptid.bytecode.JarCache;
 import java.io.IOException;
@@ -365,8 +366,8 @@ class BytecodeScannerTest {
             final Set<String> classes = new HashSet<>(jars.classNames(lib));
             classes.addAll(jars.classNames(app));
             final CallIndex index = new CallIndex(classes);
-            scanner.index(lib, "org.acme/lib/1.0", List.of(), jars, index, false);
-            scanner.index(app, "org.acme/app/1.0", List.of(lib), jars, index, false);
+            scanner.index(lib, "org.acme/lib/1.0", List.of(), jars, index, null, false);
+            scanner.index(app, "org.acme/app/1.0", List.of(lib), jars, index, null, false);
             index.finish();
             final Bom libBom = scanner.scan(lib, "org.acme/lib/1.0", List.of(), jars, index).bom();
             final List<String> inApp = libBom.getComponents() == null ? List.of() : libBom.getComponents().stream()
@@ -484,8 +485,8 @@ class BytecodeScannerTest {
             final Set<String> classes = new HashSet<>(jars.classNames(wrapper));
             classes.addAll(jars.classNames(app));
             final CallIndex index = new CallIndex(classes);
-            final BytecodeScanner.CandidateMethods candidates = scanner.index(wrapper, "org.acme/wrap/1.0", List.of(), jars, index, true);
-            assertNull(scanner.index(app, "org.acme/app/1.0", List.of(), jars, index, false));
+            final BytecodeScanner.CandidateMethods candidates = scanner.index(wrapper, "org.acme/wrap/1.0", List.of(), jars, index, null, true);
+            assertNull(scanner.index(app, "org.acme/app/1.0", List.of(), jars, index, null, false));
             index.finish();
             // within the wrapper alone, the algorithm is unknown
             assertTrue(scanner.scan(wrapper, "org.acme/wrap/1.0", List.of(), jars, null).bom().getComponents() == null
@@ -551,8 +552,8 @@ class BytecodeScannerTest {
             final Set<String> classes = new HashSet<>(jars.classNames(spi));
             classes.addAll(jars.classNames(client));
             final CallIndex index = new CallIndex(classes);
-            scanner.index(spi, "org.acme/spi/1.0", List.of(), jars, index, false);
-            scanner.index(client, "org.acme/client/1.0", List.of(), jars, index, false);
+            scanner.index(spi, "org.acme/spi/1.0", List.of(), jars, index, null, false);
+            scanner.index(client, "org.acme/client/1.0", List.of(), jars, index, null, false);
             index.finish();
             bom = scanner.scan(spi, "org.acme/spi/1.0", List.of(), jars, index).bom();
         }
@@ -570,6 +571,25 @@ class BytecodeScannerTest {
     }
 
     /** Asset names with their occurrences, for comparing CBOMs. */
+    @Test
+    void indexingFillsTheCallGraph() throws Exception {
+        final Path jar = compile("org/acme/sample/Sample.java", SOURCE);
+        final BytecodeScanner scanner = new BytecodeScanner();
+        try (JarCache jars = new JarCache()) {
+            final Set<String> classes = new HashSet<>(jars.classNames(jar));
+            final CallIndex index = new CallIndex(classes);
+            final CallGraph graph = new CallGraph(classes, index.hierarchy());
+            scanner.index(jar, "org.acme/sample/1.0", List.of(), jars, index, graph, false);
+            index.finish();
+            graph.finish();
+            assertEquals(2, graph.methodCount()); // <init> and run
+            final int init = graph.method("org/acme/sample/Sample.<init>()V");
+            assertTrue(init >= 0);
+            // everything Sample calls is in the JDK
+            assertEquals(0, graph.edgeCount());
+        }
+    }
+
     private static final String DIGEST_NEW = """
             package org.acme.hash;
 
@@ -730,7 +750,7 @@ class BytecodeScannerTest {
         final BytecodeScanner scanner = new BytecodeScanner();
         try (JarCache jars = new JarCache()) {
             final CallIndex index = new CallIndex(new HashSet<>(jars.classNames(jar)));
-            scanner.index(jar, "org.acme/hash/1.0", List.of(), jars, index, false);
+            scanner.index(jar, "org.acme/hash/1.0", List.of(), jars, index, null, false);
             index.finish();
             return scanner.scan(jar, "org.acme/hash/1.0", List.of(), jars, index).bom();
         }

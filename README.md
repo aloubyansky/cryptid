@@ -55,6 +55,7 @@ INFO  Found 5 Maven components in sample-sbom.json
 INFO  Resolved 4 of 5 artifacts
 INFO  Loaded 515 crypto API specs
 INFO  Indexed 20925 calls between 4352 classes in 3626 ms; 1153 methods may contain crypto events
+INFO  Call graph: 26034 methods, 49186 calls (24 through method handles), 8072 instantiations
 INFO  Analyzed 4 artifacts (4352 classes), 0 reused from the work directory, 0 failed
 INFO  2 of 4 analyzed components contain cryptographic assets
 INFO  Wrote CBOM to cbom.json: 1386 findings in 2 components, total time 4s
@@ -119,7 +120,7 @@ The tests include:
 | `model` | `CryptoAssetModeler`, `AssetAssembler`: turn detected events into crypto assets |
 | `detection` | `CryptoEventDetector`, `CryptoObjectGraph`, `CryptoEvent`: crypto objects and the calls on them |
 | `spec` | `CryptoApiSpecs`, `CryptoApiMatcher`: the API specs and matching calls to them |
-| `bytecode` | `Analyzer`, `CallIndex`: the abstract interpretation of bytecode |
+| `bytecode` | `Analyzer`, `CallIndex`: the abstract interpretation of bytecode; `CallGraph`: the calls between all methods, not used yet (see the [reachability design](docs/reachability-design.md)) |
 
 The specs in `src/main/resources/crypto-api-specs.yaml` were first exported from sonar-cryptography's Java detection rules by `RuleSpecExporter` (test sources) and are now hand-maintained, with corrections and additions such as xmlsec's `XMLCipher`. `RuleSpecDriftTest` checks that the file is canonical (sorted by `api`, no duplicates, the mapper's layout), that every API method the rules match has an entry, and that every entry differing from the rules says why in its `correction`, and reports additions and corrections in `target/spec-drift-report.txt`, with the rules' export in `target/crypto-api-specs-exported.yaml` for a diff. Tables in its `names` section translate names the translators don't read: a value's `names` table is a closed vocabulary, such as the W3C XML Encryption URIs mapped to JCA names, dropping what isn't in it; its `aliases` table gives other spellings, such as Bouncy Castle's `SHA256WithRSAEncryption`, matched ignoring case and keeping other names. An API with `returnsReceiver`, such as a builder's `setProvider`, returns the object it is called on. An API with `model` is modeled by a node of cryptid's own (`OwnModels`) instead of sonar-cryptography's translators, for algorithms they don't model, such as Argon2.
 

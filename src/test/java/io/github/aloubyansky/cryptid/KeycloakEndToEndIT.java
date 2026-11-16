@@ -39,7 +39,7 @@ class KeycloakEndToEndIT {
         cryptid(SBOM, "-o", output.toString(), "--work-dir", tmp.resolve("work").toString())
                 .then()
                     .stdout()
-                        .hasLinesContaining("Resolved 548 of 548 artifacts", "Analyzed 548 artifacts", ", 0 failed")
+                        .hasLinesContaining("Resolved 548 of 548 artifacts", "Analyzed 548 artifacts", ", 0 failed", "Call graph: ")
                         .doesNotHaveLinesContaining("Exception", "ERROR")
                     .exitCodeIs(0)
                 .execute(Duration.ofMinutes(20))
