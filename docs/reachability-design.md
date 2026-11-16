@@ -4,7 +4,7 @@ Status: design, agreed in outline on 2026-11-15, not implemented. Sections marke
 
 ## Why
 
-cryptid reports every use of a cryptographic API in every JAR of an SBOM. That is an inventory of what is *present*. Most of it is never run by the application: a library's unused code paths, alternative providers, tools bundled in a distribution. A reader planning a migration can't tell which of Keycloak's 2,589 occurrences matter.
+cryptid reports every use of a cryptographic API in every JAR of an SBOM. That is an inventory of what is *present*. Most of it is never run by the application: a library's unused code paths, alternative providers, tools bundled in a distribution. A reader planning a migration can't tell which of Keycloak's 3,920 occurrences matter.
 
 This design moves cryptid from presence to *reachability*: every finding stays in the CBOM, and each is marked as reached from an entry point of the application or not. It also places cryptid within the larger task of producing a complete CBOM, most of which no bytecode analysis can do, and splits the project into a library, a CLI and a Quarkus extension.
 
@@ -240,7 +240,7 @@ Two findings of the review that this design does *not* address, because presence
 - `bytecode` and `spec` don't use sonar-cryptography types, as now. The call graph and the entry-point matching don't know about crypto.
 - Results are the same in every run (`ReproducibilityIT`), including which path is reported for a finding.
 - Findings, apart from the new marking and the method-reference call sites, don't change: `FixtureConformanceTest` and `PipelineEquivalenceTest` keep passing.
-- Keycloak's SBOM takes about 20 seconds and 5.5 GB today. The target with reachability *(my call)*: under a minute, and within the same heap.
+- Keycloak's SBOM takes about 30 seconds and 5.5 GB today (about 35 seconds with the call graph of step 1). The target with reachability *(my call)*: under a minute, and within the same heap.
 
 ## Order of work
 
@@ -248,7 +248,7 @@ Each step is testable alone, and the Keycloak SBOM is the measure throughout.
 
 1. **Call graph.** Full edges, instantiations and method handles across all JARs. Measure: time and memory on Keycloak; method references to crypto APIs appear as findings.
 2. **Entry points and instantiated classes.** The specs, annotation reading, `META-INF/services`. Measure: the entry points found in `org.keycloak:*` by kind, checked against Keycloak's known REST endpoints.
-3. **Reachability and the CBOM.** The walk, the marking, the summary. Measure: the share of the 2,589 occurrences reached, and a manual check of a sample of both outcomes; a not-reached finding that is in fact used points at a missing entry-point or instantiation rule.
+3. **Reachability and the CBOM.** The walk, the marking, the summary. Measure: the share of the 3,920 occurrences reached, and a manual check of a sample of both outcomes; a not-reached finding that is in fact used points at a missing entry-point or instantiation rule.
 4. **Library and CLI split.** Module structure, assembly without CDI, artifacts as input in place of SBOM components.
 5. **sonar-cryptography.** Own code for `java` and `engine`; the sources of `mapper`, `enricher` and `output` as a module. Measure: the fixture baseline and the Keycloak CBOM don't change; the build needs nothing outside Maven Central.
 6. **Quarkus extension.** A separate design, once 1 to 5 hold up.
