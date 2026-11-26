@@ -7,7 +7,7 @@ Findings from reviewing the implementation against its [architecture](architectu
 | F1 | Results vary between runs | defect | fixed |
 | F2 | Wrong sonar-cryptography version in the CBOM metadata | defect | fixed |
 | F3 | Every method is interpreted twice | design | fixed |
-| F4 | The tool's own classpath leaks into the analysis | design | open |
+| F4 | The tool's own classpath leaks into the analysis | design | fixed |
 | F5 | Results round-trip through JSON and string heuristics | design | open |
 | F6 | Dead and unused weight | cleanup | partly done |
 | F7 | Object flow stops at method boundaries | limit | done |
@@ -41,9 +41,11 @@ Fix: phase A keeps, for each JAR to be scanned, the methods with a call site tha
 
 Phase A now carries the pre-check; the remaining cost is its interpretation of every method, up to 10 rounds per JAR until field values settle.
 
-## F4. The tool's own classpath leaks into the analysis
+## F4. The tool's own classpath leaks into the analysis (fixed)
 
 `Types` falls back to `ClassLoader.getSystemClassLoader()` for supertypes, that is the runner JAR. A scanned class's hierarchy can then depend on which of the tool's dependencies are present, a set tree-shaking changes. The fallback should be the JDK only (`jrt:/`).
+
+Fix (2026-11-26): scanning uses `Types.jdk`, which falls back to the runtime image through the `jrt:/` file system and nothing else; `TypesTest` checks that a Bouncy Castle class on the test classpath isn't resolved. Tests that match against Bouncy Castle from their own classpath still pass a class loader. Keycloak: the same CBOM per occurrence.
 
 ## F5. Results round-trip through JSON and string heuristics
 

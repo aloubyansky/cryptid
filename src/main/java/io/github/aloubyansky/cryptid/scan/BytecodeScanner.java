@@ -203,11 +203,14 @@ public final class BytecodeScanner {
         return new Result(bom, jarCache.classNames(jar).size(), findings, failedMethods);
     }
 
-    /** The class hierarchy for matching rules: the JAR, then its classpath, then the JDK. */
+    /**
+     * The class hierarchy for matching specs: the JAR, then its classpath, then the JDK, and
+     * nothing of the tool's own classpath.
+     */
     private static Types types(Path jar, List<Path> classpath, JarCache jarCache) {
         final List<Path> lookup = new ArrayList<>(classpath.size() + 1);
         lookup.add(jar);
         lookup.addAll(classpath);
-        return new Types(ClassLoader.getSystemClassLoader(), jarCache, lookup);
+        return Types.jdk(jarCache, lookup);
     }
 }

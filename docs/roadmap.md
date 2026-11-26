@@ -19,7 +19,7 @@ Each step is checked the usual way: `FixtureConformanceTest`, `PipelineEquivalen
 These are small and independent. Each one makes the comparisons in later steps more reliable.
 
 1. ~~**Work directory cache keyed by cryptid's build and the SBOM's JARs.**~~ Done 2026-11-26: per-artifact CBOMs are kept under `cbom/<key>/`, a digest of cryptid's version, build time and specs, the `--classpath` mode and every resolved JAR (`CacheKey`).
-2. **JDK-only supertypes (F4).** `Types` falls back to the system class loader, which is the runner JAR. Read JDK classes from `jrt:/` instead.
+2. ~~**JDK-only supertypes (F4).**~~ Done 2026-11-26: scanning reads classes outside the JARs from `jrt:/` only (`Types.jdk`). Keycloak's CBOM is unchanged.
 3. **Order-independent attachment (redesign 3b-2).** A detection without nodes of its own takes the first child with nodes. Choose by kind instead, and review each difference.
 4. **F6 leftovers.** Stop attaching empty child events where no call matches.
 
