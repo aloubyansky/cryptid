@@ -1,6 +1,6 @@
 # Roadmap
 
-The single list of what's next, in order, written 2026-11-26. It draws on the [design review](design-review.md), the [detection redesign](detection-redesign.md), the [reachability design](reachability-design.md), the [coverage gaps](coverage-gaps.md) and [certificates](certificates.md). Those stay as design records, with their reasoning and measurements. Status is kept here.
+The single list of what's next, in order, written 2026-11-26. It draws on the [foundation review](foundation.md), the [design review](design-review.md), the [detection redesign](detection-redesign.md), the [reachability design](reachability-design.md), the [coverage gaps](coverage-gaps.md) and [certificates](certificates.md). Those stay as design records, with their reasoning and measurements. Status is kept here.
 
 Each step is checked the usual way: `FixtureConformanceTest`, `PipelineEquivalenceTest`, `ReproducibilityIT`, `SampleSbomIT`, `KeycloakEndToEndIT`, and a per-occurrence comparison of the Keycloak 26.8.2 CBOM, with each difference reviewed.
 
@@ -23,58 +23,77 @@ These are small and independent. Each one makes the comparisons in later steps m
 3. **Order-independent attachment (redesign 3b-2).** A detection without nodes of its own takes the first child with nodes. Choose by kind instead, and review each difference.
 4. **F6 leftovers.** Stop attaching empty child events where no call matches.
 
-### 2. Reachability (current track)
+### 2. Foundation: result model and analysis API
 
-This continues [reachability-design.md](reachability-design.md), steps 2 and 3.
+The [foundation review](foundation.md) found that the results lack a model of their own, the analysis lacks an API, and there are two class hierarchies. The steps below fix that before reachability is built on today's shapes. See its *Order of work*.
+
+1. **Result model and in-memory assembly** (design review F5).
+   - `Site`, `Finding`, `Asset`, `Occurrence` and `Report`.
+   - Assets keyed by node content.
+   - CycloneDX written from the `Report`.
+   - No per-artifact JSON round trip, and no UUID and prefix heuristics.
+
+   The Keycloak CBOM stays the same per occurrence.
+2. **Analysis API.** `Artifact`, `Options`, `Cryptid.analyze` and `Report`. `GenerateCbomCommand` becomes an adapter, and the API package is the only public surface.
+3. **One program model.**
+   - One class table for both spec matching and dispatch, with the `--classpath` modes as views on it.
+   - An interned `MethodId` used throughout.
+   - Each output difference reviewed.
+
+### 3. Reachability and endpoints
+
+This continues [reachability-design.md](reachability-design.md), steps 2 and 3. It is extended by *Endpoints as origins of crypto use* in [foundation.md](foundation.md): crypto use traced from the endpoints external users interact with.
 
 1. **Entry points and instantiated classes.**
    - Entry-point specs as data: annotation, parameter annotation, override and signature forms.
-   - Bean specs, read from class, method and parameter annotations.
-   - `META-INF/services` read per JAR.
+   - Each spec has a kind and an exposure, external or internal.
+   - Endpoints carry the protocol, address and authentication where the code states them.
+   - Bean specs and `META-INF/services`.
    - Top-level artifacts named by the user, with a default.
    - `--entry-points` for entry points supplied as data.
 
-   Measure: the entry points found in `org.keycloak:*`, by kind, against Keycloak's known REST endpoints.
-2. **Occurrences record their enclosing method.** Assembly needs it to look up reachability. It also covers the `symbol` half of *Positions* in the backlog.
-3. **Reachability walk and CBOM marking.**
+   Measure: the entry points found in `org.keycloak:*`, by kind and exposure, against Keycloak's known REST endpoints.
+2. **Reachability walk and CBOM marking.**
    - The forward walk to a fixpoint over instantiated classes.
-   - `cryptid:reachability` and `cryptid:reached` on assets, metadata on the search, `unknown` when nothing was searched.
+   - Each occurrence marked on its `Site`, or as `unknown` when nothing was searched.
+   - Metadata on the search.
    - `--paths` for the paths.
    - Reached and not-reached counts in the summary.
-   - Graph facts cached per artifact; the walk runs on every invocation.
 
    Measure: the share of Keycloak's occurrences reached, and a manual check of a sample of each outcome. Target: under a minute, in the same heap.
-4. **Review the open encoding questions** against real output: property names, whether paths belong in the CBOM, and the `unknown` state.
+3. **Endpoint sets and services.**
+   - For each occurrence, the set of entry points reaching it, propagated as bitsets over the resolved graph.
+   - Endpoints written as CycloneDX `services` that `dependsOn` the assets they reach.
+4. **Review the open encoding questions** against real output: property names, services per method or per resource class, whether paths belong in the CBOM, and the `unknown` state.
+5. **Facts cache.** Per-artifact facts keyed by JAR content replace the per-artifact CBOM cache.
 
 What this unlocks in the backlog:
 - *Dispatch precision*: the instantiated-class set can narrow `I.m` to the implementations that can actually run.
-- *Provided and used algorithms*: `provides` against `dependsOn`, now with reachability as evidence.
+- *Provided and used algorithms*: `provides` against `dependsOn`, now with reachability as evidence. `Finding` has a role for it from step 2.1.
 
-### 3. Library and CLI split, with in-memory assembly
+### 4. Library and CLI split
 
-This is reachability step 4 together with design review F5 and steps 5 and 6. Both need the same change: assembly without CDI, from results keyed by `Site`.
+This is reachability step 4. With the API of step 2.2 in place, it moves packages into modules without changing the API.
 
-- A library module whose input is artifacts (JAR, coordinates, dependencies), which of them are top-level, and optional entry points and instantiated classes.
-- The CLI on top of it: SBOM reading and Maven resolution.
-- In-memory results keyed by `Site`, with JSON used only as the cache format. This drops the UUID-stripping and owner-prefix heuristics.
+- A library module whose input is `Artifact`s and optional entry points.
+- The CLI on top of it: SBOM reading, Maven resolution and the CycloneDX file.
 
-Done after step 2, so that a working implementation shapes the API.
-
-### 4. Independence from sonar-cryptography
+### 5. Independence from sonar-cryptography
 
 This is reachability step 5. It can be done at any point before publishing.
 
-1. Replace `java` and `engine` with our own code: records for the roughly 70 value and context classes, and our own dispatch in place of the 11 context translators. This removes the reflection in `CryptoAssetModeler`, the `Tree` stand-in and the exclusions in `pom.xml`.
-2. Copy the sources of `mapper`, `enricher` and `output` into a module, with a NOTICE and a POM of its own. First check that they build on their own.
-3. Ask upstream to publish those three modules to Central. This is worth doing whatever the outcome of 2.
+1. Events hold values of our own: the spec argument, the constant and the `Site`. Translation into sonar-cryptography's types then happens in `model` only (foundation G2).
+2. Replace `java` and `engine` with our own code: records for the roughly 70 value and context classes, and our own dispatch in place of the 11 context translators. This removes the reflection in `CryptoAssetModeler`, the `Tree` stand-in and the exclusions in `pom.xml`.
+3. Copy the sources of `mapper`, `enricher` and `output` into a module, with a NOTICE and a POM of its own. First check that they build on their own.
+4. Ask upstream to publish those three modules to Central. This is worth doing whatever the outcome of 3.
 
 This also closes these backlog items: *Distribution* (the `Tree` marker) and *Upstream changes to sonar-cryptography*.
 
 Measure: the fixture baseline and the Keycloak CBOM are unchanged, and the build needs nothing outside Maven Central.
 
-### 5. Quarkus extension
+### 6. Quarkus extension
 
-This needs a separate design once steps 2 to 4 hold up.
+This needs a separate design once steps 2 to 5 hold up. It supplies `Artifact`s from the application model, and entry points with full HTTP paths from the build.
 
 ## Detection backlog
 
@@ -97,7 +116,7 @@ Pull from this list between steps, or when a coverage comparison points at an it
 
 - **Memory and archives.** A bound on open JARs (smallrye-common-archive) and a more compact call index. The current peak is 5.5 GB.
 - **Analysis on demand (redesign step 5).** Method summaries instead of interpreting every method up to 10 rounds. This is only worth taking up if reachability pushes past the time or memory target.
-- **Positions.** Column offsets, and lines for classes without line tables. The enclosing method comes with reachability step 2.
+- **Positions.** Column offsets, and lines for classes without line tables. The enclosing method and the bytecode offset come with the result model (step 2.1).
 
 ## Open decisions
 
@@ -109,6 +128,11 @@ Collected from the design docs, so that none of them gets lost:
   - method handles are reached when they are created;
   - entry points are searched for in top-level artifacts only.
 - **CBOM encoding** of reachability: property names, and where paths go.
+- **Endpoints** ([foundation.md](foundation.md#open-questions)):
+  - one service per handler method or per resource class;
+  - the exposure of messaging;
+  - which authentication annotations to read;
+  - whether endpoint sets fit the time target.
 - **The rule-based reference tests** after the sonar-cryptography step: keep them as test-only, or retire them with a frozen baseline.
 - **Name of the Quarkus extension**: `quarkus-cbom` or `quarkus-cryptid`.
 - **Shared data**: check how much of `mapper` the CycloneDX registry covers. This decides how far the alignment can go.

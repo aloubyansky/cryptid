@@ -1,6 +1,6 @@
 # Reachability, and what cryptid covers of a complete CBOM
 
-Status: design, agreed in outline on 2026-11-15, not implemented. Sections marked *(open)* need a decision before or during planning.
+Status: design, agreed in outline on 2026-11-15, not implemented. Sections marked *(open)* need a decision before or during planning. Step 1 (the call graph) is done. [foundation.md](foundation.md) (2026-11-26) extends this design in two ways. It traces crypto use from endpoints, with an exposure for each entry point and a many-to-many relation between entry points and findings, instead of only the first entry point. It also puts a result model and an analysis API in place before step 3.
 
 ## Why
 
