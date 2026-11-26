@@ -9,6 +9,12 @@ public final class BuildInfo {
     /** This tool's version. */
     public static final String VERSION = "${project.version}";
 
+    /**
+     * When this tool was built, so that a rebuilt snapshot doesn't reuse results of an earlier
+     * build in the work directory.
+     */
+    public static final String BUILD_TIME = "${cryptid.build.time}";
+
     /** The version of sonar-cryptography whose rules and CBOM model are used. */
     public static final String SONAR_CRYPTOGRAPHY_VERSION = "${sonar-cryptography.version}";
 

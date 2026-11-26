@@ -60,10 +60,10 @@ public class CbomAssembler {
      *
      * @param inputSbom the input SBOM
      * @param groups the analyzed components, grouped by the binary artifact they share
-     * @param workDir the work directory holding the per-artifact CBOMs
+     * @param resultsDir the directory holding the per-artifact CBOMs
      * @return the merged CBOM with statistics
      */
-    public Result assemble(Bom inputSbom, List<List<MavenComponent>> groups, Path workDir) {
+    public Result assemble(Bom inputSbom, List<List<MavenComponent>> groups, Path resultsDir) {
         final Bom bom = new Bom();
         bom.setMetadata(metadata());
         String rootRef = null;
@@ -85,7 +85,7 @@ public class CbomAssembler {
         final Map<String, Dependency> assetLinks = new LinkedHashMap<>();
         long findings = 0;
         for (List<MavenComponent> group : groups) {
-            final Optional<Bom> part = parse(parser, group.get(0).cbomFile(workDir));
+            final Optional<Bom> part = parse(parser, group.get(0).cbomFile(resultsDir));
             final List<Component> assets = new ArrayList<>(part.map(b -> b.getComponents() == null ? List.<Component>of() : b.getComponents())
                     .orElse(List.of()));
             // sonar-cryptography's output orders assets by a hash of random bom-refs: sort them, so

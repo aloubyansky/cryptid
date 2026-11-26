@@ -118,10 +118,11 @@ public record MavenComponent(
      * Returns the file holding the CBOM produced by analyzing this component's binary artifact.
      * Its existence means the artifact was analyzed successfully.
      *
-     * @param workDir the work directory
-     * @return {@code workDir/cbom/}{@link #artifactPath()}{@code .json}
+     * @param resultsDir the directory of the run's per-artifact results, {@code cbom/<key>} in the
+     *     work directory (see {@link CacheKey})
+     * @return {@code resultsDir/}{@link #artifactPath()}{@code .json}
      */
-    public Path cbomFile(Path workDir) {
-        return workDir.resolve("cbom").resolve(artifactPath() + ".json");
+    public Path cbomFile(Path resultsDir) {
+        return resultsDir.resolve(artifactPath() + ".json");
     }
 }

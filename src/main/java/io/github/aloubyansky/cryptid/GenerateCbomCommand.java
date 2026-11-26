@@ -6,6 +6,7 @@ import io.github.aloubyansky.cryptid.bytecode.JarCache;
 import io.github.aloubyansky.cryptid.scan.BytecodeScanner;
 import io.quarkus.picocli.runtime.annotations.TopCommand;
 import jakarta.inject.Inject;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -165,6 +166,9 @@ public class GenerateCbomCommand implements Callable<Integer> {
         final List<ArtifactGroup> resolved = groups.stream().filter(g -> g.jar() != null).toList();
         log.infof("Resolved %d of %d artifacts", resolved.size(), groups.size());
 
+        final Path resultsDir = resultsDir(baseDir, resolved);
+        log.infof("Per-artifact results: %s", resultsDir);
+
         // 2. analyze their bytecode
         final Map<String, Path> jarsByRef = new HashMap<>();
         resolved.forEach(g -> g.members().forEach(c -> {
@@ -184,7 +188,7 @@ public class GenerateCbomCommand implements Callable<Integer> {
         try (JarCache jarCache = new JarCache()) {
             // phase A: index the calls between all artifacts, for resolving values passed in
             // from callers; skipped when every artifact was analyzed before
-            final boolean needed = rescan || resolved.stream().anyMatch(g -> !Files.exists(g.first().cbomFile(baseDir)));
+            final boolean needed = rescan || resolved.stream().anyMatch(g -> !Files.exists(g.first().cbomFile(resultsDir)));
             final CallIndex callIndex;
             final Map<String, BytecodeScanner.CandidateMethods> candidates = new ConcurrentHashMap<>();
             if (needed) {
@@ -197,7 +201,7 @@ public class GenerateCbomCommand implements Callable<Integer> {
                 parallel(threadCount, resolved, g -> {
                     try {
                         // artifacts to be scanned keep what detection needs, so they aren't analyzed twice
-                        final boolean scanned = rescan || !Files.exists(g.first().cbomFile(baseDir));
+                        final boolean scanned = rescan || !Files.exists(g.first().cbomFile(resultsDir));
                         final BytecodeScanner.CandidateMethods f = scanner.index(g.jar(), g.first().artifactPath(),
                                 classpath(g, jarsByRef, allJars, closure), jarCache, callIndex, callGraph, scanned);
                         if (f != null) {
@@ -222,7 +226,7 @@ public class GenerateCbomCommand implements Callable<Integer> {
             // phase B: detect, on the methods phase A kept
             parallel(threadCount, resolved, g -> {
                 final MavenComponent c = g.first();
-                final Path cbomFile = c.cbomFile(baseDir);
+                final Path cbomFile = c.cbomFile(resultsDir);
                 if (!rescan && Files.exists(cbomFile)) {
                     cached.incrementAndGet();
                     return null;
@@ -255,7 +259,7 @@ public class GenerateCbomCommand implements Callable<Integer> {
 
         // 3. merge
         final CbomAssembler.Result result =
-                assembler.assemble(sbom, resolved.stream().map(ArtifactGroup::members).toList(), baseDir);
+                assembler.assemble(sbom, resolved.stream().map(ArtifactGroup::members).toList(), resultsDir);
         CbomAssembler.write(result.bom(), output);
         log.infof(
                 "Wrote CBOM to %s: %d findings in %d components, total time %ds",
@@ -264,6 +268,25 @@ public class GenerateCbomCommand implements Callable<Integer> {
                 result.componentsWithAssets(),
                 (System.currentTimeMillis() - start) / 1000);
         return 0;
+    }
+
+    /**
+     * Returns the directory of this run's per-artifact results. Results are reused only by a run
+     * with the same build of the tool, the same resolved JARs and the same classpath mode, see
+     * {@link CacheKey}.
+     *
+     * @param baseDir the work directory
+     * @param resolved the resolved artifacts
+     * @return {@code baseDir/cbom/<key>}
+     * @throws IOException if a JAR's size or modification time can't be read
+     */
+    private Path resultsDir(Path baseDir, List<ArtifactGroup> resolved) throws IOException {
+        final List<String> artifactIds = new ArrayList<>(resolved.size());
+        for (ArtifactGroup g : resolved) {
+            artifactIds.add(g.first().artifactKey() + " " + g.jar() + " " + Files.size(g.jar()) + " "
+                    + Files.getLastModifiedTime(g.jar()).toMillis());
+        }
+        return baseDir.resolve("cbom").resolve(CacheKey.of(CacheKey.build(), classpathMode.name(), artifactIds));
     }
 
     /**
