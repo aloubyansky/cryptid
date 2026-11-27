@@ -15,7 +15,7 @@ import org.jboss.logging.Logger;
  * <p>An instance holds what lasts across analyses: the loaded crypto API specs and, if given, the
  * cache directory where each artifact's result is kept for later analyses. The cache's format and
  * keys are the library's: a result is reused only by an analysis with the same build of the
- * library, the same artifacts, JARs and dependencies, and the same classpath scope.
+ * library, and the same artifacts, JARs and dependencies.
  *
  * <p>Thread-safe; analyses may run concurrently, though each uses its own threads.
  */

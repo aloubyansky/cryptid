@@ -13,25 +13,24 @@ class CacheKeyTest {
 
     @Test
     void isStableAndIndependentOfArtifactOrder() {
-        final String key = CacheKey.of("build-1", "deps", ARTIFACTS);
-        assertEquals(key, CacheKey.of("build-1", "deps", List.of(ARTIFACTS.get(1), ARTIFACTS.get(0))));
+        final String key = CacheKey.of("build-1", ARTIFACTS);
+        assertEquals(key, CacheKey.of("build-1", List.of(ARTIFACTS.get(1), ARTIFACTS.get(0))));
         assertTrue(key.matches("[0-9a-f]{16}"), key);
     }
 
     @Test
     void changesWithEachInput() {
-        final String key = CacheKey.of("build-1", "deps", ARTIFACTS);
-        assertNotEquals(key, CacheKey.of("build-2", "deps", ARTIFACTS), "build");
-        assertNotEquals(key, CacheKey.of("build-1", "all", ARTIFACTS), "classpath mode");
-        assertNotEquals(key, CacheKey.of("build-1", "deps", ARTIFACTS.subList(0, 1)), "artifact removed");
-        assertNotEquals(key, CacheKey.of("build-1", "deps", List.of(ARTIFACTS.get(0), "b:y:2 /m2/y-2.jar 21 200")),
+        final String key = CacheKey.of("build-1", ARTIFACTS);
+        assertNotEquals(key, CacheKey.of("build-2", ARTIFACTS), "build");
+        assertNotEquals(key, CacheKey.of("build-1", ARTIFACTS.subList(0, 1)), "artifact removed");
+        assertNotEquals(key, CacheKey.of("build-1", List.of(ARTIFACTS.get(0), "b:y:2 /m2/y-2.jar 21 200")),
                 "artifact changed");
     }
 
     @Test
     void inputsDontRunTogether() {
-        assertNotEquals(CacheKey.of("ab", "c", List.of()), CacheKey.of("a", "bc", List.of()));
-        assertNotEquals(CacheKey.of("b", "d", List.of("x", "y")), CacheKey.of("b", "d", List.of("x\ny")));
+        assertNotEquals(CacheKey.of("a", List.of("b")), CacheKey.of("ab", List.of()));
+        assertNotEquals(CacheKey.of("b", List.of("x", "y")), CacheKey.of("b", List.of("x\ny")));
     }
 
     @Test

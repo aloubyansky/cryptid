@@ -83,7 +83,7 @@ public final class CallIndex {
             .thenComparing(Site::signature);
 
     private final Set<String> analyzedClasses;
-    private final Hierarchy hierarchy = new Hierarchy();
+    private final Hierarchy hierarchy;
     private final Map<String, List<Site>> byInvoked = new ConcurrentHashMap<>();
     private Map<String, List<Site>> byDeclaring;
 
@@ -94,7 +94,20 @@ public final class CallIndex {
      *     are indexed
      */
     public CallIndex(Set<String> analyzedClasses) {
+        this(analyzedClasses, new Hierarchy());
+    }
+
+    /**
+     * Creates an empty index over a class table.
+     *
+     * @param analyzedClasses internal names of all classes of all artifacts; only calls to these
+     *     are indexed
+     * @param hierarchy the class table, shared with the call graph and complete before {@link
+     *     #finish}
+     */
+    public CallIndex(Set<String> analyzedClasses, Hierarchy hierarchy) {
         this.analyzedClasses = analyzedClasses;
+        this.hierarchy = hierarchy;
     }
 
     /**

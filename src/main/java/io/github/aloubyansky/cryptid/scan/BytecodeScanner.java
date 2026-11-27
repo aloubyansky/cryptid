@@ -8,6 +8,7 @@ import io.github.aloubyansky.cryptid.CryptoInventory;
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
 import io.github.aloubyansky.cryptid.bytecode.CallGraph;
 import io.github.aloubyansky.cryptid.bytecode.CallIndex;
+import io.github.aloubyansky.cryptid.bytecode.Hierarchy;
 import io.github.aloubyansky.cryptid.bytecode.JarCache;
 import io.github.aloubyansky.cryptid.bytecode.Types;
 import io.github.aloubyansky.cryptid.detection.ArtifactPaths;
@@ -84,9 +85,58 @@ public final class BytecodeScanner {
     public record CandidateMethods(List<Analyzer.MethodResult> methods, int failedMethods) {}
 
     /**
-     * Records a JAR's classes and its calls into analyzed classes in the call index, for
-     * resolving values passed between methods during {@link #scan}, and optionally returns the
-     * JAR's {@link CandidateMethods} for scanning it without analyzing it again.
+     * Records a JAR's classes in the class table and, optionally, its methods' calls in the call
+     * graph, read from the class files without interpreting them. The first step of phase A: the
+     * class table must hold every JAR's classes before any JAR is {@linkplain #index(Path,
+     * ArtifactCoordinates, Types, JarCache, CallIndex, boolean) indexed}.
+     *
+     * @param jar the JAR
+     * @param artifact the JAR's artifact
+     * @param jarCache the shared JAR cache
+     * @param hierarchy the class table to fill
+     * @param callGraph the call graph to fill, or {@code null}
+     */
+    public void read(Path jar, ArtifactCoordinates artifact, JarCache jarCache, Hierarchy hierarchy, CallGraph callGraph) {
+        final String locationPrefix = ArtifactPaths.of(artifact);
+        final Analyzer analyzer = new Analyzer();
+        analyzer.addJar(jar, jarCache);
+        hierarchy.add(locationPrefix, analyzer.classInfos());
+        if (callGraph != null) {
+            callGraph.addMethods(locationPrefix, analyzer.graphFacts());
+        }
+    }
+
+    /**
+     * Records a JAR's calls into analyzed classes in the call index, for resolving values passed
+     * between methods during {@link #scan}, and optionally returns the JAR's {@link
+     * CandidateMethods} for scanning it without analyzing it again. The second step of phase A,
+     * once the class table is complete.
+     *
+     * @param jar the JAR
+     * @param artifact the JAR's artifact
+     * @param types the class hierarchy as the JAR sees it, for matching specs
+     * @param jarCache the shared JAR cache
+     * @param callIndex the index to fill
+     * @param keepCandidates whether to return the JAR's candidate methods, for a JAR that will be
+     *     scanned
+     * @return the candidate methods, or {@code null} if not kept
+     */
+    public CandidateMethods index(Path jar, ArtifactCoordinates artifact, Types types, JarCache jarCache, CallIndex callIndex,
+            boolean keepCandidates) {
+        final Analyzer analyzer = new Analyzer();
+        analyzer.addJar(jar, jarCache);
+        final List<Analyzer.MethodResult> methods = analyzer.analyze();
+        callIndex.addCalls(methods, artifact, ArtifactPaths.of(artifact));
+        if (!keepCandidates) {
+            return null;
+        }
+        final CryptoEventDetector screen = new CryptoEventDetector(matcher, types, artifact, null);
+        return new CandidateMethods(methods.stream().filter(screen::mayDetect).toList(), analyzer.failedMethods);
+    }
+
+    /**
+     * Records a JAR's classes and its calls into analyzed classes in the call index, both steps of
+     * phase A at once, with supertypes read from JARs: for analyses of a few JARs, e.g. in tests.
      *
      * @param jar the JAR
      * @param artifact the JAR's artifact
@@ -134,7 +184,7 @@ public final class BytecodeScanner {
         final Analyzer analyzer = new Analyzer();
         analyzer.addJar(jar, jarCache);
         final List<Analyzer.MethodResult> methods = analyzer.analyze();
-        return detect(jar, artifact, classpath, jarCache, callIndex, methods, analyzer.failedMethods);
+        return detect(jar, artifact, types(jar, classpath, jarCache), jarCache, callIndex, methods, analyzer.failedMethods);
     }
 
     /**
@@ -151,12 +201,35 @@ public final class BytecodeScanner {
      */
     public ArtifactScan scan(Path jar, ArtifactCoordinates artifact, List<Path> classpath, JarCache jarCache,
             CallIndex callIndex, CandidateMethods candidates) {
-        return detect(jar, artifact, classpath, jarCache, callIndex, candidates.methods(), candidates.failedMethods());
+        return detect(jar, artifact, types(jar, classpath, jarCache), jarCache, callIndex, candidates.methods(),
+                candidates.failedMethods());
     }
 
-    private ArtifactScan detect(Path jar, ArtifactCoordinates artifact, List<Path> classpath, JarCache jarCache,
+    /**
+     * Scans a JAR, with supertypes from the class table.
+     *
+     * @param jar the JAR to scan
+     * @param artifact the JAR's artifact
+     * @param types the class hierarchy as the JAR sees it
+     * @param jarCache the shared JAR cache
+     * @param callIndex resolves values passed in from callers, or {@code null}
+     * @param candidates the JAR's candidate methods from {@link #index}, or {@code null} to
+     *     analyze the JAR
+     * @return what scanning the JAR amounted to, and the assets found
+     */
+    public ArtifactScan scan(Path jar, ArtifactCoordinates artifact, Types types, JarCache jarCache, CallIndex callIndex,
+            CandidateMethods candidates) {
+        if (candidates != null) {
+            return detect(jar, artifact, types, jarCache, callIndex, candidates.methods(), candidates.failedMethods());
+        }
+        final Analyzer analyzer = new Analyzer();
+        analyzer.addJar(jar, jarCache);
+        return detect(jar, artifact, types, jarCache, callIndex, analyzer.analyze(), analyzer.failedMethods);
+    }
+
+    private ArtifactScan detect(Path jar, ArtifactCoordinates artifact, Types types, JarCache jarCache,
             CallIndex callIndex, List<Analyzer.MethodResult> methods, int failedMethods) {
-        final CryptoEventDetector detector = new CryptoEventDetector(matcher, types(jar, classpath, jarCache), artifact, callIndex);
+        final CryptoEventDetector detector = new CryptoEventDetector(matcher, types, artifact, callIndex);
         final CryptoAssetModeler modeler = modelers.get();
         final CryptoInventory.Builder inventory = CryptoInventory.builder();
         final AssetCollector output = new AssetCollector(inventory);

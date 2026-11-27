@@ -3,12 +3,13 @@ package io.github.aloubyansky.cryptid.analysis;
 import io.github.aloubyansky.cryptid.AnalysisOptions;
 import io.github.aloubyansky.cryptid.ArtifactAnalysis;
 import io.github.aloubyansky.cryptid.ArtifactCoordinates;
-import io.github.aloubyansky.cryptid.ClasspathScope;
 import io.github.aloubyansky.cryptid.CryptoInventory;
 import io.github.aloubyansky.cryptid.InputArtifact;
 import io.github.aloubyansky.cryptid.bytecode.CallGraph;
 import io.github.aloubyansky.cryptid.bytecode.CallIndex;
+import io.github.aloubyansky.cryptid.bytecode.Hierarchy;
 import io.github.aloubyansky.cryptid.bytecode.JarCache;
+import io.github.aloubyansky.cryptid.bytecode.Types;
 import io.github.aloubyansky.cryptid.detection.ArtifactPaths;
 import io.github.aloubyansky.cryptid.scan.ArtifactScan;
 import io.github.aloubyansky.cryptid.scan.BytecodeScanner;
@@ -32,8 +33,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.jboss.logging.Logger;
 
 /**
- * One analysis of a set of artifacts: phase A indexes the calls between all JARs and keeps each
- * JAR's candidate methods, phase B detects per JAR in parallel, and the scans are merged into the
+ * One analysis of a set of artifacts: phase A reads all JARs into one class table and call graph,
+ * then indexes the calls between them and keeps each JAR's candidate methods, phase B detects per JAR in parallel, and the scans are merged into the
  * inventory in the order of the artifacts. Scans kept in the cache directory are reused, and
  * phase A is skipped when every artifact's scan is there.
  */
@@ -47,6 +48,7 @@ public final class AnalysisRun {
     private final List<InputArtifact> artifacts;
     private final Map<ArtifactCoordinates, InputArtifact> byCoordinates = new HashMap<>();
     private final List<Path> allJars;
+    private final Hierarchy hierarchy;
 
     /**
      * Prepares an analysis.
@@ -68,6 +70,7 @@ public final class AnalysisRun {
             }
         }
         this.allJars = this.artifacts.stream().map(InputArtifact::jar).distinct().toList();
+        this.hierarchy = new Hierarchy(this.artifacts.stream().map(a -> ArtifactPaths.of(a.coordinates())).toList());
     }
 
     /**
@@ -115,12 +118,9 @@ public final class AnalysisRun {
                     return new ArtifactScan(reused.analysis().withOutcome(ArtifactAnalysis.Outcome.CACHED), reused.assets());
                 }
                 try {
-                    final List<Path> cp = classpath(a);
                     // released once scanned; an artifact that failed to index is analyzed here
                     final BytecodeScanner.CandidateMethods f = candidates.remove(a.coordinates());
-                    final ArtifactScan scan = f != null
-                            ? scanner.scan(a.jar(), a.coordinates(), cp, jarCache, callIndex, f)
-                            : scanner.scan(a.jar(), a.coordinates(), cp, jarCache, callIndex);
+                    final ArtifactScan scan = scanner.scan(a.jar(), a.coordinates(), types(a), jarCache, callIndex, f);
                     if (resultsDir != null) {
                         InventoryJson.write(scan, resultFile(resultsDir, a));
                     }
@@ -144,7 +144,11 @@ public final class AnalysisRun {
         return inventory.build();
     }
 
-    /** Phase A: the call index and call graph over all JARs, and the candidate methods of the JARs to scan. */
+    /**
+     * Phase A: reads every JAR's classes into the class table and the call graph, then indexes
+     * the calls between all JARs and keeps the candidate methods of the JARs to scan, matching
+     * specs with each JAR's view of the class table.
+     */
     private CallIndex index(JarCache jarCache, Map<ArtifactCoordinates, ArtifactScan> cached,
             Map<ArtifactCoordinates, BytecodeScanner.CandidateMethods> candidates) throws IOException {
         final long t0 = System.currentTimeMillis();
@@ -157,14 +161,29 @@ public final class AnalysisRun {
                 log.warnf("Can't read %s: %s", j, e.getMessage());
             }
         }
-        final CallIndex callIndex = new CallIndex(allClasses);
+        final CallGraph callGraph = new CallGraph(allClasses, hierarchy);
+        parallel(artifacts, a -> {
+            try {
+                scanner.read(a.jar(), a.coordinates(), jarCache, hierarchy, callGraph);
+            } catch (Exception | LinkageError e) {
+                log.warnf(e, "Failed to read %s", a.coordinates());
+            }
+            return null;
+        }, "Read");
         // nothing uses the call graph yet: see docs/reachability-design.md
-        final CallGraph callGraph = new CallGraph(allClasses, callIndex.hierarchy());
+        callGraph.finish();
+        log.infof("Read %d classes in %d ms, %d of them in several artifacts with different contents; call graph: %d methods,"
+                        + " %d calls (%d through method handles), %d instantiations",
+                allClasses.size(), System.currentTimeMillis() - t0, hierarchy.ambiguousClasses(), callGraph.methodCount(),
+                callGraph.edgeCount(), callGraph.handleEdgeCount(), callGraph.instantiationCount());
+
+        final long t1 = System.currentTimeMillis();
+        final CallIndex callIndex = new CallIndex(allClasses, hierarchy);
         parallel(artifacts, a -> {
             try {
                 // artifacts to be scanned keep what detection needs, so they aren't analyzed twice
-                final BytecodeScanner.CandidateMethods f = scanner.index(a.jar(), a.coordinates(), classpath(a), jarCache,
-                        callIndex, callGraph, !cached.containsKey(a.coordinates()));
+                final BytecodeScanner.CandidateMethods f = scanner.index(a.jar(), a.coordinates(), types(a), jarCache,
+                        callIndex, !cached.containsKey(a.coordinates()));
                 if (f != null) {
                     candidates.put(a.coordinates(), f);
                 }
@@ -174,60 +193,48 @@ public final class AnalysisRun {
             return null;
         }, "Indexed");
         callIndex.finish();
-        log.infof("Indexed %d calls between %d classes in %d ms; %d methods may contain crypto events",
-                callIndex.size(), allClasses.size(), System.currentTimeMillis() - t0,
+        log.infof("Indexed %d calls in %d ms; %d methods may contain crypto events",
+                callIndex.size(), System.currentTimeMillis() - t1,
                 candidates.values().stream().mapToInt(f -> f.methods().size()).sum());
-        callGraph.finish();
-        log.infof("Call graph: %d methods, %d calls (%d through method handles), %d instantiations",
-                callGraph.methodCount(), callGraph.edgeCount(), callGraph.handleEdgeCount(), callGraph.instantiationCount());
         return callIndex;
     }
 
+    /** The class table as an artifact sees it, for matching specs. */
+    private Types types(InputArtifact a) {
+        return Types.of(hierarchy.view(preference(a)));
+    }
+
     /**
-     * The JARs to resolve an artifact's supertypes from, as the classpath scope selects them. The
-     * scanner always searches the artifact's own JAR first.
+     * The artifacts whose copy of a class an artifact prefers, where copies differ: its own,
+     * then its dependencies, transitively and breadth first in the order they are listed. Classes
+     * in no preferred artifact resolve to the first artifact's copy in the order of the
+     * analysis, and then to the JDK.
      *
      * @param a the artifact
-     * @return the JARs, in lookup order: for its dependencies, breadth first in the order they
-     *     are listed
+     * @return artifact paths, the artifact's own first
      */
-    List<Path> classpath(InputArtifact a) {
-        switch (options.classpath()) {
-            case NONE:
-                return List.of();
-            case ALL:
-                return allJars;
-            default:
-                if (a.dependencies() == null) {
-                    return allJars;
-                }
-                final Set<ArtifactCoordinates> visited = new LinkedHashSet<>();
-                final Deque<ArtifactCoordinates> todo = new ArrayDeque<>(a.dependencies());
-                while (!todo.isEmpty()) {
-                    final ArtifactCoordinates next = todo.pop();
-                    if (visited.add(next)) {
-                        final InputArtifact dep = byCoordinates.get(next);
-                        if (dep != null && dep.dependencies() != null) {
-                            todo.addAll(dep.dependencies());
-                        }
+    List<String> preference(InputArtifact a) {
+        final Set<ArtifactCoordinates> visited = new LinkedHashSet<>();
+        visited.add(a.coordinates());
+        if (a.dependencies() != null) {
+            final Deque<ArtifactCoordinates> todo = new ArrayDeque<>(a.dependencies());
+            while (!todo.isEmpty()) {
+                final ArtifactCoordinates next = todo.pop();
+                if (visited.add(next)) {
+                    final InputArtifact dep = byCoordinates.get(next);
+                    if (dep != null && dep.dependencies() != null) {
+                        todo.addAll(dep.dependencies());
                     }
                 }
-                final Set<Path> jars = new LinkedHashSet<>();
-                for (ArtifactCoordinates c : visited) {
-                    final InputArtifact dep = byCoordinates.get(c);
-                    if (dep != null) {
-                        jars.add(dep.jar());
-                    }
-                }
-                jars.remove(a.jar());
-                return List.copyOf(jars);
+            }
         }
+        return visited.stream().filter(byCoordinates::containsKey).map(ArtifactPaths::of).toList();
     }
 
     /**
      * The directory of this analysis's scans in the cache. Scans are reused only by an analysis
-     * with the same build of the tool, the same artifacts, JARs and dependencies, and the same
-     * classpath scope, see {@link CacheKey}.
+     * with the same build of the tool, and the same artifacts, JARs and dependencies, see {@link
+     * CacheKey}.
      */
     private Path resultsDir() throws IOException {
         final List<String> ids = new ArrayList<>(artifacts.size());
@@ -235,8 +242,7 @@ public final class AnalysisRun {
             ids.add(a.coordinates() + " " + a.jar() + " " + Files.size(a.jar()) + " " + Files.getLastModifiedTime(a.jar()).toMillis()
                     + " " + (a.dependencies() == null ? "?" : a.dependencies()));
         }
-        final ClasspathScope scope = options.classpath();
-        return Files.createDirectories(cacheDir).toRealPath().resolve(CacheKey.of(CacheKey.build(), scope.name(), ids));
+        return Files.createDirectories(cacheDir).toRealPath().resolve(CacheKey.of(CacheKey.build(), ids));
     }
 
     private static Path resultFile(Path resultsDir, InputArtifact a) {

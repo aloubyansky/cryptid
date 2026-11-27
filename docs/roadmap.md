@@ -35,15 +35,13 @@ The [foundation review](foundation.md) found that the results lack a model of th
 
    The set of asset contents, locations and lines stays the same on Keycloak.
 2. ~~**Analysis API.**~~ Done 2026-11-27: `Cryptid`, `InputArtifact`, `AnalysisOptions` and `ClasspathScope`, with `CryptoInventory` as the result; `GenerateCbomCommand` is an adapter. See [foundation.md](foundation.md#phase-2-api-decided-2026-11-27).
-3. **One program model.**
-   - One class table for both spec matching and dispatch, with the `--classpath` modes as views on it.
-   - An interned method index used throughout, with `MethodId` at the API.
-   - Each output difference reviewed.
+3. ~~**One program model.**~~ Done 2026-11-27: one class table for spec matching and dispatch, every class visible to every artifact, and `ClasspathScope` and `--classpath` removed. The interned method index moved into step 4. See [foundation.md](foundation.md#phase-3-one-class-table-decided-2026-11-27).
 4. **Detection-driven analysis.** See *Detection-driven analysis* in [foundation.md](foundation.md#detection-driven-analysis).
    - Read every JAR's instructions only: hierarchy, call graph, candidate methods, field writers.
    - Detect per JAR, recording open questions where a spec argument comes from a parameter.
    - Answer them by interpreting only the callers asked about, through the call graph's reverse edges.
-   - Replaces the 306,000-call `CallIndex` and phase A's interpretation of every method, about 15 of Keycloak's 17 seconds.
+   - Replaces the 306,000-call `CallIndex` and phase A's interpretation of every method, about 11 of Keycloak's 17 seconds.
+   - The questions use the call graph's method ids, the interned method index left from step 3.
    - Results are cached per JAR content.
 
    Output identical per occurrence.

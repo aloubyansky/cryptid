@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.github.aloubyansky.cryptid.AnalysisOptions;
 import io.github.aloubyansky.cryptid.ArtifactCoordinates;
-import io.github.aloubyansky.cryptid.ClasspathScope;
 import io.github.aloubyansky.cryptid.InputArtifact;
 import io.github.aloubyansky.cryptid.scan.BytecodeScanner;
 import java.nio.file.Path;
@@ -12,8 +11,6 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class AnalysisRunTest {
-
-    private static final BytecodeScanner SCANNER = new BytecodeScanner();
 
     private static ArtifactCoordinates c(String a) {
         return ArtifactCoordinates.jar("org.acme", a, "1.0");
@@ -30,26 +27,21 @@ class AnalysisRunTest {
             in("d", List.of()),
             in("unknown", null));
 
-    private static List<Path> classpath(ClasspathScope scope, String artifact) {
-        final AnalysisRun run = new AnalysisRun(SCANNER, null, AnalysisOptions.builder().classpath(scope).build(), ARTIFACTS);
-        return run.classpath(ARTIFACTS.stream().filter(a -> a.coordinates().equals(c(artifact))).findFirst().orElseThrow());
+    private static final AnalysisRun RUN = new AnalysisRun(new BytecodeScanner(), null, AnalysisOptions.defaults(), ARTIFACTS);
+
+    private static List<String> preference(String artifact) {
+        return RUN.preference(ARTIFACTS.stream().filter(a -> a.coordinates().equals(c(artifact))).findFirst().orElseThrow());
     }
 
     @Test
-    void dependenciesAreTransitiveBreadthFirstWithoutTheArtifactItself() {
-        assertEquals(List.of(Path.of("b.jar"), Path.of("c.jar"), Path.of("d.jar")), classpath(ClasspathScope.DEPENDENCIES, "app"));
-        assertEquals(List.of(Path.of("d.jar"), Path.of("app.jar"), Path.of("b.jar")), classpath(ClasspathScope.DEPENDENCIES, "c"));
-        assertEquals(List.of(), classpath(ClasspathScope.DEPENDENCIES, "d"));
+    void ownCopyThenDependenciesBreadthFirst() {
+        assertEquals(List.of("org.acme/app/1.0", "org.acme/b/1.0", "org.acme/c/1.0", "org.acme/d/1.0"), preference("app"));
+        assertEquals(List.of("org.acme/c/1.0", "org.acme/d/1.0", "org.acme/app/1.0", "org.acme/b/1.0"), preference("c"));
+        assertEquals(List.of("org.acme/d/1.0"), preference("d"));
     }
 
     @Test
-    void unknownDependenciesMeanAllJars() {
-        assertEquals(ARTIFACTS.stream().map(InputArtifact::jar).toList(), classpath(ClasspathScope.DEPENDENCIES, "unknown"));
-    }
-
-    @Test
-    void allAndNone() {
-        assertEquals(ARTIFACTS.stream().map(InputArtifact::jar).toList(), classpath(ClasspathScope.ALL, "app"));
-        assertEquals(List.of(), classpath(ClasspathScope.NONE, "app"));
+    void unknownDependenciesPreferOnlyTheArtifactItself() {
+        assertEquals(List.of("org.acme/unknown/1.0"), preference("unknown"));
     }
 }

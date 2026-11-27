@@ -85,12 +85,6 @@ class SampleSbomIT {
                 .then().stdout().hasLinesContaining("Analyzed 4 artifacts", "0 reused from the work directory")
                     .exitCodeIs(0)
                 .execute(TIMEOUT).assertSuccess();
-        // results depend on the classpath mode, so another mode doesn't reuse them
-        cryptid(SBOM, "-o", tmp.resolve("fourth.json").toString(), "--work-dir", work, "--classpath", "all")
-                .then().stdout().hasLinesContaining("Analyzed 4 artifacts", "0 reused from the work directory")
-                    .exitCodeIs(0)
-                .execute(TIMEOUT).assertSuccess();
-
         // the reused per-artifact results assemble into the same CBOM
         assertEquals(Cli.Cbom.read(tmp.resolve("first.json")).occurrenceCount(),
                 Cli.Cbom.read(tmp.resolve("second.json")).occurrenceCount());

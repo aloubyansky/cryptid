@@ -42,9 +42,8 @@ java -jar target/cryptid.jar app.cdx.json -o cbom.json
 | --- | --- |
 | `SBOM` | the input CycloneDX SBOM, JSON or XML |
 | `-o`, `--output` | the CBOM to write (default: `cbom.json`) |
-| `--work-dir` | a directory to keep each artifact's result in; reusing it skips artifacts analyzed before by the same build of cryptid, with the same resolved JARs, dependencies and `--classpath` mode (default: none, nothing is kept) |
+| `--work-dir` | a directory to keep each artifact's result in; reusing it skips artifacts analyzed before by the same build of cryptid, with the same resolved JARs and dependencies (default: none, nothing is kept) |
 | `--rescan` | analyze artifacts again even if `--work-dir` has results for them; the new results are kept |
-| `--classpath` | where to look up supertypes of analyzed classes: `deps` (the component's dependencies from the SBOM graph; the default), `all` (every JAR of the SBOM) or `none` |
 | `--threads` | threads resolving and analyzing artifacts (default: the number of CPUs) |
 | `-h`, `--help` | show the options |
 

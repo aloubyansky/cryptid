@@ -75,8 +75,9 @@ public final class CallGraph {
 
     /**
      * Records the facts of an artifact's methods. Of a method in several artifacts, the facts of
-     * the artifact whose path sorts first are kept, as {@link Hierarchy#add(String, Map)} keeps
-     * the class, so a class's methods all come from the copy the hierarchy has.
+     * the artifact that comes first in the hierarchy's order are kept, as {@link
+     * Hierarchy#add(String, Map)} resolves the class, so a class's methods all come from the copy
+     * the hierarchy resolves.
      *
      * @param artifact the artifact path, as given to the hierarchy
      * @param methods the methods' facts
@@ -84,7 +85,7 @@ public final class CallGraph {
     public void addMethods(String artifact, List<MethodFacts> methods) {
         for (MethodFacts m : methods) {
             final Raw recorded = raw.get(m.method());
-            if (recorded != null && recorded.artifact().compareTo(artifact) <= 0) {
+            if (recorded != null && hierarchy.compare(recorded.artifact(), artifact) <= 0) {
                 continue;
             }
             final List<Integer> ex = new ArrayList<>();
@@ -103,7 +104,7 @@ public final class CallGraph {
                 }
             }
             raw.merge(m.method(), new Raw(artifact, ints(ex), ints(vi), ints(in)),
-                    (kept, added) -> kept.artifact().compareTo(added.artifact()) <= 0 ? kept : added);
+                    (kept, added) -> hierarchy.compare(kept.artifact(), added.artifact()) <= 0 ? kept : added);
         }
     }
 

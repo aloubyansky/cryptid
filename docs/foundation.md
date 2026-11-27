@@ -314,9 +314,9 @@ final class Cryptid {
 record InputArtifact(ArtifactCoordinates coordinates, Path jar,
                      List<ArtifactCoordinates> dependencies)   // direct; null = not known
 final class AnalysisOptions {                  // builder(), defaults()
-    ClasspathScope classpath(); int threads(); boolean rescan();
+    ClasspathScope classpath(); int threads(); boolean rescan();   // classpath removed in phase 3
 }
-enum ClasspathScope { DEPENDENCIES, ALL, NONE }
+enum ClasspathScope { DEPENDENCIES, ALL, NONE }                  // removed in phase 3
 record ArtifactAnalysis(ArtifactCoordinates artifact, Outcome outcome, int classes, int findings,
                         int failedMethods, String failure)    // Outcome: ANALYZED, CACHED, FAILED
 ```
@@ -324,13 +324,28 @@ record ArtifactAnalysis(ArtifactCoordinates artifact, Outcome outcome, int class
 The choices behind it:
 
 - **`CryptoInventory` is the result of a whole analysis only.** A JAR's result is the internal `ArtifactScan`: its assets can have occurrences in other artifacts, so it isn't an inventory of anything, and after detection-driven analysis it becomes the JAR's findings and open questions.
-- **The cache belongs to the library, not to the options.** Options are how to analyze and change per analysis. The cache outlives analyses, and whether an entry is still valid depends on what only the library knows: its build and specs, the JARs, their dependencies, the classpath scope. So `Cryptid` is an instance holding the specs and the cache directory, and the cache's keys and format are internal. `rescan` is an option: it skips reading earlier results, and still keeps the new ones.
+- **The cache belongs to the library, not to the options.** Options are how to analyze and change per analysis. The cache outlives analyses, and whether an entry is still valid depends on what only the library knows: its build and specs, the JARs, their dependencies. So `Cryptid` is an instance holding the specs and the cache directory, and the cache's keys and format are internal. `rescan` is an option: it skips reading earlier results, and still keeps the new ones.
 - **`InputArtifact.dependencies` are direct.** The library computes the closure, breadth first in the order listed. The CLI looks through components that aren't analyzed, such as POMs, to the analyzed artifacts behind them. `null` means not known, and resolves supertypes from all JARs.
 - **`ArtifactAnalysis` has an outcome.** A failed artifact is in the inventory with its failure and no assets, instead of only in a log. An unreadable JAR now fails only itself: before, it failed the whole run.
 - **Left for later:** writing the CBOM (stays in the CLI until the library and CLI split), choosing specs, `topLevel` on `InputArtifact` (with entry points), and a cache other than a directory.
 - **Also added:** `CryptoInventory.Builder.addAssets(List<CryptoAsset>)`, which merges the assets of a JAR's scan.
 
 Measured on Keycloak 26.8.2 (2026-11-27): the CBOM is identical to phase 1's, every occurrence with its bom-ref and `symbol` and every dependency, despite the new classpath order. A second run with the same `--work-dir` reuses all 548 results and takes under a second.
+
+## Phase 3: one class table (decided 2026-11-27)
+
+Measured first, on Keycloak's 534 JARs: 83,839 classes, 4,393 of them in more than one JAR, and 12 with copies whose bytes differ (mostly plexus-utils against plexus-xml). Of those, 6 differ in what the class table holds, supertypes and declared methods. So the two hierarchies of G4 hardly ever disagree on which copy applies. They disagreed more on visibility: spec matching saw an artifact's dependencies only, so an incomplete SBOM graph could hide a supertype.
+
+What was decided:
+
+- **One class table**, `Hierarchy`, filled from what phase A reads, with every copy of a class kept. Spec matching reads it through `Types.of(view)` instead of reading class files again, with the JDK after it.
+- **One rule for which copy an artifact sees:** its own, then its dependencies breadth first, then the first artifact of the analysis, then the JDK. Every analyzed class is visible to every artifact.
+- **`ClasspathScope` and `--classpath` are removed.** `DEPENDENCIES` is the rule's first steps; `ALL` differed only in which copy of those few classes; `NONE` hid library supertypes and lost real matches. `AnalysisOptions` has no classpath, and the cache key no scope.
+- **Dispatch uses the class table's own choice** for classes whose copies differ, the first artifact's copy, instead of each caller's view as proposed. The call graph has one node per method, whose calls come from one copy; per-caller dispatch would need a node per copy, which isn't worth it for 6 classes. Before, the choice was the artifact whose path sorts first.
+- **Phase A reads every JAR before indexing any**, since matching needs the whole class table. Each JAR is parsed twice; the read pass takes about 4 s on Keycloak, and phase A as a whole is no slower (about 15 s).
+- **The interned method index is left to detection-driven analysis.** Its main user would be `CallIndex`, which that step replaces; the call graph interns its methods already.
+
+Measured on Keycloak 26.8.2 (2026-11-27): the CBOM is identical to phase 2's, all 4,320 occurrences. Uncapped, the JVM's peak RSS is 10.4 to 10.6 GB, against 9.0 to 10.0 before; with a 5.5 GB heap the run takes the same time, at 6.1 GB RSS.
 
 ## Analysis API (first sketch)
 
@@ -342,7 +357,7 @@ Each step keeps the per-occurrence Keycloak CBOM unchanged, except where a step 
 
 1. ~~**Result model and in-memory assembly** (G1, G6).~~ Done 2026-11-27, as decided in *Phase 1 API*.
 2. ~~**Analysis API** (G3).~~ Done 2026-11-27, as decided in *Phase 2 API*. The internal packages still have more `public` than they need; that waits for the library and CLI split.
-3. **One program model** (G4). One class table serving both matching and dispatch, with the `--classpath` modes expressed as a view on it, and an interned method index used throughout. This changes output if the hierarchies disagreed somewhere, and each difference is reviewed.
+3. ~~**One program model** (G4).~~ Done 2026-11-27, as decided in *Phase 3: one class table*.
 4. **Detection-driven analysis** (G7, G5). The three stages above. Stage 2's results are cached by JAR content, replacing the per-artifact cache keyed by the whole SBOM. Output identical.
 5. **Entry points and endpoints**: the reachability design's step 2, with exposure, addresses and authentication in the specs and in `EntryPoint`.
 6. **Reachability**: the reachability design's step 3, pass 1, on the model above.

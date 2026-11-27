@@ -9,7 +9,7 @@ No SonarSource analyzer under the Sonar Source-Available License (SSALv1) is on 
 **Input**: a CycloneDX SBOM, JSON or XML.
 
 - Components with a `pkg:maven/…` purl of type `jar` (the default) or `test-jar` are analyzed; `pom` components are dropped, other types skipped.
-- The `dependencies` graph supplies the classpath for supertype lookups (`--classpath deps`).
+- The `dependencies` graph says which artifacts' copies of a class an artifact prefers, for the few classes that are in several JARs with different contents.
 - `metadata.component` becomes the CBOM's root.
 
 **Output**: a CycloneDX 1.6 CBOM.
@@ -35,7 +35,7 @@ Keycloak 26.8.2 (`src/test/resources/keycloak-26.8.2.zip.cdx.json`): 573 Maven c
 The code is in `io.github.aloubyansky.cryptid`, with dependencies going one way:
 
 ```text
-cryptid             the API: Cryptid, InputArtifact, AnalysisOptions, ClasspathScope, and the
+cryptid             the API: Cryptid, InputArtifact, AnalysisOptions, and the
                     result model (CryptoInventory, CryptoAsset, CodeLocation, ...)
 cryptid.cli         CLI, SBOM reading, CBOM assembly (GenerateCbomCommand, SbomReader, CbomAssembler)
 cryptid.analysis    AnalysisRun: phases A and B over all artifacts, the merge, the cache
@@ -47,8 +47,9 @@ cryptid.model       CryptoAssetModeler, AssetAssembler: event trees to asset tre
 cryptid.detection   CryptoEventDetector, CryptoEvent, CryptoObjectGraph, Finding, Loc,
                     ValueFactories, CryptoContexts, KnownClasses
 cryptid.spec        CryptoApiSpecs, CryptoApiMatcher: the specs and matching calls to them
-cryptid.bytecode    Analyzer, AVal, CallSite, CallIndex, Types, JarCache: the analysis core;
-                    CallGraph, Hierarchy, MethodFacts: the calls between all methods
+cryptid.bytecode    Analyzer, AVal, CallSite, CallIndex, JarCache: the analysis core;
+                    Hierarchy: the class table; Types: an artifact's view of it, and the JDK;
+                    CallGraph, MethodFacts: the calls between all methods
 
 cli -> cryptid (API) -> analysis -> scan -> model -> detection -> spec -> bytecode
 cli -> cyclonedx
@@ -104,7 +105,7 @@ Green: this project. Blue: sonar-cryptography modules (Apache-2.0). Beige: other
 | --- | --- | --- |
 | 1. Read SBOM | Parses the SBOM, turns each Maven purl into a `MavenComponent` (groupId, artifactId, classifier, type, version, SBOM component), de-duplicates by bom-ref, and groups components with equal coordinates. | components grouped by artifact |
 | 2. Resolve JARs | Resolves each artifact's binary JAR from the local repository or the configured remotes; artifacts that can't be resolved are logged and skipped. No sources JARs are needed. Each resolved artifact becomes an `InputArtifact` with its direct dependencies from the SBOM's graph, looking through components that aren't analyzed, such as POMs; the CLI then calls `Cryptid.analyze`, which runs steps 3 to 8 in `AnalysisRun`. | `InputArtifact`s |
-| 3. Phase A | Interprets every method of every JAR abstractly (see below) and records each call into an analyzed class whose `String` or `int` arguments are constants or parameters of the caller, plus every class's superclass, interfaces and declared methods. For each JAR to be scanned it also keeps the methods that may contain a detection: those with a call site passing the detector's pre-check, a root rule by method name whose owner types include the call's owner or one of its supertypes (`Types`: the JAR, its classpath, the JDK). Skipped when all artifacts are cached in `--work-dir`. Keycloak: 305,906 calls between 83,314 classes, 2,535 methods kept, in about 29 s. It also builds the call graph (`CallGraph`): for every method, read from its instructions and not from the interpretation, the methods it calls and its lambdas and method references refer to, resolved to the declaring class through the hierarchy it shares with `CallIndex` (`Hierarchy`), and the classes it instantiates; calls into classes outside the SBOM, such as the JDK's, aren't kept. Keycloak: 737,732 methods, 1,148,932 calls (25,971 through method handles), 108,192 instantiations, about 4 s; the run still completes in a 5.5 GB heap. Nothing uses the graph yet; it is the first step of [reachability](reachability-design.md). | `CallIndex`: invoked method → call sites with argument constants; `CandidateMethods` per JAR; `CallGraph` |
+| 3. Phase A | Two passes over all JARs, skipped when every artifact's result is cached. First, *read*: every JAR's class headers and instructions, without interpreting them, into the class table (`Hierarchy`: every class with its superclass, interfaces and declared methods; of a class in several JARs with different contents, all copies) and the call graph (`CallGraph`: for every method, the methods it calls and its lambdas and method references refer to, resolved to the declaring class through the class table, and the classes it instantiates; calls into classes outside the SBOM, such as the JDK's, aren't kept). Then, *index*: interprets every method of every JAR abstractly (see below) and records each call into an analyzed class whose `String` or `int` arguments are constants or parameters of the caller; for each JAR to be scanned it also keeps the methods calling a specified API (spec matching uses `Types` over the JAR's view of the class table: of a class whose copies differ, the JAR's own, else its nearest dependency's, else the first artifact's; then the JDK). The call index and the call graph use the class table's own choice for such classes, the first artifact's copy. Keycloak: 83,299 classes, 6 of them with copies that differ; call graph of 737,718 methods, 1,148,914 calls (25,971 through method handles), 108,192 instantiations, read in about 4 s; 305,906 calls indexed and 2,535 methods kept in about 11 s; the run completes in a 5.5 GB heap. Nothing uses the graph yet; it is the first step of [reachability](reachability-design.md). | class table; `CallGraph`; `CallIndex`: invoked method → call sites with argument constants; `CandidateMethods` per JAR |
 | 4. Phase B | Takes the JAR's kept methods, with their call sites from the final round of phase A's field fixpoint; nothing is interpreted again. Detection finds nothing in the other methods, so the result is the same as analyzing the whole JAR. | per method: call sites with receiver, arguments and created object |
 | 5. Detection | `CryptoEventDetector` matches the kept methods' calls against the crypto API specs (`CryptoApiMatcher`), builds each method's `CryptoObjectGraph`, and turns every call to a root API into a tree of `CryptoEvent`s (see below). | findings: location, call site, event tree |
 | 6. Translation | `AssetAssembler` walks each event tree (attach and merge rules in its javadoc); the context translator for its type (cipher, digest, key, signature, MAC, …) turns each value into `INode`s with the string mappers of `com.ibm:mapper`, e.g. `JcaCipherMapper` for `"AES/GCM/NoPadding"`. Then the 19 Java reorganizer rules merge and move nodes, and the 17 enrichers add OIDs, default key sizes and functions. This is the order of sonar-cryptography's `JavaTranslationProcess`. | `INode` trees |

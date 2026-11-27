@@ -15,8 +15,7 @@ import java.util.List;
 /**
  * Identifies the per-artifact results in the work directory that a run may reuse. A per-artifact
  * CBOM depends on more than its own JAR: on the tool and its specs, on the other artifacts of the
- * SBOM, whose callers pass values in and whose classes resolve supertypes, and on the classpath
- * mode. Results are kept under a directory named by the key of all of these, so that a run with
+ * SBOM, whose callers pass values in and whose classes resolve supertypes. Results are kept under a directory named by the key of all of these, so that a run with
  * any of them changed doesn't reuse them.
  */
 public final class CacheKey {
@@ -27,15 +26,13 @@ public final class CacheKey {
      * Returns the key of the inputs.
      *
      * @param build identifies the tool's build, see {@link #build()}
-     * @param classpathMode the {@code --classpath} mode
      * @param artifacts one entry per resolved artifact, identifying its coordinates and JAR; their
      *     order doesn't matter
      * @return 16 hexadecimal digits
      */
-    public static String of(String build, String classpathMode, Collection<String> artifacts) {
+    public static String of(String build, Collection<String> artifacts) {
         final MessageDigest sha = sha256();
         update(sha, build);
-        update(sha, classpathMode);
         final List<String> sorted = new ArrayList<>(artifacts);
         sorted.sort(null);
         for (String a : sorted) {

@@ -3,7 +3,6 @@ package io.github.aloubyansky.cryptid.cli;
 import io.github.aloubyansky.cryptid.AnalysisOptions;
 import io.github.aloubyansky.cryptid.ArtifactAnalysis;
 import io.github.aloubyansky.cryptid.ArtifactCoordinates;
-import io.github.aloubyansky.cryptid.ClasspathScope;
 import io.github.aloubyansky.cryptid.Cryptid;
 import io.github.aloubyansky.cryptid.CryptoInventory;
 import io.github.aloubyansky.cryptid.InputArtifact;
@@ -49,22 +48,6 @@ public class GenerateCbomCommand implements Callable<Integer> {
 
     private static final Logger log = Logger.getLogger(GenerateCbomCommand.class);
 
-    /** Which JARs a component's classes' supertypes are resolved from, for specs matching subtypes. */
-    enum ClasspathMode {
-        /** the component's JAR and its transitive dependencies from the SBOM graph */
-        deps(ClasspathScope.DEPENDENCIES),
-        /** all JARs of the SBOM */
-        all(ClasspathScope.ALL),
-        /** the component's JAR only */
-        none(ClasspathScope.NONE);
-
-        private final ClasspathScope scope;
-
-        ClasspathMode(ClasspathScope scope) {
-            this.scope = scope;
-        }
-    }
-
     /** The input SBOM. */
     @Parameters(index = "0", paramLabel = "SBOM", description = "Input CycloneDX SBOM (JSON or XML)")
     Path sbomFile;
@@ -83,16 +66,6 @@ public class GenerateCbomCommand implements Callable<Integer> {
                     "Directory to keep each artifact's result in. Reusing it skips artifacts analyzed"
                             + " before by the same build, with the same JARs (default: none)")
     Path workDir;
-
-    /** Which JARs supertypes are resolved from. */
-    @Option(
-            names = "--classpath",
-            defaultValue = "deps",
-            description =
-                    "JARs to resolve supertypes from when matching crypto APIs: ${COMPLETION-CANDIDATES}"
-                            + " (default: ${DEFAULT-VALUE}). 'deps' falls back to 'all' for"
-                            + " components missing from the SBOM dependency graph")
-    ClasspathMode classpathMode;
 
     /** The number of threads, or {@code null} for one per available CPU. */
     @Option(
@@ -174,7 +147,6 @@ public class GenerateCbomCommand implements Callable<Integer> {
             cryptid.cacheDirectory(workDir);
         }
         final CryptoInventory inventory = cryptid.build().analyze(inputs(sbom, resolved), AnalysisOptions.builder()
-                .classpath(classpathMode.scope)
                 .threads(threadCount)
                 .rescan(rescan)
                 .build());

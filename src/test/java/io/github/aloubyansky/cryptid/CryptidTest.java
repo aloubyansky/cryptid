@@ -77,8 +77,9 @@ class CryptidTest {
         }
         final CryptoInventory third = cached.analyze(inputs(), AnalysisOptions.builder().rescan(true).build());
         assertTrue(third.artifacts().stream().allMatch(a -> a.outcome() == Outcome.ANALYZED), third.artifacts().toString());
-        // other options don't reuse them
-        final CryptoInventory fourth = cached.analyze(inputs(), AnalysisOptions.builder().classpath(ClasspathScope.ALL).build());
+        // other dependencies don't reuse them
+        final CryptoInventory fourth = cached.analyze(
+                List.of(new InputArtifact(LIB, lib, List.of()), new InputArtifact(APP, app, null)), AnalysisOptions.defaults());
         assertTrue(fourth.artifacts().stream().allMatch(a -> a.outcome() == Outcome.ANALYZED), fourth.artifacts().toString());
     }
 

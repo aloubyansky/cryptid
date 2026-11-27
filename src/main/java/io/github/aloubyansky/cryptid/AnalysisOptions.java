@@ -1,16 +1,13 @@
 package io.github.aloubyansky.cryptid;
 
-import java.util.Objects;
 
 /** How to analyze: options that may differ from one analysis to the next. */
 public final class AnalysisOptions {
 
-    private final ClasspathScope classpath;
     private final int threads;
     private final boolean rescan;
 
     private AnalysisOptions(Builder b) {
-        this.classpath = b.classpath;
         this.threads = b.threads;
         this.rescan = b.rescan;
     }
@@ -18,7 +15,7 @@ public final class AnalysisOptions {
     /**
      * The default options.
      *
-     * @return supertypes from the dependencies, one thread per available processor, results reused
+     * @return one thread per available processor, results reused
      */
     public static AnalysisOptions defaults() {
         return builder().build();
@@ -31,15 +28,6 @@ public final class AnalysisOptions {
      */
     public static Builder builder() {
         return new Builder();
-    }
-
-    /**
-     * Which JARs supertypes are resolved from.
-     *
-     * @return the scope, {@link ClasspathScope#DEPENDENCIES} by default
-     */
-    public ClasspathScope classpath() {
-        return classpath;
     }
 
     /**
@@ -63,22 +51,10 @@ public final class AnalysisOptions {
     /** Builds options. */
     public static final class Builder {
 
-        private ClasspathScope classpath = ClasspathScope.DEPENDENCIES;
         private int threads = Runtime.getRuntime().availableProcessors();
         private boolean rescan;
 
         private Builder() {}
-
-        /**
-         * Sets which JARs supertypes are resolved from.
-         *
-         * @param classpath the scope
-         * @return this builder
-         */
-        public Builder classpath(ClasspathScope classpath) {
-            this.classpath = Objects.requireNonNull(classpath, "classpath");
-            return this;
-        }
 
         /**
          * Sets how many threads analyze artifacts.

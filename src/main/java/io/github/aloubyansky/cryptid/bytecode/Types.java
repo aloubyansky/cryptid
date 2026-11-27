@@ -55,6 +55,7 @@ public final class Types {
     private final ClassBytes fallback;
     private final JarCache jarCache;
     private final List<Path> jars;
+    private final Hierarchy.View view;
     private final Map<String, Set<String>> supertypeNames = new HashMap<>();
 
     /**
@@ -83,9 +84,14 @@ public final class Types {
     }
 
     private Types(ClassBytes fallback, JarCache jarCache, List<Path> jars) {
+        this(fallback, jarCache, jars, null);
+    }
+
+    private Types(ClassBytes fallback, JarCache jarCache, List<Path> jars, Hierarchy.View view) {
         this.fallback = fallback;
         this.jarCache = jarCache;
         this.jars = jars;
+        this.view = view;
     }
 
     /**
@@ -98,6 +104,17 @@ public final class Types {
      */
     public static Types jdk(JarCache jarCache, List<Path> jars) {
         return new Types(JdkClasses::read, jarCache, jars);
+    }
+
+    /**
+     * Creates a hierarchy over the analyzed classes as an artifact sees them, and the JDK's
+     * runtime image: no class file is read again, but the JDK's.
+     *
+     * @param view the class table from the artifact's point of view
+     * @return the hierarchy
+     */
+    public static Types of(Hierarchy.View view) {
+        return new Types(JdkClasses::read, null, List.of(), view);
     }
 
     /**
@@ -158,6 +175,12 @@ public final class Types {
 
     private Optional<Supers> supers(String internalName) {
         return supers.computeIfAbsent(internalName, n -> {
+            if (view != null) {
+                final CallIndex.ClassInfo info = view.get(n);
+                if (info != null) {
+                    return Optional.of(new Supers(info.superclass(), info.interfaces()));
+                }
+            }
             try {
                 byte[] bytes = extra.get(n);
                 for (int i = 0; bytes == null && i < jars.size(); i++) {
