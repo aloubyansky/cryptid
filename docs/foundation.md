@@ -299,7 +299,13 @@ This comes after the steps below, which reproduce today's behaviour exactly and 
 **Steps**, each checked by identical output:
 
 1. ~~Closures: interpret a set of methods to a fixpoint with the same values as the whole JAR.~~ Done 2026-11-27: `Analyzer.closure` and `Analyzer.analyze(methods)`. `ClosureEquivalenceTest` compares, for every candidate method, its call sites and returned value with those of interpreting the whole JAR, origins compared by where they are. Bouncy Castle's provider and PKIX JARs are compared in the build. Keycloak's 534 JARs, run with `-Dclosure.jars`: 0 mismatches, and no JAR reaches the 10-round cap.
-2. Stage 3 on the call graph, next to `CallIndex`, with the answers compared on Keycloak.
+2. ~~Stage 3 on the call graph, next to `CallIndex`, with the answers compared on Keycloak.~~ Done 2026-11-27:
+   - `DemandCallIndex` finds the call sites reaching a method through its callers in the call graph. `CallGraph.callers` holds real calls of every copy of a method, not method handles.
+   - Each caller is interpreted as a closure in every artifact holding its class, since `Hierarchy.artifacts` lists shaded copies too.
+   - It shares `CallIndex`'s resolution, behind the `CallResolver` interface detection now takes.
+   - `DemandCallIndexEquivalenceTest` asks both indexes every question detection asks, and scans every JAR with each. Bouncy Castle's three JARs are compared in the build.
+   - Keycloak, with `-Dclosure.jars`: all 233 distinct questions get the same 1,235 hits, and every JAR's scan the same assets, in the same order. Answering them interprets 3,802 methods, reading artifacts 234 times.
+   - The test found that the order of assets and dependencies varied between runs: phase 1's `AssetCollector` took sonar-cryptography's components in the order of their random bom-refs. It now orders them by name, and `ReproducibilityIT` compares CBOMs in order, not sorted. Keycloak's CBOM is byte-identical between runs, but for the timestamp.
 3. Switch the pipeline: phase A's interpretation of every method and `CallIndex` go away.
 4. Stage-2 cache by validation.
 

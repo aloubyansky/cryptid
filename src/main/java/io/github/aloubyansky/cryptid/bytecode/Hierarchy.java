@@ -107,6 +107,21 @@ public final class Hierarchy {
     }
 
     /**
+     * Returns the artifacts containing a class, in this hierarchy's order.
+     *
+     * @param internalName the class's internal name
+     * @return artifact paths; empty if the class isn't analyzed
+     */
+    public List<String> artifacts(String internalName) {
+        final List<Entry> several = copies.get(internalName);
+        if (several != null) {
+            return several.stream().map(Entry::artifact).distinct().sorted(this::compare).toList();
+        }
+        final Entry e = classes.get(internalName);
+        return e == null ? List.of() : List.of(e.artifact());
+    }
+
+    /**
      * The classes from one artifact's point of view: of a class in several artifacts with
      * different infos, the copy of the first artifact listed that has one, else the hierarchy's.
      *

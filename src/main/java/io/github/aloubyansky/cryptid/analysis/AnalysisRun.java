@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -283,7 +284,7 @@ public final class AnalysisRun {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted", e);
-        } catch (java.util.concurrent.ExecutionException e) {
+        } catch (ExecutionException e) {
             throw new IOException(e.getCause());
         } finally {
             pool.shutdownNow();

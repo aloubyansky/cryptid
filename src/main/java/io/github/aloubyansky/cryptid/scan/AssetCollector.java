@@ -9,11 +9,13 @@ import io.github.aloubyansky.cryptid.CryptoAssetProperties;
 import io.github.aloubyansky.cryptid.CryptoInventory;
 import io.github.aloubyansky.cryptid.model.CryptoAssetModeler;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.regex.Pattern;
 import org.cyclonedx.model.Bom;
 import org.cyclonedx.model.Component;
@@ -69,7 +71,11 @@ public final class AssetCollector {
         output.add(nodes);
         final Bom part = output.getBom();
         final Map<String, Component> byRef = new HashMap<>();
-        final List<Component> components = part.getComponents() == null ? List.of() : part.getComponents();
+        // sonar-cryptography's output orders components by a hash of their random bom-refs: order
+        // them by name, unique within one output, so that assets are created in the same order in
+        // every run
+        final List<Component> components = new ArrayList<>(part.getComponents() == null ? List.of() : part.getComponents());
+        components.sort(Comparator.comparing(c -> NAME_UUID.matcher(c.getName() == null ? "" : c.getName()).replaceAll("")));
         components.forEach(c -> byRef.put(c.getBomRef(), c));
         final Map<String, CryptoAsset> assets = new HashMap<>();
         for (Component c : components) {
@@ -86,6 +92,9 @@ public final class AssetCollector {
                 }
             }
         }
+        // dependencies come in the order of the random bom-refs too: link them by name
+        final Comparator<CryptoAsset> byName = Comparator.comparing(CryptoAsset::name);
+        final Map<CryptoAsset, List<CryptoAsset>> links = new TreeMap<>(byName);
         for (Dependency d : part.getDependencies() == null ? List.<Dependency>of() : part.getDependencies()) {
             final CryptoAsset from = assets.get(d.getRef());
             if (from == null || d.getDependencies() == null) {
@@ -94,10 +103,14 @@ public final class AssetCollector {
             for (Dependency to : d.getDependencies()) {
                 final CryptoAsset target = assets.get(to.getRef());
                 if (target != null) {
-                    inventory.dependency(from, target);
+                    links.computeIfAbsent(from, k -> new ArrayList<>()).add(target);
                 }
             }
         }
+        links.forEach((from, targets) -> {
+            targets.sort(byName);
+            targets.forEach(target -> inventory.dependency(from, target));
+        });
     }
 
     /** The asset of a component, converting it on first use. */

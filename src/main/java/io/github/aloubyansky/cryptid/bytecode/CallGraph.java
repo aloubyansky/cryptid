@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -41,12 +42,15 @@ public final class CallGraph {
     private final Map<String, Integer> symbols = new ConcurrentHashMap<>();
     private final AtomicInteger nextSymbol = new AtomicInteger();
     private Map<String, Raw> raw = new ConcurrentHashMap<>();
+    /** The facts of copies of methods not kept in {@link #raw}, for their callers. */
+    private Map<String, List<Raw>> otherCopies = new ConcurrentHashMap<>();
 
     private String[] methodKeys;
     private String[] typeNames;
     private int[][] exact;
     private int[][] virtual;
     private int[][] instantiated;
+    private int[][] callers;
     private long edges;
     private long handleEdges;
     private long instantiations;
@@ -85,9 +89,6 @@ public final class CallGraph {
     public void addMethods(String artifact, List<MethodFacts> methods) {
         for (MethodFacts m : methods) {
             final Raw recorded = raw.get(m.method());
-            if (recorded != null && hierarchy.compare(recorded.artifact(), artifact) <= 0) {
-                continue;
-            }
             final List<Integer> ex = new ArrayList<>();
             final List<Integer> vi = new ArrayList<>();
             for (Call c : m.calls()) {
@@ -103,8 +104,16 @@ public final class CallGraph {
                     in.add(symbol(type));
                 }
             }
-            raw.merge(m.method(), new Raw(artifact, ints(ex), ints(vi), ints(in)),
-                    (kept, added) -> hierarchy.compare(kept.artifact(), added.artifact()) <= 0 ? kept : added);
+            final Raw facts = new Raw(artifact, ints(ex), ints(vi), ints(in));
+            if (recorded != null && hierarchy.compare(recorded.artifact(), artifact) <= 0) {
+                otherCopies.computeIfAbsent(m.method(), k -> new CopyOnWriteArrayList<>()).add(facts);
+                continue;
+            }
+            raw.merge(m.method(), facts, (kept, added) -> {
+                final boolean keep = hierarchy.compare(kept.artifact(), added.artifact()) <= 0;
+                otherCopies.computeIfAbsent(m.method(), k -> new CopyOnWriteArrayList<>()).add(keep ? added : kept);
+                return keep ? kept : added;
+            });
         }
     }
 
@@ -148,6 +157,11 @@ public final class CallGraph {
         exact = new int[methodKeys.length][];
         virtual = new int[methodKeys.length][];
         instantiated = new int[methodKeys.length][];
+        // callers, from the calls of every copy of a method, not the method handles it creates
+        final List<List<Integer>> callerLists = new ArrayList<>(methodKeys.length);
+        for (int m = 0; m < methodKeys.length; m++) {
+            callerLists.add(null);
+        }
         Arrays.fill(exact, NONE);
         Arrays.fill(virtual, NONE);
         Arrays.fill(instantiated, NONE);
@@ -162,9 +176,39 @@ public final class CallGraph {
             instantiated[m] = types.length == 0 ? NONE : types;
             edges += exact[m].length + virtual[m].length;
             instantiations += types.length;
+            addCallers(m, r, methodOf, callerLists);
+            for (Raw other : otherCopies.getOrDefault(methodKeys[m], List.of())) {
+                addCallers(m, other, methodOf, callerLists);
+            }
+        }
+        callers = new int[methodKeys.length][];
+        for (int m = 0; m < methodKeys.length; m++) {
+            final List<Integer> list = callerLists.get(m);
+            callers[m] = list == null ? NONE : list.stream().mapToInt(Integer::intValue).sorted().distinct().toArray();
         }
         raw = null;
+        otherCopies = null;
         symbols.clear();
+    }
+
+    /** Adds a method as the caller of the methods its calls resolve to; method handles aren't calls. */
+    private static void addCallers(int caller, Raw r, int[] methodOf, List<List<Integer>> callerLists) {
+        for (int[] recorded : new int[][] {r.exact(), r.virtual()}) {
+            for (int s : recorded) {
+                if ((s & 1) != 0) {
+                    continue;
+                }
+                final int target = methodOf[s >> 1];
+                if (target >= 0) {
+                    List<Integer> list = callerLists.get(target);
+                    if (list == null) {
+                        list = new ArrayList<>(2);
+                        callerLists.set(target, list);
+                    }
+                    list.add(caller);
+                }
+            }
+        }
     }
 
     /**
@@ -256,6 +300,18 @@ public final class CallGraph {
      */
     public int[] virtualCallees(int method) {
         return virtual[method];
+    }
+
+    /**
+     * The methods calling a method, by a call resolving to it: the method's declaring class, not
+     * the class a virtual call may dispatch to. Calls of every copy of a method in several
+     * artifacts count; method handles don't.
+     *
+     * @param method the called method's id
+     * @return method ids, ascending and distinct; not to be modified
+     */
+    public int[] callers(int method) {
+        return callers[method];
     }
 
     /**

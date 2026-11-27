@@ -55,8 +55,9 @@ class ReproducibilityIT {
     }
 
     /**
-     * The CBOM's assets and links as sorted lines, with random identifiers replaced: each asset as
-     * JSON with sorted keys and without bom-ref, each link as {@code component -> asset name}.
+     * The CBOM's assets and links as lines, in the CBOM's order, with random identifiers replaced:
+     * each asset as JSON with sorted keys and without bom-ref, each link as {@code component ->
+     * asset name}.
      */
     private static List<String> canonical(Path cbom) throws Exception {
         final JsonNode bom = JSON.readTree(cbom.toFile());
@@ -82,7 +83,7 @@ class ReproducibilityIT {
                         .replaceAll("<uuid>"));
             }
         }
-        lines.sort(null);
+        // in the CBOM's order: assets, occurrences and links come in the same order in every run
         return lines;
     }
 }

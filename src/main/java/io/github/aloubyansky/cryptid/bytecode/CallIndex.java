@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 /**
  * Index of the calls into the analyzed classes of all artifacts, for resolving values passed into
@@ -32,7 +33,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Thread-safe while filling ({@link #addClasses}, {@link #addCalls}); call {@link #finish} once
  * before {@link #resolve}.
  */
-public final class CallIndex {
+public final class CallIndex implements CallResolver {
 
     /** Hops followed up the callers; deeper chains are rare and their cost grows quickly. */
     private static final int MAX_DEPTH = 6;
@@ -77,7 +78,7 @@ public final class CallIndex {
      */
     public record Hit(Object value, Site site) {}
 
-    private static final Comparator<Site> SITE_ORDER = Comparator.comparing(Site::file)
+    static final Comparator<Site> SITE_ORDER = Comparator.comparing(Site::file)
             .thenComparingInt(Site::line)
             .thenComparing(Site::callerMethod)
             .thenComparing(Site::signature);
@@ -166,21 +167,9 @@ public final class CallIndex {
                 if (!analyzedClasses.contains(cs.owner)) {
                     continue;
                 }
-                final List<ClassDesc> types = MethodTypeDesc.ofDescriptor(cs.descriptor).parameterList();
-                Arg[] args = null;
-                for (int p = 0; p < cs.args.length && p < types.size(); p++) {
-                    final AVal a = cs.args[p];
-                    if (!isResolvableType(types.get(p)) || (a.consts().isEmpty() && a.params() == 0 && a.stored().isEmpty())) {
-                        continue;
-                    }
-                    if (args == null) {
-                        args = new Arg[cs.args.length];
-                    }
-                    args[p] = new Arg(a.consts(), a.params(), a.stored());
-                }
-                if (args != null) {
-                    local.computeIfAbsent(cs.owner + "." + cs.name + cs.descriptor, k -> new ArrayList<>())
-                            .add(new Site(m.method(), artifact, m.sourceFile(), prefix + m.sourceFile(), cs.line, cs.signature(), cs.name, args));
+                final Site site = site(m, cs, artifact, prefix);
+                if (site != null) {
+                    local.computeIfAbsent(cs.owner + "." + cs.name + cs.descriptor, k -> new ArrayList<>()).add(site);
                 }
             }
         }
@@ -190,6 +179,33 @@ public final class CallIndex {
             all.addAll(b);
             return all;
         }));
+    }
+
+    /**
+     * The site of a call, with its {@code String} and {@code int} arguments that carry constants
+     * or parameter provenance.
+     *
+     * @param m the calling method
+     * @param cs the call
+     * @param artifact the caller's artifact, or {@code null} if not known
+     * @param prefix the artifact path followed by {@code /}, or empty
+     * @return the site, or {@code null} if no argument carries anything to resolve
+     */
+    static Site site(Analyzer.MethodResult m, CallSite cs, ArtifactCoordinates artifact, String prefix) {
+        final List<ClassDesc> types = MethodTypeDesc.ofDescriptor(cs.descriptor).parameterList();
+        Arg[] args = null;
+        for (int p = 0; p < cs.args.length && p < types.size(); p++) {
+            final AVal a = cs.args[p];
+            if (!isResolvableType(types.get(p)) || (a.consts().isEmpty() && a.params() == 0 && a.stored().isEmpty())) {
+                continue;
+            }
+            if (args == null) {
+                args = new Arg[cs.args.length];
+            }
+            args[p] = new Arg(a.consts(), a.params(), a.stored());
+        }
+        return args == null ? null
+                : new Site(m.method(), artifact, m.sourceFile(), prefix + m.sourceFile(), cs.line, cs.signature(), cs.name, args);
     }
 
     /**
@@ -223,7 +239,7 @@ public final class CallIndex {
      * @param method {@code owner.name+descriptor}
      * @return method keys
      */
-    private List<String> dispatchSources(String method) {
+    static List<String> dispatchSources(Hierarchy hierarchy, String method) {
         final int dot = method.indexOf('.');
         final String owner = method.substring(0, dot);
         final String member = method.substring(dot + 1);
@@ -247,19 +263,36 @@ public final class CallIndex {
      * @param params the parameters to resolve, one bit per parameter index
      * @return the constants passed by callers, each with the call site passing it; empty if none
      */
+    @Override
     public List<Hit> resolve(String method, long params) {
+        return resolve(hierarchy, source -> byDeclaring.getOrDefault(source, List.of()), method, params);
+    }
+
+    /**
+     * Resolves the values of a method's parameters from its callers, given the call sites
+     * reaching each method.
+     *
+     * @param hierarchy the class table, for the methods a call may dispatch to
+     * @param sitesOf the call sites reaching a method, by its declaring key, in {@link #SITE_ORDER}
+     * @param method the method, {@code owner.name+descriptor}
+     * @param params the parameters to resolve, one bit per parameter index
+     * @return the constants passed by callers, each with the call site passing it
+     */
+    static List<Hit> resolve(Hierarchy hierarchy, Function<String, List<Site>> sitesOf, String method,
+            long params) {
         final List<Hit> hits = new ArrayList<>();
-        resolve(method, params, 0, new HashSet<>(), hits);
+        resolve(hierarchy, sitesOf, method, params, 0, new HashSet<>(), hits);
         return hits;
     }
 
-    private void resolve(String method, long params, int depth, Set<String> visited, List<Hit> hits) {
+    private static void resolve(Hierarchy hierarchy, Function<String, List<Site>> sitesOf, String method,
+            long params, int depth, Set<String> visited, List<Hit> hits) {
         if (depth >= MAX_DEPTH || !visited.add(method + "#" + params)) {
             return;
         }
         final List<Site> sites = new ArrayList<>();
-        for (String source : dispatchSources(method)) {
-            sites.addAll(byDeclaring.getOrDefault(source, List.of()));
+        for (String source : dispatchSources(hierarchy, method)) {
+            sites.addAll(sitesOf.apply(source));
         }
         for (Site site : sites) {
             long callerParams = 0;
@@ -274,11 +307,11 @@ public final class CallIndex {
                 callerParams |= a.params();
                 // a field the caller passes on: from the callers of the method that stored it
                 for (AVal.StoredParam sp : a.stored()) {
-                    resolve(sp.method(), 1L << sp.index(), depth + 1, visited, hits);
+                    resolve(hierarchy, sitesOf, sp.method(), 1L << sp.index(), depth + 1, visited, hits);
                 }
             }
             if (callerParams != 0) {
-                resolve(site.callerMethod(), callerParams, depth + 1, visited, hits);
+                resolve(hierarchy, sitesOf, site.callerMethod(), callerParams, depth + 1, visited, hits);
             }
         }
     }

@@ -8,6 +8,7 @@ import io.github.aloubyansky.cryptid.CryptoInventory;
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
 import io.github.aloubyansky.cryptid.bytecode.CallGraph;
 import io.github.aloubyansky.cryptid.bytecode.CallIndex;
+import io.github.aloubyansky.cryptid.bytecode.CallResolver;
 import io.github.aloubyansky.cryptid.bytecode.Hierarchy;
 import io.github.aloubyansky.cryptid.bytecode.JarCache;
 import io.github.aloubyansky.cryptid.bytecode.Types;
@@ -180,7 +181,7 @@ public final class BytecodeScanner {
      * @return what scanning the JAR amounted to, and the assets found
      */
     public ArtifactScan scan(Path jar, ArtifactCoordinates artifact, List<Path> classpath, JarCache jarCache,
-            CallIndex callIndex) {
+            CallResolver callIndex) {
         final Analyzer analyzer = new Analyzer();
         analyzer.addJar(jar, jarCache);
         final List<Analyzer.MethodResult> methods = analyzer.analyze();
@@ -197,10 +198,10 @@ public final class BytecodeScanner {
      * @param callIndex resolves values passed in from callers, or {@code null}
      * @param candidates the JAR's candidate methods from {@link #index}
      * @return what scanning the JAR amounted to, and the assets found
-     * @see #scan(Path, ArtifactCoordinates, List, JarCache, CallIndex)
+     * @see #scan(Path, ArtifactCoordinates, List, JarCache, CallResolver)
      */
     public ArtifactScan scan(Path jar, ArtifactCoordinates artifact, List<Path> classpath, JarCache jarCache,
-            CallIndex callIndex, CandidateMethods candidates) {
+            CallResolver callIndex, CandidateMethods candidates) {
         return detect(jar, artifact, types(jar, classpath, jarCache), jarCache, callIndex, candidates.methods(),
                 candidates.failedMethods());
     }
@@ -217,7 +218,7 @@ public final class BytecodeScanner {
      *     analyze the JAR
      * @return what scanning the JAR amounted to, and the assets found
      */
-    public ArtifactScan scan(Path jar, ArtifactCoordinates artifact, Types types, JarCache jarCache, CallIndex callIndex,
+    public ArtifactScan scan(Path jar, ArtifactCoordinates artifact, Types types, JarCache jarCache, CallResolver callIndex,
             CandidateMethods candidates) {
         if (candidates != null) {
             return detect(jar, artifact, types, jarCache, callIndex, candidates.methods(), candidates.failedMethods());
@@ -228,7 +229,7 @@ public final class BytecodeScanner {
     }
 
     private ArtifactScan detect(Path jar, ArtifactCoordinates artifact, Types types, JarCache jarCache,
-            CallIndex callIndex, List<Analyzer.MethodResult> methods, int failedMethods) {
+            CallResolver callIndex, List<Analyzer.MethodResult> methods, int failedMethods) {
         final CryptoEventDetector detector = new CryptoEventDetector(matcher, types, artifact, callIndex);
         final CryptoAssetModeler modeler = modelers.get();
         final CryptoInventory.Builder inventory = CryptoInventory.builder();

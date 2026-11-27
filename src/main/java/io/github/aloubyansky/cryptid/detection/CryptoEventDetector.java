@@ -8,6 +8,7 @@ import io.github.aloubyansky.cryptid.ArtifactCoordinates;
 import io.github.aloubyansky.cryptid.bytecode.AVal;
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
 import io.github.aloubyansky.cryptid.bytecode.CallIndex;
+import io.github.aloubyansky.cryptid.bytecode.CallResolver;
 import io.github.aloubyansky.cryptid.bytecode.CallSite;
 import io.github.aloubyansky.cryptid.bytecode.Types;
 import io.github.aloubyansky.cryptid.detection.CryptoObjectGraph.CryptoApiCall;
@@ -35,7 +36,7 @@ import java.util.Set;
  *
  * <p>Event trees are built the way the rule-based detection built sonar-cryptography's detection
  * stores: multi-valued arguments give one finding per value combination (up to {@link
- * #MAX_VARIANTS}), and arguments passed in from callers are resolved through the {@link CallIndex}
+ * #MAX_VARIANTS}), and arguments passed in from callers are resolved through a {@link CallResolver}
  * into findings located at the caller. Unlike rule trees, a link accepts any object a specified
  * API creates, not only those a rule lists, and a link that may be one of several such objects is
  * a choice too, giving one finding per object.
@@ -54,7 +55,7 @@ public final class CryptoEventDetector {
     private final Types types;
     private final ArtifactCoordinates artifact;
     private final String locationPrefix;
-    private final CallIndex callIndex;
+    private final CallResolver callIndex;
 
     /**
      * A choice in a finding: the constant of a detectable argument, or the object of a linking
@@ -75,7 +76,7 @@ public final class CryptoEventDetector {
      *     for none, and for locations without code locations, e.g. in tests
      * @param callIndex resolves values passed in from callers; {@code null} for within methods only
      */
-    public CryptoEventDetector(CryptoApiMatcher matcher, Types types, ArtifactCoordinates artifact, CallIndex callIndex) {
+    public CryptoEventDetector(CryptoApiMatcher matcher, Types types, ArtifactCoordinates artifact, CallResolver callIndex) {
         this.matcher = matcher;
         this.types = types;
         this.artifact = artifact;
