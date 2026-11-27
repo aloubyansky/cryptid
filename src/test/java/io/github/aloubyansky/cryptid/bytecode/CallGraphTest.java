@@ -98,8 +98,8 @@ class CallGraphTest {
     }
 
     /**
-     * Of a class in two artifacts with different code, the copy of the artifact that sorts first
-     * is taken, whole, whichever is added first.
+     * Of a class in two artifacts with different code, each copy has its own methods with its own
+     * calls, whichever is added first; the first artifact's copy is the default.
      */
     @Test
     void differingCopiesOfAClass() throws Exception {
@@ -122,7 +122,32 @@ class CallGraphTest {
             }
             g.finish();
             assertEquals(ids(g, "org/acme/V.one()V"), set(g.exactCallees(g.method("org/acme/V.v()V"))), "reversed: " + reversed);
+            assertEquals(Set.of(g.method("g/b/1", "org/acme/V.two()V")), set(g.exactCallees(g.method("g/b/1", "org/acme/V.v()V"))),
+                    "reversed: " + reversed);
+            assertEquals(2, g.methods("org/acme/V.v()V").length);
+            assertEquals("g/a/1", g.artifact(g.method("org/acme/V.v()V")));
         }
+    }
+
+    /** A copy shaded into another artifact calls its own copies, not the original's. */
+    @Test
+    void shadedCopiesCallTheirOwn() throws Exception {
+        final String lib = "package org.acme; public class V { static void one() {} static void v() { one(); } }";
+        final Analyzer original = analyzer("original", lib);
+        final Analyzer shaded = analyzer("shaded", lib);
+        final Hierarchy hierarchy = new Hierarchy(List.of("g/lib/1", "g/app/1"));
+        final CallGraph g = new CallGraph(original.classInfos().keySet(), hierarchy);
+        hierarchy.add("g/lib/1", original.classInfos());
+        hierarchy.add("g/app/1", shaded.classInfos());
+        g.addMethods("g/lib/1", original.graphFacts());
+        g.addMethods("g/app/1", shaded.graphFacts());
+        g.finish();
+        final int libOne = g.method("g/lib/1", "org/acme/V.one()V");
+        final int appOne = g.method("g/app/1", "org/acme/V.one()V");
+        assertTrue(libOne >= 0 && appOne >= 0 && libOne != appOne);
+        assertEquals(Set.of(appOne), set(g.exactCallees(g.method("g/app/1", "org/acme/V.v()V"))));
+        assertEquals(Set.of(g.method("g/app/1", "org/acme/V.v()V")), set(g.callers(appOne)));
+        assertEquals(Set.of(g.method("g/lib/1", "org/acme/V.v()V")), set(g.callers(libOne)));
     }
 
     private Analyzer analyzer(String name, String source) throws Exception {
@@ -146,8 +171,12 @@ class CallGraphTest {
     @Test
     void idsAreOrderedAndArraysSorted() throws Exception {
         final CallGraph g = graph(false, 1);
+        // by class, then artifact, then member
         for (int m = 0; m + 1 < g.methodCount(); m++) {
-            assertTrue(g.methodKey(m).compareTo(g.methodKey(m + 1)) < 0);
+            final String a = g.methodKey(m);
+            final String b = g.methodKey(m + 1);
+            final int byClass = a.substring(0, a.indexOf('.')).compareTo(b.substring(0, b.indexOf('.')));
+            assertTrue(byClass < 0 || byClass == 0 && a.compareTo(b) < 0, a + " before " + b);
         }
         final int[] callees = g.exactCallees(g.method(RUN));
         assertArrayEquals(Arrays.stream(callees).sorted().distinct().toArray(), callees);

@@ -4,10 +4,11 @@ import io.github.aloubyansky.cryptid.ArtifactCoordinates;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -120,14 +121,19 @@ public final class DemandCallIndex implements CallResolver {
     }
 
     private List<Callers.Site> findSites(String source) {
-        final int id = graph.method(source);
-        if (id < 0) {
+        // the callers of every copy of the method, interpreted in every artifact containing their
+        // class, in the class table's order
+        final Set<String> callerKeys = new TreeSet<>();
+        for (int id : graph.methods(source)) {
+            for (int caller : graph.callers(id)) {
+                callerKeys.add(graph.methodKey(caller));
+            }
+        }
+        if (callerKeys.isEmpty()) {
             return List.of();
         }
-        // the callers by the artifacts containing their class, in the class table's order
-        final Map<String, List<String>> byArtifact = new LinkedHashMap<>();
-        for (int caller : graph.callers(id)) {
-            final String key = graph.methodKey(caller);
+        final Map<String, List<String>> byArtifact = new TreeMap<>(hierarchy::compare);
+        for (String key : callerKeys) {
             for (String artifact : hierarchy.artifacts(key.substring(0, key.indexOf('.')))) {
                 byArtifact.computeIfAbsent(artifact, k -> new ArrayList<>()).add(key);
             }

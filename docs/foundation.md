@@ -469,8 +469,8 @@ The choices behind it:
 
 Decided with it, for the implementation:
 
-- **A call-graph node per copy** for classes in several artifacts, so that a shaded copy isn't reached because the original is. Before reachability's walk.
-- **Integer dispatch in the call graph**: type ids, supertypes and declared methods per type, precomputed, since the walk dispatches every virtual call against every instantiated subtype.
+- **A call-graph node per copy** for classes in several artifacts, so that a shaded copy isn't reached because the original is. Before reachability's walk. Done 2026-11-27, with the CBOM unchanged.
+- **Integer dispatch in the call graph**: type ids, supertypes and declared methods per type, precomputed, since the walk dispatches every virtual call against every instantiated subtype. Done 2026-11-27.
 - **Annotations, `META-INF/services` and the manifest's `Main-Class`** read in phase A, with reachability step 1, and a spec loader taking several sources (G6).
 
 Measured on Keycloak 26.8.2 (2026-11-27): the CBOM is byte-identical to before, but for its timestamp.

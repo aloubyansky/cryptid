@@ -48,8 +48,8 @@ The [foundation review](foundation.md) found that the results lack a model of th
 ### 2b. Before reachability
 
 1. ~~**API for reachability.**~~ Done 2026-11-27: `AnalysisInput`, `InputArtifact` with `application`, `EntryPoint`, `CryptoInventory.entryPoints`, `AssetOccurrence` with reachability, and `CbomWriter` in the library. See [foundation.md](foundation.md#phase-4-api-for-reachability-decided-2026-11-27).
-2. **A call-graph node per copy** of a class in several artifacts, so that a shaded copy isn't reached because the original is. Keycloak has 4,393 such classes.
-3. **Integer dispatch in the call graph**: type ids, each type's supertypes and declared methods as ids, precomputed in `finish()`. The walk dispatches every virtual call against every instantiated subtype; today each dispatch builds strings and walks the class table.
+2. ~~**A call-graph node per copy** of a class in several artifacts, so that a shaded copy isn't reached because the original is.~~ Done 2026-11-27: a type per copy, methods per type, and each artifact's calls resolved to the copies it sees, as spec matching does. Keycloak: 786,908 methods instead of 737,718, and 1,221,942 calls; the same time, and still in a 2 GB heap. `DemandCallIndex` takes the callers of every copy of a method, so its answers and the CBOM are unchanged.
+3. ~~**Integer dispatch in the call graph**.~~ Done 2026-11-27: each type's superclass and interfaces as type ids, its methods a sorted range of member ids, and `dispatch` cached per type and member. Its speed is measured with the reachability walk, its first user.
 
 ### 3. Reachability and endpoints
 

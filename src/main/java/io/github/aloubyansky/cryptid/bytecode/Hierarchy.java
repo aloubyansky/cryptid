@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 /**
  * The analyzed classes of all artifacts, with their supertypes and declared methods: the class
@@ -106,6 +107,37 @@ public final class Hierarchy {
     }
 
     /**
+     * Returns the class info of one artifact's copy of a class.
+     *
+     * @param artifact the artifact path
+     * @param internalName the class's internal name
+     * @return the copy's info, or {@code null} if the artifact has no copy of the class
+     */
+    public ClassInfo get(String artifact, String internalName) {
+        final List<Entry> several = copies.get(internalName);
+        if (several != null) {
+            for (Entry e : several) {
+                if (e.artifact().equals(artifact)) {
+                    return e.info();
+                }
+            }
+            return null;
+        }
+        final Entry e = classes.get(internalName);
+        return e != null && e.artifact().equals(artifact) ? e.info() : null;
+    }
+
+    /**
+     * Whether a class is in several artifacts, with the same contents or not.
+     *
+     * @param internalName the class's internal name
+     * @return {@code true} if more than one artifact has a copy of it
+     */
+    public boolean inSeveralArtifacts(String internalName) {
+        return copies.containsKey(internalName);
+    }
+
+    /**
      * Returns the artifacts containing a class, in this hierarchy's order.
      *
      * @param internalName the class's internal name
@@ -148,17 +180,33 @@ public final class Hierarchy {
          * @return its info, or {@code null} if the class isn't analyzed
          */
         public ClassInfo get(String internalName) {
+            final String artifact = artifactOf(internalName);
+            if (artifact != null && copies.containsKey(internalName)) {
+                return Hierarchy.this.get(artifact, internalName);
+            }
+            return Hierarchy.this.get(internalName);
+        }
+
+        /**
+         * Returns the artifact whose copy of a class this view sees: the first artifact listed
+         * that has a copy, else the hierarchy's first.
+         *
+         * @param internalName the class's internal name
+         * @return the artifact path, or {@code null} if the class isn't analyzed
+         */
+        public String artifactOf(String internalName) {
             final List<Entry> several = copies.get(internalName);
-            if (several != null && distinct(several)) {
+            if (several != null) {
                 for (String a : preference) {
                     for (Entry e : several) {
                         if (e.artifact().equals(a)) {
-                            return e.info();
+                            return a;
                         }
                     }
                 }
             }
-            return Hierarchy.this.get(internalName);
+            final Entry e = classes.get(internalName);
+            return e == null ? null : e.artifact();
         }
     }
 
@@ -203,11 +251,28 @@ public final class Hierarchy {
      *     declares the method
      */
     public String declaring(String methodKey) {
+        return declaring(this::get, this::supertypes, methodKey);
+    }
+
+    /**
+     * Resolves a method to the class declaring it, as an artifact sees the classes.
+     *
+     * @param view the artifact's view
+     * @param methodKey {@code owner.name+descriptor}
+     * @return the key with the declaring class as owner, or the key itself if no analyzed class
+     *     declares the method
+     */
+    public String declaring(View view, String methodKey) {
+        return declaring(view::get, n -> supertypes(view::get, n), methodKey);
+    }
+
+    private static String declaring(Function<String, ClassInfo> info, Function<String, List<String>> supertypes,
+            String methodKey) {
         final int dot = methodKey.indexOf('.');
         final String owner = methodKey.substring(0, dot);
         final String member = methodKey.substring(dot + 1);
         for (String c = owner; c != null; ) {
-            final ClassInfo ci = get(c);
+            final ClassInfo ci = info.apply(c);
             if (ci == null) {
                 break;
             }
@@ -219,14 +284,14 @@ public final class Hierarchy {
         // then the interfaces: of default methods overriding each other, the most specific one,
         // i.e. not the one of an interface another declaring interface extends
         final List<String> declaring = new ArrayList<>();
-        for (String t : supertypes(owner)) {
-            final ClassInfo ci = get(t);
+        for (String t : supertypes.apply(owner)) {
+            final ClassInfo ci = info.apply(t);
             if (ci != null && ci.methods().contains(member)) {
                 declaring.add(t);
             }
         }
         for (String t : declaring) {
-            if (declaring.stream().noneMatch(o -> !o.equals(t) && supertypes(o).contains(t))) {
+            if (declaring.stream().noneMatch(o -> !o.equals(t) && supertypes.apply(o).contains(t))) {
                 return t + "." + member;
             }
         }
@@ -241,28 +306,31 @@ public final class Hierarchy {
      * @return the supertypes, without the class itself
      */
     public List<String> supertypes(String internalName) {
-        return supertypes.computeIfAbsent(internalName, o -> {
-            final List<String> result = new ArrayList<>();
-            final Set<String> seen = new HashSet<>(Set.of(o));
-            final Deque<String> todo = new ArrayDeque<>(List.of(o));
-            while (!todo.isEmpty()) {
-                final ClassInfo ci = get(todo.poll());
-                if (ci == null) {
-                    continue;
-                }
-                final List<String> next = new ArrayList<>();
-                if (ci.superclass() != null) {
-                    next.add(ci.superclass());
-                }
-                next.addAll(ci.interfaces());
-                for (String n : next) {
-                    if (seen.add(n)) {
-                        result.add(n);
-                        todo.add(n);
-                    }
+        return supertypes.computeIfAbsent(internalName, o -> supertypes(this::get, o));
+    }
+
+    /** The supertypes of a class as a lookup of class infos resolves them, nearest first. */
+    private static List<String> supertypes(Function<String, ClassInfo> info, String internalName) {
+        final List<String> result = new ArrayList<>();
+        final Set<String> seen = new HashSet<>(Set.of(internalName));
+        final Deque<String> todo = new ArrayDeque<>(List.of(internalName));
+        while (!todo.isEmpty()) {
+            final ClassInfo ci = info.apply(todo.poll());
+            if (ci == null) {
+                continue;
+            }
+            final List<String> next = new ArrayList<>();
+            if (ci.superclass() != null) {
+                next.add(ci.superclass());
+            }
+            next.addAll(ci.interfaces());
+            for (String n : next) {
+                if (seen.add(n)) {
+                    result.add(n);
+                    todo.add(n);
                 }
             }
-            return List.copyOf(result);
-        });
+        }
+        return List.copyOf(result);
     }
 }

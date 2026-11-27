@@ -178,7 +178,13 @@ public final class AnalysisRun {
             }
             return null;
         }, "Read");
-        callGraph.finish();
+        // each artifact's calls reach the copies of classes it sees, as spec matching does
+        final Map<String, InputArtifact> byPath = new HashMap<>();
+        artifacts.forEach(a -> byPath.put(ArtifactPaths.of(a.coordinates()), a));
+        callGraph.finish(path -> {
+            final InputArtifact a = byPath.get(path);
+            return hierarchy.view(a == null ? List.of(path) : preference(a));
+        });
         log.infof("Read %d classes in %d ms, %d of them in several artifacts with different contents; call graph: %d methods,"
                         + " %d calls (%d through method handles), %d instantiations",
                 allClasses.size(), System.currentTimeMillis() - t0, hierarchy.ambiguousClasses(), callGraph.methodCount(),
