@@ -45,6 +45,7 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -97,6 +98,15 @@ public final class Analyzer {
     private int nextId;
     /** Stable ids for allocation and call sites, by method and element index. */
     private final Map<String, Integer> siteIds = new HashMap<>();
+    /** method -> the fields it reads, {@code owner.name} as referenced */
+    private final Map<String, Set<String>> fieldsRead = new HashMap<>();
+    /** method -> the methods it calls, {@code owner.name+descriptor} as referenced */
+    private final Map<String, Set<String>> methodsCalled = new HashMap<>();
+    /** field, {@code owner.name} as referenced -> the methods storing into it */
+    private final Map<String, List<String>> fieldWriters = new HashMap<>();
+    /** Rounds of the last {@link #analyze}, and whether it reached its fixpoint within them. */
+    private int rounds;
+    private boolean converged;
 
     /**
      * Reads all class files under a directory.
@@ -175,11 +185,80 @@ public final class Analyzer {
         final boolean finalClass = cm.flags().has(AccessFlag.FINAL);
         for (MethodModel mm : cm.methods()) {
             final String name = mm.methodName().stringValue();
+            final String method = className + "." + name + mm.methodType().stringValue();
             if (!name.startsWith("<") && (finalClass || mm.flags().has(AccessFlag.STATIC)
                     || mm.flags().has(AccessFlag.PRIVATE) || mm.flags().has(AccessFlag.FINAL))) {
-                exactMethods.add(className + "." + name + mm.methodType().stringValue());
+                exactMethods.add(method);
+            }
+            if (mm.code().isEmpty()) {
+                continue;
+            }
+            final Set<String> reads = new HashSet<>();
+            final Set<String> invoked = new HashSet<>();
+            for (CodeElement el : mm.code().get()) {
+                if (el instanceof FieldInstruction fi) {
+                    final String key = fi.owner().asInternalName() + "." + fi.name().stringValue();
+                    switch (fi.opcode()) {
+                        case GETSTATIC, GETFIELD -> reads.add(key);
+                        default -> fieldWriters.computeIfAbsent(key, k -> new ArrayList<>()).add(method);
+                    }
+                } else if (el instanceof InvokeInstruction ii) {
+                    invoked.add(ii.owner().asInternalName() + "." + ii.name().stringValue() + ii.type().stringValue());
+                }
+            }
+            fieldsRead.put(method, reads);
+            methodsCalled.put(method, invoked);
+        }
+    }
+
+    /**
+     * Returns the methods whose interpretation the values of some methods depend on: the methods
+     * themselves, the methods storing into the fields they read, and the exact methods (static,
+     * private, final, or of a final class) they call, transitively. Interpreting these to a
+     * fixpoint gives the methods the values interpreting all methods gives them, since field
+     * values and returned constants are the only values passed between methods.
+     *
+     * @param roots methods, {@code owner.name+descriptor}
+     * @return the closure, including the roots
+     */
+    public Set<String> closure(Collection<String> roots) {
+        final Set<String> result = new HashSet<>(roots);
+        final Deque<String> todo = new ArrayDeque<>(roots);
+        while (!todo.isEmpty()) {
+            final String m = todo.pop();
+            for (String field : fieldsRead.getOrDefault(m, Set.of())) {
+                for (String writer : fieldWriters.getOrDefault(field, List.of())) {
+                    if (result.add(writer)) {
+                        todo.add(writer);
+                    }
+                }
+            }
+            for (String callee : methodsCalled.getOrDefault(m, Set.of())) {
+                if (exactMethods.contains(callee) && result.add(callee)) {
+                    todo.add(callee);
+                }
             }
         }
+        return result;
+    }
+
+    /**
+     * The number of rounds the last {@link #analyze} took.
+     *
+     * @return the rounds, at most 10
+     */
+    public int rounds() {
+        return rounds;
+    }
+
+    /**
+     * Whether the last {@link #analyze} reached its fixpoint, rather than stopping at the cap of
+     * 10 rounds.
+     *
+     * @return {@code true} if field values and returned constants settled
+     */
+    public boolean converged() {
+        return converged;
     }
 
     private final Set<String> analyzedClasses = new HashSet<>();
@@ -193,8 +272,22 @@ public final class Analyzer {
      * @return the call sites of every method
      */
     public List<MethodResult> analyze() {
+        return analyze(null);
+    }
+
+    /**
+     * Interprets a set of methods until field values reach a fixpoint. For the methods of a
+     * {@link #closure}, the call sites are those interpreting all methods gives.
+     *
+     * @param methods the methods, {@code owner.name+descriptor}; {@code null} for all
+     * @return the call sites of the methods interpreted, in class then method order
+     */
+    public List<MethodResult> analyze(Set<String> methods) {
         List<MethodResult> results = List.of();
+        converged = false;
+        rounds = 0;
         for (int round = 0; round < 10; round++) {
+            rounds++;
             changed = false;
             results = new ArrayList<>();
             for (ClassModel cm : classes) {
@@ -202,6 +295,9 @@ public final class Analyzer {
                 final String source = sourceFile(cm, className);
                 for (MethodModel mm : cm.methods()) {
                     final String method = className + "." + mm.methodName().stringValue() + mm.methodType().stringValue();
+                    if (methods != null && !methods.contains(method)) {
+                        continue;
+                    }
                     final List<CallSite> calls = new ArrayList<>();
                     AVal returned = AVal.UNKNOWN;
                     if (mm.code().isPresent()) {
@@ -220,10 +316,23 @@ public final class Analyzer {
                 }
             }
             if (!changed) {
+                converged = true;
                 break;
             }
         }
         return results;
+    }
+
+    /**
+     * Where allocation and call sites are, for comparing interpretations, whose ids depend on the
+     * order methods are interpreted in.
+     *
+     * @return {@code method#element index} by site id, e.g. of an origin of an {@link AVal}
+     */
+    Map<Integer, String> siteKeys() {
+        final Map<Integer, String> result = new HashMap<>();
+        siteIds.forEach((key, id) -> result.put(id, key));
+        return result;
     }
 
     private static String sourceFile(ClassModel cm, String className) {

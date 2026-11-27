@@ -45,6 +45,7 @@ The [foundation review](foundation.md) found that the results lack a model of th
    - Results are cached per JAR content.
 
    Output identical per occurrence.
+5. **Closures across JARs.** Field values, and constants returned by exact methods, followed into other JARs: today they stop at the JAR boundary, and only arguments passed into parameters cross it. With step 4's closures only the methods involved are interpreted. Output changes, each difference reviewed. See *Closures across JARs* in [foundation.md](foundation.md#design-2026-11-27).
 
 ### 3. Reachability and endpoints
 

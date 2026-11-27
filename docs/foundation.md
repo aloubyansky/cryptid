@@ -226,6 +226,83 @@ Replaces the value index (G7) with questions detection asks, answered on demand.
 
 The output must be identical to today's, per occurrence, on the fixtures, Bouncy Castle and Keycloak. A difference is a bug, not a judgment call. Each stage can also be compared with the current pipeline on its own: the candidate methods, the open questions, and the answers against `CallIndex.resolve`.
 
+### Design (2026-11-27)
+
+**What a method's values depend on.** `Analyzer` gives a field the union of every store into it within the JAR, and a call to an exact method (static, private, final, or in a final class) the constants that method returns. Both come from a fixpoint over the whole JAR, of at most 10 rounds. Since `Analyzer` runs per JAR, neither follows a value into another JAR, though programs pass values between JARs all the time (see *Closures across JARs* below). Within that behaviour, the values a method reads depend only on:
+
+- the writers of the fields it reads;
+- the exact methods of the same JAR it calls;
+- transitively, the same for those methods.
+
+Interpreting that **closure** to the same fixpoint gives every method in it the values it has today. The one exception is a JAR that hits the 10-round cap today: a smaller closure may converge where the whole JAR didn't. Implementation counts such JARs, and none is expected on Keycloak.
+
+**Measured on Keycloak**, with the closures computed from instructions only:
+
+| | Methods |
+| --- | ---: |
+| Interpreted today, in phase A | 777,498 |
+| Stage 2: the closure of the 2,526 candidate methods | 8,078 |
+| Stage 3: the closure of the 544 callers the 517 questions visit today | 1,904 |
+
+Stage 3 will visit more callers than today's index lists. The call graph also has callers whose arguments don't resolve, which the index never recorded. Their count is the same order of magnitude.
+
+**Stage 1, read.** As in phase A's read pass today, plus two more things:
+
+- **Per JAR, a method's dependencies:** fields read, fields written, and exact callees within the JAR. These are kept until the JAR is detected, then dropped.
+- **Call edges kept apart from method handles**, so that stage 3 interprets only real callers.
+
+**Stage 2, detect per JAR.**
+
+- Interpret the closure of the candidate methods, and detect on the candidates.
+- A spec argument that comes from a parameter or a stored field becomes an **open question**:
+  - the method and parameter bits, or the storing method and parameter;
+  - the spec, its context, the argument and the value factory, all by reference to the specs;
+  - the location of the call.
+- Everything else becomes findings, modeled into assets as today.
+
+**Stage 3, answer the questions across JARs.** For each question:
+
+1. Find the callers through the call graph's reverse edges. These are calls to the method, or to the same method declared in a supertype, as `dispatchSources` does today.
+2. Interpret each caller's closure in its own JAR, once, with the result kept for the duration of stage 3.
+3. Take the constants at the asked argument positions. Ask again where a caller passes its own parameter or a stored field on, up to 6 calls away, with visited methods skipped.
+4. Order the callers as `CallIndex` orders its sites: by file, line, calling method and signature.
+
+Each answer is modeled into a finding located at the caller, and skipped where the caller's call is itself a finding of a root API. All of this is as today.
+
+**Caching stage 2 by validation.** A JAR's stage-2 result depends on other JARs in two ways:
+
+- spec matching resolves supertypes through the class table;
+- a static field of a class outside the analysis becomes its name as a constant.
+
+So the result is stored with what it consulted outside the JAR: every class it looked up, and whether it was analyzed, with the class info it resolved to. It is reused when:
+
+- the JAR's content is the same;
+- cryptid's build and the JDK version are the same;
+- every class consulted resolves to the same info now.
+
+That replaces today's key over the whole SBOM: changing one JAR re-detects that JAR and those that consulted its classes. Stage 3 is not cached; it is small and depends on the whole SBOM.
+
+**Closures across JARs, a follow-up.** Today values cross JARs in only one way: an argument passed into a parameter, which `CallIndex` follows. The other ways aren't followed:
+
+| How a value crosses JARs | Today |
+| --- | --- |
+| an argument passed into a parameter, e.g. `lib.digest("SHA-256")` called from the app | followed, up to 6 calls away |
+| a field of a class in another JAR, e.g. lib reading a field that the app's code sets | not followed: unknown |
+| a constant returned by an exact method of another JAR, e.g. a lib's static mapping method | not followed: unknown |
+| a static field of a class outside the analysis, e.g. of the JDK or bc-fips | the field's name, which the mappers recognize |
+| a compile-time constant, `static final String X = "AES"` | nothing to follow: javac copies the value into the using class |
+
+Following the others was too expensive while every method of the SBOM had to be interpreted to one fixpoint. With closures it isn't: a closure continues into another JAR, with the writers of a field read there and the exact method called there, and only those methods are interpreted.
+
+This comes after the steps below, which reproduce today's behaviour exactly and so can be checked exactly. It changes output, with new findings and more precise values, and each difference is reviewed. The stage-2 cache then also records the methods of other JARs a result depended on.
+
+**Steps**, each checked by identical output:
+
+1. ~~Closures: interpret a set of methods to a fixpoint with the same values as the whole JAR.~~ Done 2026-11-27: `Analyzer.closure` and `Analyzer.analyze(methods)`. `ClosureEquivalenceTest` compares, for every candidate method, its call sites and returned value with those of interpreting the whole JAR, origins compared by where they are. Bouncy Castle's provider and PKIX JARs are compared in the build. Keycloak's 534 JARs, run with `-Dclosure.jars`: 0 mismatches, and no JAR reaches the 10-round cap.
+2. Stage 3 on the call graph, next to `CallIndex`, with the answers compared on Keycloak.
+3. Switch the pipeline: phase A's interpretation of every method and `CallIndex` go away.
+4. Stage-2 cache by validation.
+
 ## Target model
 
 ```text
@@ -358,13 +435,14 @@ Each step keeps the per-occurrence Keycloak CBOM unchanged, except where a step 
 1. ~~**Result model and in-memory assembly** (G1, G6).~~ Done 2026-11-27, as decided in *Phase 1 API*.
 2. ~~**Analysis API** (G3).~~ Done 2026-11-27, as decided in *Phase 2 API*. The internal packages still have more `public` than they need; that waits for the library and CLI split.
 3. ~~**One program model** (G4).~~ Done 2026-11-27, as decided in *Phase 3: one class table*.
-4. **Detection-driven analysis** (G7, G5). The three stages above. Stage 2's results are cached by JAR content, replacing the per-artifact cache keyed by the whole SBOM. Output identical.
-5. **Entry points and endpoints**: the reachability design's step 2, with exposure, addresses and authentication in the specs and in `EntryPoint`.
-6. **Reachability**: the reachability design's step 3, pass 1, on the model above.
-7. **Endpoint sets and services**: pass 2 and the CycloneDX services.
-8. **Events in our own values** (G2): the first part of the sonar-cryptography step.
+4. **Detection-driven analysis** (G7, G5). The three stages above. Stage 2's results are cached per JAR, by validation, replacing the per-artifact cache keyed by the whole SBOM. Output identical.
+5. **Closures across JARs.** Field values and returned constants followed into other JARs through the closures. Output changes, each difference reviewed.
+6. **Entry points and endpoints**: the reachability design's step 2, with exposure, addresses and authentication in the specs and in `EntryPoint`.
+7. **Reachability**: the reachability design's step 3, pass 1, on the model above.
+8. **Endpoint sets and services**: pass 2 and the CycloneDX services.
+9. **Events in our own values** (G2): the first part of the sonar-cryptography step.
 
-Step 4 needs step 3: it uses the method index and the call graph's reverse edges. Steps 5 to 7 build on what steps 3 and 4 leave of phase A: the instruction-level hierarchy and call graph. Step 8 is independent of 4 to 7.
+Step 4 needs step 3: it uses the method index and the call graph's reverse edges. Step 5 needs step 4's closures. Steps 6 to 8 build on what steps 3 and 4 leave of phase A: the instruction-level hierarchy and call graph. Step 9 is independent of 4 to 8.
 
 ## Open questions
 
