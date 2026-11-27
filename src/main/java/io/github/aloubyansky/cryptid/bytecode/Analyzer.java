@@ -54,6 +54,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 /**
@@ -140,14 +141,14 @@ public final class Analyzer {
      *
      * @return class infos by internal class name
      */
-    public Map<String, CallIndex.ClassInfo> classInfos() {
-        final Map<String, CallIndex.ClassInfo> result = new HashMap<>();
+    public Map<String, ClassInfo> classInfos() {
+        final Map<String, ClassInfo> result = new HashMap<>();
         for (ClassModel cm : classes) {
             final Set<String> methods = new HashSet<>();
             for (MethodModel mm : cm.methods()) {
                 methods.add(mm.methodName().stringValue() + mm.methodType().stringValue());
             }
-            result.put(cm.thisClass().asInternalName(), new CallIndex.ClassInfo(
+            result.put(cm.thisClass().asInternalName(), new ClassInfo(
                     cm.superclass().map(c -> c.asInternalName()).orElse(null),
                     cm.interfaces().stream().map(c -> c.asInternalName()).toList(),
                     Set.copyOf(methods)));
@@ -236,6 +237,42 @@ public final class Analyzer {
             for (String callee : methodsCalled.getOrDefault(m, Set.of())) {
                 if (exactMethods.contains(callee) && result.add(callee)) {
                     todo.add(callee);
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Finds the methods with a call, or a method reference, that a test accepts, from the
+     * instructions alone, without interpreting anything. The calls tested have unknown receivers
+     * and arguments, so only what they call can be tested. A method found may still have no such
+     * call once interpreted, if the call is in code that can't run.
+     *
+     * @param test tests a call
+     * @return the methods, {@code owner.name+descriptor}
+     */
+    public Set<String> methodsCalling(Predicate<CallSite> test) {
+        final Set<String> result = new HashSet<>();
+        for (ClassModel cm : classes) {
+            final String className = cm.thisClass().asInternalName();
+            for (MethodModel mm : cm.methods()) {
+                if (mm.code().isEmpty()) {
+                    continue;
+                }
+                final String method = className + "." + mm.methodName().stringValue() + mm.methodType().stringValue();
+                for (CodeElement el : mm.code().get()) {
+                    CallSite cs = null;
+                    if (el instanceof InvokeInstruction ii) {
+                        cs = new CallSite(-1, method, "", ii.owner().asInternalName(), ii.name().stringValue(),
+                                ii.type().stringValue(), ii.opcode() == Opcode.INVOKESTATIC, 0, ii.typeSymbol().parameterCount());
+                    } else if (el instanceof InvokeDynamicInstruction id) {
+                        cs = methodReference(id, method, "", -1, 0);
+                    }
+                    if (cs != null && test.test(cs)) {
+                        result.add(method);
+                        break;
+                    }
                 }
             }
         }
@@ -787,34 +824,51 @@ public final class Analyzer {
      */
     private void methodReference(InvokeDynamicInstruction id, String method, String source, int index, int line,
             Map<Integer, CallSite> calls) {
+        final CallSite cs = methodReference(id, method, source, siteId(method, index), line);
+        if (cs != null) {
+            calls.putIfAbsent(index, cs);
+        }
+    }
+
+    /**
+     * The call site a method reference stands for, or {@code null} if the instruction isn't a
+     * method reference to record.
+     *
+     * @param id the instruction
+     * @param method the method containing it
+     * @param source the method's source file
+     * @param site the id the call site gets
+     * @param line the instruction's line
+     * @return the call site, with unknown receiver and arguments
+     */
+    private static CallSite methodReference(InvokeDynamicInstruction id, String method, String source, int site, int line) {
         final DirectMethodHandleDesc bootstrap = id.bootstrapMethod();
         if (!bootstrap.owner().descriptorString().equals("Ljava/lang/invoke/LambdaMetafactory;")
                 || !bootstrap.methodName().equals("metafactory") && !bootstrap.methodName().equals("altMetafactory")
                 || id.bootstrapArgs().size() < 2
                 || !(id.bootstrapArgs().get(1) instanceof DirectMethodHandleDesc target)) {
-            return;
+            return null;
         }
         final boolean isStatic;
         switch (target.kind()) {
             case STATIC, INTERFACE_STATIC -> isStatic = true;
             case VIRTUAL, INTERFACE_VIRTUAL, SPECIAL, INTERFACE_SPECIAL, CONSTRUCTOR -> isStatic = false;
             default -> {
-                return;
+                return null;
             }
         }
         final String owner = GraphFacts.internalName(target);
         if (target.methodName().startsWith("lambda$") && owner.equals(method.substring(0, method.indexOf('.')))) {
-            return;
+            return null;
         }
         final boolean constructor = target.kind() == DirectMethodHandleDesc.Kind.CONSTRUCTOR;
         final String descriptor = target.lookupDescriptor();
-        final int site = siteId(method, index);
-        final CallSite cs = calls.computeIfAbsent(index, k -> new CallSite(site, method, source, owner,
-                constructor ? "<init>" : target.methodName(), descriptor, isStatic, line,
-                MethodTypeDesc.ofDescriptor(descriptor).parameterCount()));
+        final CallSite cs = new CallSite(site, method, source, owner, constructor ? "<init>" : target.methodName(), descriptor,
+                isStatic, line, MethodTypeDesc.ofDescriptor(descriptor).parameterCount());
         if (constructor || !descriptor.endsWith(")V")) {
             cs.created = site;
         }
+        return cs;
     }
 
     private static void stack(State s, Opcode op) {

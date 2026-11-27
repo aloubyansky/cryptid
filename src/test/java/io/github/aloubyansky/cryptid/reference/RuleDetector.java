@@ -10,6 +10,7 @@ import com.ibm.engine.rule.DetectionRule;
 import com.ibm.engine.rule.IDetectionRule;
 import com.ibm.engine.rule.MethodDetectionRule;
 import com.ibm.engine.rule.Parameter;
+import io.github.aloubyansky.cryptid.bytecode.Callers;
 import io.github.aloubyansky.cryptid.bytecode.AVal;
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
 import io.github.aloubyansky.cryptid.bytecode.CallIndex;
@@ -295,8 +296,8 @@ public final class RuleDetector {
      */
     private void resolveFromCallers(IDetectionRule<Loc> rule, DetectableParameter<Loc> dp, CallSite cs, long params) {
         final int index = dp.getShouldBeMovedUnder().orElse(dp.getIndex());
-        for (CallIndex.Hit hit : callIndex.resolve(cs.method(), params)) {
-            final CallIndex.Site site = hit.site();
+        for (Callers.Hit hit : callIndex.resolve(cs.method(), params)) {
+            final Callers.Site site = hit.site();
             final Loc at = new Loc(site.file(), site.line(), site.signature(), site.name());
             dp.getiValueFactory().apply(new ResolvedValue<>(hit.value(), at)).ifPresent(v -> {
                 final DetectionStore<Object, Loc, Object, Object> store =

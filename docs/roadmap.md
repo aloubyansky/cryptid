@@ -40,7 +40,7 @@ The [foundation review](foundation.md) found that the results lack a model of th
    - Read every JAR's instructions only: hierarchy, call graph, candidate methods, field writers.
    - Detect per JAR, recording open questions where a spec argument comes from a parameter.
    - Answer them by interpreting only the callers asked about, through the call graph's reverse edges.
-   - Replaces the 306,000-call `CallIndex` and phase A's interpretation of every method, about 11 of Keycloak's 17 seconds.
+   - Replaces the 306,000-call `CallIndex` and phase A's interpretation of every method. Done 2026-11-27 but for the cache: Keycloak takes about 12 s instead of 20, with the same CBOM; see [foundation.md](foundation.md#design-2026-11-27).
    - The questions use the call graph's method ids, the interned method index left from step 3.
    - Results are cached per JAR content.
 
@@ -122,7 +122,7 @@ Pull from this list between steps, or when a coverage comparison points at an it
 
 ## Performance and operations
 
-- **Memory and archives.** A bound on open JARs (smallrye-common-archive) and a more compact call index. The current peak is 5.5 GB.
+- **Memory and archives.** Keycloak completes in a 2 GB heap but not in 1.5 GB, before and after detection-driven analysis: what bounds it isn't measured yet. Candidates are the call graph, the class table, the JARs parsed by 16 threads at once, and `JarCache` keeping every JAR open; a bound on open JARs (smallrye-common-archive) may help.
 - **Analysis on demand (redesign step 5)** moved into the foundation work as step 2.4, *Detection-driven analysis*.
 - **Positions.** Column offsets, and lines for classes without line tables. The enclosing method is in the result model since step 2.1, and in the CBOM as `symbol`; the bytecode offset isn't.
 

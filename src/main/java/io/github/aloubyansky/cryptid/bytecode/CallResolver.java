@@ -15,5 +15,5 @@ public interface CallResolver {
      * @return the constants passed by callers, each with the call site passing it, in a stable
      *     order; empty if none
      */
-    List<CallIndex.Hit> resolve(String method, long params);
+    List<Callers.Hit> resolve(String method, long params);
 }

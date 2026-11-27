@@ -7,7 +7,6 @@ import io.github.aloubyansky.cryptid.CodeLocation;
 import io.github.aloubyansky.cryptid.CryptoInventory;
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
 import io.github.aloubyansky.cryptid.bytecode.CallGraph;
-import io.github.aloubyansky.cryptid.bytecode.CallIndex;
 import io.github.aloubyansky.cryptid.bytecode.CallResolver;
 import io.github.aloubyansky.cryptid.bytecode.Hierarchy;
 import io.github.aloubyansky.cryptid.bytecode.JarCache;
@@ -24,17 +23,19 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Detects cryptographic assets in a binary JAR by analyzing its bytecode with the crypto API
  * specs, models them with sonar-cryptography's translation, and returns them as an {@link
  * ArtifactScan}. No source code and no SonarSource analyzer is involved.
  *
- * <p>Scanning is two-phase when values passed between methods are to be resolved: first {@link
- * #index} every JAR into a shared {@link CallIndex}, then {@link #scan} each JAR with it.
+ * <p>When values passed between artifacts are to be resolved, first {@link #read} every JAR into a
+ * shared class table and call graph, then {@link #scan} each JAR with a {@link CallResolver} over
+ * them, such as {@code DemandCallIndex}.
  *
- * <p>Thread-safe: rules are immutable and shared, and each thread uses its own translation
- * pipeline, so several JARs can be indexed or scanned concurrently.
+ * <p>Thread-safe: specs are immutable and shared, and each thread uses its own translation
+ * pipeline, so several JARs can be read or scanned concurrently.
  */
 public final class BytecodeScanner {
 
@@ -74,10 +75,9 @@ public final class BytecodeScanner {
 
 
     /**
-     * The methods of a JAR that may contain crypto events, kept by phase A for detection: those
-     * calling a specified API, with their call sites from the final round of the
-     * field fixpoint. Detecting on them gives the same findings as re-analyzing the JAR, without
-     * interpreting it again.
+     * The methods of a JAR that may contain crypto events: those calling a specified API, with
+     * their call sites from the final round of the field fixpoint. Detecting on them gives the same
+     * findings as analyzing the whole JAR.
      *
      * @param methods the methods that {@link CryptoEventDetector#mayDetect may contain events}, in
      *     analysis order
@@ -87,9 +87,9 @@ public final class BytecodeScanner {
 
     /**
      * Records a JAR's classes in the class table and, optionally, its methods' calls in the call
-     * graph, read from the class files without interpreting them. The first step of phase A: the
-     * class table must hold every JAR's classes before any JAR is {@linkplain #index(Path,
-     * ArtifactCoordinates, Types, JarCache, CallIndex, boolean) indexed}.
+     * graph, read from the class files without interpreting them. The class table must hold every
+     * JAR's classes before any JAR is {@linkplain #prepare prepared}, since spec matching
+     * resolves supertypes through it.
      *
      * @param jar the JAR
      * @param artifact the JAR's artifact
@@ -108,63 +108,27 @@ public final class BytecodeScanner {
     }
 
     /**
-     * Records a JAR's calls into analyzed classes in the call index, for resolving values passed
-     * between methods during {@link #scan}, and optionally returns the JAR's {@link
-     * CandidateMethods} for scanning it without analyzing it again. The second step of phase A,
-     * once the class table is complete.
+     * Finds a JAR's candidate methods, those calling a specified API, and interprets them with the
+     * methods their values depend on ({@link Analyzer#closure}), for {@linkplain #scan(Path,
+     * ArtifactCoordinates, Types, JarCache, CallResolver, CandidateMethods) scanning} the JAR
+     * without interpreting the rest of it. The candidates are found from the instructions and
+     * kept if their interpretation confirms them, so they are those interpreting the whole JAR
+     * would give.
      *
      * @param jar the JAR
-     * @param artifact the JAR's artifact
      * @param types the class hierarchy as the JAR sees it, for matching specs
      * @param jarCache the shared JAR cache
-     * @param callIndex the index to fill
-     * @param keepCandidates whether to return the JAR's candidate methods, for a JAR that will be
-     *     scanned
-     * @return the candidate methods, or {@code null} if not kept
+     * @return the candidate methods, interpreted
      */
-    public CandidateMethods index(Path jar, ArtifactCoordinates artifact, Types types, JarCache jarCache, CallIndex callIndex,
-            boolean keepCandidates) {
+    public CandidateMethods prepare(Path jar, Types types, JarCache jarCache) {
         final Analyzer analyzer = new Analyzer();
         analyzer.addJar(jar, jarCache);
-        final List<Analyzer.MethodResult> methods = analyzer.analyze();
-        callIndex.addCalls(methods, artifact, ArtifactPaths.of(artifact));
-        if (!keepCandidates) {
-            return null;
-        }
-        final CryptoEventDetector screen = new CryptoEventDetector(matcher, types, artifact, null);
-        return new CandidateMethods(methods.stream().filter(screen::mayDetect).toList(), analyzer.failedMethods);
-    }
-
-    /**
-     * Records a JAR's classes and its calls into analyzed classes in the call index, both steps of
-     * phase A at once, with supertypes read from JARs: for analyses of a few JARs, e.g. in tests.
-     *
-     * @param jar the JAR
-     * @param artifact the JAR's artifact
-     * @param classpath JARs to resolve supertypes from, as for {@link #scan}
-     * @param jarCache the shared JAR cache
-     * @param callIndex the index to fill
-     * @param callGraph the call graph to fill, or {@code null} to index without building it
-     * @param keepCandidates whether to return the JAR's candidate methods, for a JAR that will be
-     *     scanned
-     * @return the candidate methods, or {@code null} if not kept
-     */
-    public CandidateMethods index(Path jar, ArtifactCoordinates artifact, List<Path> classpath, JarCache jarCache,
-            CallIndex callIndex, CallGraph callGraph, boolean keepCandidates) {
-        final String locationPrefix = ArtifactPaths.of(artifact);
-        final Analyzer analyzer = new Analyzer();
-        analyzer.addJar(jar, jarCache);
-        callIndex.addClasses(locationPrefix, analyzer.classInfos());
-        if (callGraph != null) {
-            callGraph.addMethods(locationPrefix, analyzer.graphFacts());
-        }
-        final List<Analyzer.MethodResult> methods = analyzer.analyze();
-        callIndex.addCalls(methods, artifact, locationPrefix);
-        if (!keepCandidates) {
-            return null;
-        }
-        final CryptoEventDetector screen = new CryptoEventDetector(matcher, types(jar, classpath, jarCache), artifact, null);
-        return new CandidateMethods(methods.stream().filter(screen::mayDetect).toList(), analyzer.failedMethods);
+        final CryptoEventDetector screen = new CryptoEventDetector(matcher, types, null, null);
+        final Set<String> found = analyzer.methodsCalling(screen::mayDetect);
+        final List<Analyzer.MethodResult> methods = analyzer.analyze(analyzer.closure(found)).stream()
+                .filter(m -> found.contains(m.method()) && screen.mayDetect(m))
+                .toList();
+        return new CandidateMethods(methods, analyzer.failedMethods);
     }
 
     /**
@@ -189,14 +153,14 @@ public final class BytecodeScanner {
     }
 
     /**
-     * Scans a JAR from the candidate methods {@link #index} kept for it, without analyzing it again.
+     * Scans a JAR from its candidate methods, without analyzing it again.
      *
      * @param jar the JAR to scan
      * @param artifact the JAR's artifact
      * @param classpath JARs to resolve the scanned classes' supertypes from
      * @param jarCache the shared JAR cache
      * @param callIndex resolves values passed in from callers, or {@code null}
-     * @param candidates the JAR's candidate methods from {@link #index}
+     * @param candidates the JAR's candidate methods, e.g. from {@link #prepare}
      * @return what scanning the JAR amounted to, and the assets found
      * @see #scan(Path, ArtifactCoordinates, List, JarCache, CallResolver)
      */
@@ -214,18 +178,14 @@ public final class BytecodeScanner {
      * @param types the class hierarchy as the JAR sees it
      * @param jarCache the shared JAR cache
      * @param callIndex resolves values passed in from callers, or {@code null}
-     * @param candidates the JAR's candidate methods from {@link #index}, or {@code null} to
-     *     analyze the JAR
+     * @param candidates the JAR's candidate methods from {@link #prepare}, or {@code null} to
+     *     prepare them
      * @return what scanning the JAR amounted to, and the assets found
      */
     public ArtifactScan scan(Path jar, ArtifactCoordinates artifact, Types types, JarCache jarCache, CallResolver callIndex,
             CandidateMethods candidates) {
-        if (candidates != null) {
-            return detect(jar, artifact, types, jarCache, callIndex, candidates.methods(), candidates.failedMethods());
-        }
-        final Analyzer analyzer = new Analyzer();
-        analyzer.addJar(jar, jarCache);
-        return detect(jar, artifact, types, jarCache, callIndex, analyzer.analyze(), analyzer.failedMethods);
+        final CandidateMethods c = candidates != null ? candidates : prepare(jar, types, jarCache);
+        return detect(jar, artifact, types, jarCache, callIndex, c.methods(), c.failedMethods());
     }
 
     private ArtifactScan detect(Path jar, ArtifactCoordinates artifact, Types types, JarCache jarCache,

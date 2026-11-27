@@ -6,7 +6,7 @@ import io.github.aloubyansky.cryptid.ArtifactCoordinates;
 import io.github.aloubyansky.cryptid.CryptoInventory;
 import io.github.aloubyansky.cryptid.InputArtifact;
 import io.github.aloubyansky.cryptid.bytecode.CallGraph;
-import io.github.aloubyansky.cryptid.bytecode.CallIndex;
+import io.github.aloubyansky.cryptid.bytecode.DemandCallIndex;
 import io.github.aloubyansky.cryptid.bytecode.Hierarchy;
 import io.github.aloubyansky.cryptid.bytecode.JarCache;
 import io.github.aloubyansky.cryptid.bytecode.Types;
@@ -34,10 +34,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.jboss.logging.Logger;
 
 /**
- * One analysis of a set of artifacts: phase A reads all JARs into one class table and call graph,
- * then indexes the calls between them and keeps each JAR's candidate methods, phase B detects per JAR in parallel, and the scans are merged into the
- * inventory in the order of the artifacts. Scans kept in the cache directory are reused, and
- * phase A is skipped when every artifact's scan is there.
+ * One analysis of a set of artifacts. Phase A reads all JARs into one class table and call graph,
+ * without interpreting them. Phase B prepares and detects each JAR in parallel, interpreting only
+ * its candidate methods and what their values depend on, and the callers that questions about
+ * values passed in are asked about. The scans are merged into the inventory in the order of the
+ * artifacts. Scans kept in the cache directory are reused, and phase A is skipped when every
+ * artifact's scan is there.
  */
 public final class AnalysisRun {
 
@@ -102,26 +104,20 @@ public final class AnalysisRun {
 
         final List<ArtifactScan> scans;
         try (JarCache jarCache = new JarCache()) {
-            // phase A: index the calls between all artifacts, for resolving values passed in
-            // from callers; skipped when every artifact's scan is cached
-            final CallIndex callIndex;
-            final Map<ArtifactCoordinates, BytecodeScanner.CandidateMethods> candidates = new ConcurrentHashMap<>();
-            if (cached.size() < artifacts.size()) {
-                callIndex = index(jarCache, cached, candidates);
-            } else {
-                callIndex = null;
-            }
+            // phase A: read all artifacts into the class table and the call graph, for matching
+            // specs and resolving values passed in from callers; skipped when every artifact's
+            // scan is cached
+            final DemandCallIndex callers = cached.size() < artifacts.size() ? read(jarCache) : null;
 
-            // phase B: detect, on the methods phase A kept
+            // phase B: detect per artifact, interpreting its candidate methods and the callers asked about
+            final long t1 = System.currentTimeMillis();
             scans = parallel(artifacts, a -> {
                 final ArtifactScan reused = cached.get(a.coordinates());
                 if (reused != null) {
                     return new ArtifactScan(reused.analysis().withOutcome(ArtifactAnalysis.Outcome.CACHED), reused.assets());
                 }
                 try {
-                    // released once scanned; an artifact that failed to index is analyzed here
-                    final BytecodeScanner.CandidateMethods f = candidates.remove(a.coordinates());
-                    final ArtifactScan scan = scanner.scan(a.jar(), a.coordinates(), types(a), jarCache, callIndex, f);
+                    final ArtifactScan scan = scanner.scan(a.jar(), a.coordinates(), types(a), jarCache, callers, null);
                     if (resultsDir != null) {
                         InventoryJson.write(scan, resultFile(resultsDir, a));
                     }
@@ -134,6 +130,12 @@ public final class AnalysisRun {
                     return new ArtifactScan(ArtifactAnalysis.failed(a.coordinates(), String.valueOf(e)), List.of());
                 }
             }, "Analyzed");
+            if (callers != null) {
+                log.infof("Detected in %d ms; questions about callers interpreted %d methods in %d artifacts, reading them %d times,"
+                                + " in %d ms over all threads",
+                        System.currentTimeMillis() - t1, callers.methodsInterpreted(), callers.artifactsInterpreted(),
+                        callers.artifactsRead(), callers.millis());
+            }
         }
 
         // merge, in the order of the artifacts, so that the inventory is the same in every run
@@ -146,12 +148,12 @@ public final class AnalysisRun {
     }
 
     /**
-     * Phase A: reads every JAR's classes into the class table and the call graph, then indexes
-     * the calls between all JARs and keeps the candidate methods of the JARs to scan, matching
-     * specs with each JAR's view of the class table.
+     * Phase A: reads every JAR's classes into the class table and its methods' calls into the
+     * call graph, without interpreting anything.
+     *
+     * @return the index answering questions about callers over them
      */
-    private CallIndex index(JarCache jarCache, Map<ArtifactCoordinates, ArtifactScan> cached,
-            Map<ArtifactCoordinates, BytecodeScanner.CandidateMethods> candidates) throws IOException {
+    private DemandCallIndex read(JarCache jarCache) throws IOException {
         final long t0 = System.currentTimeMillis();
         final Set<String> allClasses = new HashSet<>();
         for (Path j : allJars) {
@@ -171,33 +173,16 @@ public final class AnalysisRun {
             }
             return null;
         }, "Read");
-        // nothing uses the call graph yet: see docs/reachability-design.md
         callGraph.finish();
         log.infof("Read %d classes in %d ms, %d of them in several artifacts with different contents; call graph: %d methods,"
                         + " %d calls (%d through method handles), %d instantiations",
                 allClasses.size(), System.currentTimeMillis() - t0, hierarchy.ambiguousClasses(), callGraph.methodCount(),
                 callGraph.edgeCount(), callGraph.handleEdgeCount(), callGraph.instantiationCount());
-
-        final long t1 = System.currentTimeMillis();
-        final CallIndex callIndex = new CallIndex(allClasses, hierarchy);
-        parallel(artifacts, a -> {
-            try {
-                // artifacts to be scanned keep what detection needs, so they aren't analyzed twice
-                final BytecodeScanner.CandidateMethods f = scanner.index(a.jar(), a.coordinates(), types(a), jarCache,
-                        callIndex, !cached.containsKey(a.coordinates()));
-                if (f != null) {
-                    candidates.put(a.coordinates(), f);
-                }
-            } catch (Exception | LinkageError e) {
-                log.warnf(e, "Failed to index %s", a.coordinates());
-            }
-            return null;
-        }, "Indexed");
-        callIndex.finish();
-        log.infof("Indexed %d calls in %d ms; %d methods may contain crypto events",
-                callIndex.size(), System.currentTimeMillis() - t1,
-                candidates.values().stream().mapToInt(f -> f.methods().size()).sum());
-        return callIndex;
+        final Map<String, DemandCallIndex.Source> sources = new HashMap<>();
+        for (InputArtifact a : artifacts) {
+            sources.put(ArtifactPaths.of(a.coordinates()), new DemandCallIndex.Source(a.coordinates(), a.jar()));
+        }
+        return new DemandCallIndex(allClasses, hierarchy, callGraph, sources, jarCache);
     }
 
     /** The class table as an artifact sees it, for matching specs. */

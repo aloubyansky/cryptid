@@ -10,13 +10,18 @@ import io.github.aloubyansky.cryptid.MethodId;
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
 import io.github.aloubyansky.cryptid.cyclonedx.CryptoAssetComponents;
 import io.github.aloubyansky.cryptid.bytecode.CallGraph;
-import io.github.aloubyansky.cryptid.bytecode.CallIndex;
+import io.github.aloubyansky.cryptid.bytecode.DemandCallIndex;
+import io.github.aloubyansky.cryptid.bytecode.Hierarchy;
+import io.github.aloubyansky.cryptid.bytecode.Types;
+import io.github.aloubyansky.cryptid.detection.ArtifactPaths;
 import io.github.aloubyansky.cryptid.bytecode.JarCache;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -377,18 +382,13 @@ class BytecodeScannerTest {
         final Path app = compile("signer-app", "org/acme/certs/Signer.java", API_CALLER, lib);
         final BytecodeScanner scanner = new BytecodeScanner();
         try (JarCache jars = new JarCache()) {
-            final Set<String> classes = new HashSet<>(jars.classNames(lib));
-            classes.addAll(jars.classNames(app));
-            final CallIndex index = new CallIndex(classes);
-            scanner.index(lib, coords("org.acme/lib/1.0"), List.of(), jars, index, null, false);
-            scanner.index(app, coords("org.acme/app/1.0"), List.of(lib), jars, index, null, false);
-            index.finish();
-            final Bom libBom = bom(scanner.scan(lib, coords("org.acme/lib/1.0"), List.of(), jars, index));
+            final Analysis a = read(jars, Map.of(coords("org.acme/lib/1.0"), lib, coords("org.acme/app/1.0"), app));
+            final Bom libBom = bom(a.scan(scanner, lib, coords("org.acme/lib/1.0"), jars));
             final List<String> inApp = libBom.getComponents() == null ? List.of() : libBom.getComponents().stream()
                     .filter(c -> c.getEvidence().getOccurrences().stream().anyMatch(o -> o.getLocation().startsWith("org.acme/app/")))
                     .map(Component::getName).toList();
             assertEquals(List.of(), inApp);
-            final Bom appBom = bom(scanner.scan(app, coords("org.acme/app/1.0"), List.of(lib), jars, index));
+            final Bom appBom = bom(a.scan(scanner, app, coords("org.acme/app/1.0"), jars));
             final Component rsa = appBom.getComponents().stream().filter(c -> c.getName().equals("RSA-PKCS1-1.5-SHA-256"))
                     .findFirst().orElseThrow(() -> new AssertionError(names(appBom)));
             assertEquals(List.of(CryptoFunction.SIGN), rsa.getCryptoProperties().getAlgorithmProperties().getCryptoFunctions());
@@ -496,20 +496,17 @@ class BytecodeScannerTest {
         final BytecodeScanner scanner = new BytecodeScanner();
         final Bom bom;
         try (JarCache jars = new JarCache()) {
-            final Set<String> classes = new HashSet<>(jars.classNames(wrapper));
-            classes.addAll(jars.classNames(app));
-            final CallIndex index = new CallIndex(classes);
-            final BytecodeScanner.CandidateMethods candidates = scanner.index(wrapper, coords("org.acme/wrap/1.0"), List.of(), jars, index, null, true);
-            assertNull(scanner.index(app, coords("org.acme/app/1.0"), List.of(), jars, index, null, false));
-            index.finish();
+            final ArtifactCoordinates wrap = coords("org.acme/wrap/1.0");
+            final Analysis a = read(jars, Map.of(wrap, wrapper, coords("org.acme/app/1.0"), app));
             // within the wrapper alone, the algorithm is unknown
-            assertTrue(bom(scanner.scan(wrapper, coords("org.acme/wrap/1.0"), List.of(), jars, null)).getComponents() == null
-                    || bom(scanner.scan(wrapper, coords("org.acme/wrap/1.0"), List.of(), jars, null)).getComponents().isEmpty());
-            bom = bom(scanner.scan(wrapper, coords("org.acme/wrap/1.0"), List.of(), jars, index));
-            // the candidate methods kept by indexing: only the method calling MessageDigest, and the same CBOM
+            assertTrue(bom(scanner.scan(wrapper, wrap, List.of(), jars, null)).getComponents() == null
+                    || bom(scanner.scan(wrapper, wrap, List.of(), jars, null)).getComponents().isEmpty());
+            bom = bom(a.scan(scanner, wrapper, wrap, jars));
+            // the candidate methods: only the method calling MessageDigest, and the same CBOM from them
+            final BytecodeScanner.CandidateMethods candidates = scanner.prepare(wrapper, a.types(wrap), jars);
             assertEquals(List.of("org/acme/wrap/Digests.digest(Ljava/lang/String;)Ljava/security/MessageDigest;"),
                     candidates.methods().stream().map(Analyzer.MethodResult::method).toList());
-            final Bom fromCandidates = bom(scanner.scan(wrapper, coords("org.acme/wrap/1.0"), List.of(), jars, index, candidates));
+            final Bom fromCandidates = bom(scanner.scan(wrapper, wrap, a.types(wrap), jars, a.callers(), candidates));
             assertEquals(names(bom), names(fromCandidates));
         }
         final Component digest = bom.getComponents().stream()
@@ -563,13 +560,8 @@ class BytecodeScannerTest {
         final BytecodeScanner scanner = new BytecodeScanner();
         final Bom bom;
         try (JarCache jars = new JarCache()) {
-            final Set<String> classes = new HashSet<>(jars.classNames(spi));
-            classes.addAll(jars.classNames(client));
-            final CallIndex index = new CallIndex(classes);
-            scanner.index(spi, coords("org.acme/spi/1.0"), List.of(), jars, index, null, false);
-            scanner.index(client, coords("org.acme/client/1.0"), List.of(), jars, index, null, false);
-            index.finish();
-            bom = bom(scanner.scan(spi, coords("org.acme/spi/1.0"), List.of(), jars, index));
+            final Analysis a = read(jars, Map.of(coords("org.acme/spi/1.0"), spi, coords("org.acme/client/1.0"), client));
+            bom = bom(a.scan(scanner, spi, coords("org.acme/spi/1.0"), jars));
         }
         final Map<Integer, String> byLine = new TreeMap<>();
         for (Component c : bom.getComponents()) {
@@ -586,15 +578,14 @@ class BytecodeScannerTest {
 
     /** Asset names with their occurrences, for comparing CBOMs. */
     @Test
-    void indexingFillsTheCallGraph() throws Exception {
+    void readingFillsTheCallGraph() throws Exception {
         final Path jar = compile("org/acme/sample/Sample.java", SOURCE);
         final BytecodeScanner scanner = new BytecodeScanner();
         try (JarCache jars = new JarCache()) {
             final Set<String> classes = new HashSet<>(jars.classNames(jar));
-            final CallIndex index = new CallIndex(classes);
-            final CallGraph graph = new CallGraph(classes, index.hierarchy());
-            scanner.index(jar, coords("org.acme/sample/1.0"), List.of(), jars, index, graph, false);
-            index.finish();
+            final Hierarchy hierarchy = new Hierarchy();
+            final CallGraph graph = new CallGraph(classes, hierarchy);
+            scanner.read(jar, coords("org.acme/sample/1.0"), jars, hierarchy, graph);
             graph.finish();
             assertEquals(2, graph.methodCount()); // <init> and run
             final int init = graph.method("org/acme/sample/Sample.<init>()V");
@@ -759,15 +750,47 @@ class BytecodeScannerTest {
         return jar;
     }
 
-    /** Scans a JAR with a call index of its own calls. */
+    /** Scans a JAR, resolving values passed in from its own callers. */
     private static Bom scanWithCallers(Path jar) {
         final BytecodeScanner scanner = new BytecodeScanner();
         try (JarCache jars = new JarCache()) {
-            final CallIndex index = new CallIndex(new HashSet<>(jars.classNames(jar)));
-            scanner.index(jar, coords("org.acme/hash/1.0"), List.of(), jars, index, null, false);
-            index.finish();
-            return bom(scanner.scan(jar, coords("org.acme/hash/1.0"), List.of(), jars, index));
+            final ArtifactCoordinates c = coords("org.acme/hash/1.0");
+            return bom(read(jars, Map.of(c, jar)).scan(scanner, jar, c, jars));
         }
+    }
+
+    /**
+     * JARs read into a class table and call graph, as phase A reads them.
+     *
+     * @param hierarchy the class table
+     * @param callers resolves values passed in from callers, interpreting them on demand
+     */
+    private record Analysis(Hierarchy hierarchy, DemandCallIndex callers) {
+
+        Types types(ArtifactCoordinates c) {
+            return Types.of(hierarchy.view(List.of(ArtifactPaths.of(c))));
+        }
+
+        ArtifactScan scan(BytecodeScanner scanner, Path jar, ArtifactCoordinates c, JarCache jars) {
+            return scanner.scan(jar, c, types(c), jars, callers, null);
+        }
+    }
+
+    /** Reads JARs into a class table and call graph, in the order of their coordinates. */
+    private static Analysis read(JarCache jars, Map<ArtifactCoordinates, Path> artifacts) {
+        final List<ArtifactCoordinates> order = artifacts.keySet().stream().sorted(Comparator.comparing(ArtifactPaths::of)).toList();
+        final Hierarchy hierarchy = new Hierarchy(order.stream().map(ArtifactPaths::of).toList());
+        final Set<String> classes = new HashSet<>();
+        order.forEach(c -> classes.addAll(jars.classNames(artifacts.get(c))));
+        final CallGraph graph = new CallGraph(classes, hierarchy);
+        final BytecodeScanner reader = new BytecodeScanner();
+        final Map<String, DemandCallIndex.Source> sources = new HashMap<>();
+        for (ArtifactCoordinates c : order) {
+            reader.read(artifacts.get(c), c, jars, hierarchy, graph);
+            sources.put(ArtifactPaths.of(c), new DemandCallIndex.Source(c, artifacts.get(c)));
+        }
+        graph.finish();
+        return new Analysis(hierarchy, new DemandCallIndex(classes, hierarchy, graph, sources, jars));
     }
 
     private Path compile(String path, String source) throws IOException {

@@ -195,7 +195,7 @@ class CallGraphTest {
         }
         final Analyzer analyzer = new Analyzer();
         analyzer.addClasses(classes);
-        final Map<String, CallIndex.ClassInfo> infos = analyzer.classInfos();
+        final Map<String, ClassInfo> infos = analyzer.classInfos();
         final Hierarchy hierarchy = new Hierarchy();
         final CallGraph graph = new CallGraph(infos.keySet(), hierarchy);
         final List<MethodFacts> facts = new ArrayList<>(analyzer.graphFacts());

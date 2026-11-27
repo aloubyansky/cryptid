@@ -1,6 +1,5 @@
 package io.github.aloubyansky.cryptid.bytecode;
 
-import io.github.aloubyansky.cryptid.bytecode.CallIndex.ClassInfo;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;

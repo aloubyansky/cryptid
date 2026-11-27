@@ -306,8 +306,24 @@ This comes after the steps below, which reproduce today's behaviour exactly and 
    - `DemandCallIndexEquivalenceTest` asks both indexes every question detection asks, and scans every JAR with each. Bouncy Castle's three JARs are compared in the build.
    - Keycloak, with `-Dclosure.jars`: all 233 distinct questions get the same 1,235 hits, and every JAR's scan the same assets, in the same order. Answering them interprets 3,802 methods, reading artifacts 234 times.
    - The test found that the order of assets and dependencies varied between runs: phase 1's `AssetCollector` took sonar-cryptography's components in the order of their random bom-refs. It now orders them by name, and `ReproducibilityIT` compares CBOMs in order, not sorted. Keycloak's CBOM is byte-identical between runs, but for the timestamp.
-3. Switch the pipeline: phase A's interpretation of every method and `CallIndex` go away.
-4. Stage-2 cache by validation.
+3. ~~Switch the pipeline: phase A's interpretation of every method and `CallIndex` go away.~~ Done 2026-11-27:
+   - Phase A only reads. Phase B finds each JAR's candidates from the instructions (`Analyzer.methodsCalling`), interprets their closure, keeps the candidates the interpretation confirms (`BytecodeScanner.prepare`), and detects with `DemandCallIndex`.
+   - `DemandCallIndex` keeps each artifact it interprets in, so further closures there don't read it again.
+   - `CallIndex` is in the tests, as the reference the equivalence tests compare with. Its sites, hits and resolution are in `Callers`, and `ClassInfo` is a record of its own.
+   - `DemandCallIndexEquivalenceTest` also checks that the candidates `prepare` finds are those of interpreting the whole JAR.
+   - Keycloak: the same CBOM per occurrence. The questions about callers interpret 3,800 methods in 39 artifacts.
+
+   Time and memory, against step 2 on the same machine (16 cores), with the same heap limit:
+
+   | Heap limit | Step 2 | Step 3 |
+   | --- | --- | --- |
+   | 5.5 GB | 19.4 s | 12.5 s |
+   | 3 GB | 20.5 s | 11.9 s |
+   | 2 GB | 22.7 s | 12.7 s |
+   | 1.5 GB | out of memory | out of memory |
+
+   Time is down about 40%. The memory needed isn't: both need between 1.5 and 2 GB, far below the 5.5 GB given as the budget so far. The interpretation and the index weren't what bounds it. What does, perhaps the call graph and the class table or the JARs parsed by 16 threads at once, isn't measured yet.
+4. Stage-2 cache by validation. Detection then has to record its open questions instead of asking them, so that a JAR's own result can be kept without the answers, which depend on the whole SBOM.
 
 ## Target model
 

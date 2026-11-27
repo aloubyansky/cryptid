@@ -3,7 +3,7 @@ package io.github.aloubyansky.cryptid.detection;
 import io.github.aloubyansky.cryptid.ArtifactCoordinates;
 import io.github.aloubyansky.cryptid.CodeLocation;
 import io.github.aloubyansky.cryptid.MethodId;
-import io.github.aloubyansky.cryptid.bytecode.CallIndex;
+import io.github.aloubyansky.cryptid.bytecode.Callers;
 import io.github.aloubyansky.cryptid.bytecode.CallSite;
 
 /** Code locations of call sites, for the result model. */
@@ -30,7 +30,7 @@ public final class CodeLocations {
      * @param site the call
      * @return its location, or {@code null}
      */
-    public static CodeLocation of(CallIndex.Site site) {
+    public static CodeLocation of(Callers.Site site) {
         return site.artifact() == null ? null
                 : new CodeLocation(site.artifact(), site.sourceFile(), method(site.callerMethod()), site.line(),
                         signature(site.signature()));

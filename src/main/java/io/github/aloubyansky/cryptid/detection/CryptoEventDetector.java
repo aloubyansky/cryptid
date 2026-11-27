@@ -5,9 +5,9 @@ import com.ibm.engine.model.IAction;
 import com.ibm.engine.model.factory.IActionFactory;
 import com.ibm.engine.model.factory.IValueFactory;
 import io.github.aloubyansky.cryptid.ArtifactCoordinates;
+import io.github.aloubyansky.cryptid.bytecode.Callers;
 import io.github.aloubyansky.cryptid.bytecode.AVal;
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
-import io.github.aloubyansky.cryptid.bytecode.CallIndex;
 import io.github.aloubyansky.cryptid.bytecode.CallResolver;
 import io.github.aloubyansky.cryptid.bytecode.CallSite;
 import io.github.aloubyansky.cryptid.bytecode.Types;
@@ -94,11 +94,21 @@ public final class CryptoEventDetector {
      */
     public boolean mayDetect(Analyzer.MethodResult method) {
         for (CallSite cs : method.calls()) {
-            if (!matcher.match(cs, types).isEmpty()) {
+            if (mayDetect(cs)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Whether a call is to a specified API.
+     *
+     * @param cs the call, whose receiver and arguments needn't be known
+     * @return {@code true} if a spec matches it
+     */
+    public boolean mayDetect(CallSite cs) {
+        return !matcher.match(cs, types).isEmpty();
     }
 
     /**
@@ -333,7 +343,7 @@ public final class CryptoEventDetector {
      * finding reports the value, with the events on the object, so resolving it here would report
      * it again with less.
      */
-    private boolean reportedAtCaller(CallIndex.Site site) {
+    private boolean reportedAtCaller(Callers.Site site) {
         final String signature = site.signature();
         final String owner = signature.substring(0, signature.indexOf('#')).replace('.', '/');
         final String descriptor = signature.substring(signature.indexOf('('));
@@ -346,8 +356,8 @@ public final class CryptoEventDetector {
     private void resolveFromCallers(ApiSpec spec, Context context, Arg arg, IValueFactory<Loc> factory, CallSite cs,
             String method, long params) {
         final int index = arg.movedUnder() != null ? arg.movedUnder() : arg.index();
-        for (CallIndex.Hit hit : callIndex.resolve(method, params)) {
-            final CallIndex.Site site = hit.site();
+        for (Callers.Hit hit : callIndex.resolve(method, params)) {
+            final Callers.Site site = hit.site();
             if (reportedAtCaller(site)) {
                 continue;
             }

@@ -176,7 +176,7 @@ public final class Types {
     private Optional<Supers> supers(String internalName) {
         return supers.computeIfAbsent(internalName, n -> {
             if (view != null) {
-                final CallIndex.ClassInfo info = view.get(n);
+                final ClassInfo info = view.get(n);
                 if (info != null) {
                     return Optional.of(new Supers(info.superclass(), info.interfaces()));
                 }

@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.aloubyansky.cryptid.ArtifactCoordinates;
 import io.github.aloubyansky.cryptid.CryptoAsset;
+import io.github.aloubyansky.cryptid.bytecode.Callers;
+import io.github.aloubyansky.cryptid.bytecode.Analyzer;
 import io.github.aloubyansky.cryptid.bytecode.CallGraph;
 import io.github.aloubyansky.cryptid.bytecode.CallIndex;
 import io.github.aloubyansky.cryptid.bytecode.CallResolver;
@@ -14,6 +16,9 @@ import io.github.aloubyansky.cryptid.bytecode.Hierarchy;
 import io.github.aloubyansky.cryptid.bytecode.JarCache;
 import io.github.aloubyansky.cryptid.bytecode.Types;
 import io.github.aloubyansky.cryptid.detection.ArtifactPaths;
+import io.github.aloubyansky.cryptid.detection.CryptoEventDetector;
+import io.github.aloubyansky.cryptid.spec.CryptoApiMatcher;
+import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -70,7 +75,7 @@ class DemandCallIndexEquivalenceTest {
     /** Records the questions detection asks. */
     private record Recording(CallResolver delegate, Set<String> questions) implements CallResolver {
         @Override
-        public List<CallIndex.Hit> resolve(String method, long params) {
+        public List<Callers.Hit> resolve(String method, long params) {
             questions.add(method + "#" + params);
             return delegate.resolve(method, params);
         }
@@ -99,10 +104,25 @@ class DemandCallIndexEquivalenceTest {
             final CallGraph graph = new CallGraph(classes, hierarchy);
             readable.forEach((c, jar) -> scanner.read(jar, c, cache, hierarchy, graph));
             graph.finish();
+            // the reference: every method of every JAR interpreted, its calls indexed
             final CallIndex index = new CallIndex(classes, hierarchy);
+            final CryptoApiMatcher matcher = new CryptoApiMatcher(CryptoApiSpecs.load());
             final Map<ArtifactCoordinates, BytecodeScanner.CandidateMethods> candidates = new HashMap<>();
-            readable.forEach((c, jar) -> candidates.put(c,
-                    scanner.index(jar, c, types(hierarchy, c), cache, index, true)));
+            for (Map.Entry<ArtifactCoordinates, Path> e : readable.entrySet()) {
+                final ArtifactCoordinates c = e.getKey();
+                final Analyzer analyzer = new Analyzer();
+                analyzer.addJar(e.getValue(), cache);
+                final List<Analyzer.MethodResult> all = analyzer.analyze();
+                index.addCalls(all, c, ArtifactPaths.of(c));
+                // the candidates prepare finds, interpreting only closures, are those of the whole JAR
+                final CryptoEventDetector screen = new CryptoEventDetector(matcher, types(hierarchy, c), null, null);
+                final List<String> expected = all.stream().filter(screen::mayDetect).map(Analyzer.MethodResult::method).toList();
+                final BytecodeScanner.CandidateMethods prepared = scanner.prepare(e.getValue(), types(hierarchy, c), cache);
+                if (!expected.equals(prepared.methods().stream().map(Analyzer.MethodResult::method).toList())) {
+                    mismatches.add("candidates of " + c);
+                }
+                candidates.put(c, prepared);
+            }
             index.finish();
             final Map<String, DemandCallIndex.Source> sources = new HashMap<>();
             readable.forEach((c, jar) -> sources.put(ArtifactPaths.of(c), new DemandCallIndex.Source(c, jar)));
@@ -131,7 +151,7 @@ class DemandCallIndexEquivalenceTest {
                 final int hash = q.lastIndexOf('#');
                 final String method = q.substring(0, hash);
                 final long params = Long.parseLong(q.substring(hash + 1));
-                final List<CallIndex.Hit> expected = index.resolve(method, params);
+                final List<Callers.Hit> expected = index.resolve(method, params);
                 hits += expected.size();
                 final String a = describeHits(expected);
                 final String b = describeHits(demand.resolve(method, params));
@@ -147,10 +167,10 @@ class DemandCallIndexEquivalenceTest {
         return Types.of(hierarchy.view(List.of(ArtifactPaths.of(c))));
     }
 
-    private static String describeHits(List<CallIndex.Hit> hits) {
+    private static String describeHits(List<Callers.Hit> hits) {
         final StringBuilder sb = new StringBuilder();
-        for (CallIndex.Hit h : hits) {
-            final CallIndex.Site s = h.site();
+        for (Callers.Hit h : hits) {
+            final Callers.Site s = h.site();
             sb.append(h.value()).append(" @ ").append(s.file()).append(':').append(s.line()).append(' ').append(s.callerMethod())
                     .append(' ').append(s.signature()).append(' ').append(s.artifact()).append(' ')
                     .append(Arrays.toString(s.args())).append("; ");

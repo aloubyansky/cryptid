@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.ibm.mapper.model.INode;
 import com.ibm.rules.InventoryRule;
 import com.ibm.rules.issue.Issue;
+import io.github.aloubyansky.cryptid.bytecode.ClassInfo;
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
 import io.github.aloubyansky.cryptid.bytecode.CallIndex;
 import io.github.aloubyansky.cryptid.bytecode.Types;
@@ -178,7 +179,7 @@ public class FixtureConformanceTest {
         analyzer.addClasses(classes);
         final Types types = new Types(FixtureConformanceTest.class.getClassLoader());
         types.addClasses(classes);
-        final Map<String, CallIndex.ClassInfo> infos = analyzer.classInfos();
+        final Map<String, ClassInfo> infos = analyzer.classInfos();
         final CallIndex index = new CallIndex(infos.keySet());
         index.addClasses(infos);
         final List<Analyzer.MethodResult> methods = analyzer.analyze();

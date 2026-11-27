@@ -9,7 +9,7 @@ cryptid generates a CBOM (Cryptography Bill of Materials) from an SBOM. Give it 
 - Follows values through a method (constants, fields, string concatenation) and from callers to the crypto call, across JARs and through interfaces, and reports a value where it's chosen.
 - Links each asset to the SBOM component it's found in.
 
-A Keycloak distribution's SBOM (548 JARs, 88,000 classes) takes about 35 seconds and gives 725 crypto assets with 4,320 occurrences in 77 components.
+A Keycloak distribution's SBOM (548 JARs, 88,000 classes) takes about 12 seconds on 16 cores and gives 725 crypto assets with 4,320 occurrences in 77 components.
 
 ## Building
 
@@ -60,7 +60,7 @@ INFO  2 of 4 analyzed components contain cryptographic assets
 INFO  Wrote CBOM to cbom.json: 1386 findings in 2 components, total time 4s
 ```
 
-Analyzing large SBOMs needs a few GB of heap; Keycloak's peaks at about 5.5 GB.
+Analyzing large SBOMs needs a few GB of heap; Keycloak's completes in 2 GB, not in 1.5 GB.
 
 ### The CBOM
 
@@ -119,7 +119,7 @@ The tests include:
 | `model` | `CryptoAssetModeler`, `AssetAssembler`: turn detected events into crypto assets |
 | `detection` | `CryptoEventDetector`, `CryptoObjectGraph`, `CryptoEvent`: crypto objects and the calls on them |
 | `spec` | `CryptoApiSpecs`, `CryptoApiMatcher`: the API specs and matching calls to them |
-| `bytecode` | `Analyzer`, `CallIndex`: the abstract interpretation of bytecode; `CallGraph`: the calls between all methods, not used yet (see the [reachability design](docs/reachability-design.md)) |
+| `bytecode` | `Analyzer`: the abstract interpretation of bytecode, of a JAR's methods or of the closure of some of them; `Hierarchy`: the class table; `CallGraph`: the calls between all methods; `DemandCallIndex`, `Callers`: values passed in from callers, found through the call graph and interpreted on demand |
 
 The specs in `src/main/resources/crypto-api-specs.yaml` were first exported from sonar-cryptography's Java detection rules by `RuleSpecExporter` (test sources) and are now hand-maintained, with corrections and additions such as xmlsec's `XMLCipher`. `RuleSpecDriftTest` checks that the file is canonical (sorted by `api`, no duplicates, the mapper's layout), that every API method the rules match has an entry, and that every entry differing from the rules says why in its `correction`, and reports additions and corrections in `target/spec-drift-report.txt`, with the rules' export in `target/crypto-api-specs-exported.yaml` for a diff. Tables in its `names` section translate names the translators don't read: a value's `names` table is a closed vocabulary, such as the W3C XML Encryption URIs mapped to JCA names, dropping what isn't in it; its `aliases` table gives other spellings, such as Bouncy Castle's `SHA256WithRSAEncryption`, matched ignoring case and keeping other names. An API with `returnsReceiver`, such as a builder's `setProvider`, returns the object it is called on. An API with `model` is modeled by a node of cryptid's own (`OwnModels`) instead of sonar-cryptography's translators, for algorithms they don't model, such as Argon2.
 
