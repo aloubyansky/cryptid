@@ -26,7 +26,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
+import java.util.regex.Pattern;
 import org.cyclonedx.model.Bom;
+import org.cyclonedx.model.Component;
 import org.jboss.logging.Logger;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -78,6 +81,22 @@ public class GenerateCbomCommand implements Callable<Integer> {
     /** Whether artifacts already analyzed in the work directory are analyzed again. */
     @Option(names = "--rescan", description = "Re-analyze artifacts already analyzed in --work-dir")
     boolean rescan;
+
+    /** Patterns of the application's artifacts, {@code groupId:artifactId} with {@code *}. */
+    @Option(
+            names = "--application",
+            paramLabel = "PATTERN",
+            description =
+                    "The application's own artifacts, searched for entry points, as groupId:artifactId with *"
+                            + " (repeatable; default: those with the SBOM metadata component's groupId)")
+    List<String> applicationPatterns;
+
+    /** A file of entry points the user supplies. */
+    @Option(
+            names = "--entry-points",
+            paramLabel = "FILE",
+            description = "A YAML file of entry points to add to those detected")
+    Path entryPointsFile;
 
     /** Reads the input SBOM. */
     @Inject SbomReader sbomReader;
@@ -148,7 +167,11 @@ public class GenerateCbomCommand implements Callable<Integer> {
             log.infof("Work directory: %s", workDir);
             cryptid.cacheDirectory(workDir);
         }
-        final CryptoInventory inventory = cryptid.build().analyze(AnalysisInput.builder().artifacts(inputs(sbom, resolved)).build(), AnalysisOptions.builder()
+        final AnalysisInput.Builder input = AnalysisInput.builder().artifacts(inputs(sbom, resolved, application(sbom)));
+        if (entryPointsFile != null) {
+            EntryPointsFile.read(entryPointsFile).forEach(input::entryPoint);
+        }
+        final CryptoInventory inventory = cryptid.build().analyze(input.build(), AnalysisOptions.builder()
                 .threads(threadCount)
                 .rescan(rescan)
                 .build());
@@ -192,7 +215,36 @@ public class GenerateCbomCommand implements Callable<Integer> {
      * @param resolved the resolved artifacts
      * @return one input per artifact, in the same order
      */
-    private static List<InputArtifact> inputs(Bom sbom, List<ArtifactGroup> resolved) {
+    /**
+     * Which artifacts are the application's: those matching {@code --application}, else those with
+     * the SBOM's metadata component's {@code groupId}, else none.
+     *
+     * @param sbom the SBOM
+     * @return tests a component's coordinates
+     */
+    private Predicate<MavenComponent> application(Bom sbom) {
+        final List<Pattern> patterns = new ArrayList<>();
+        if (applicationPatterns != null && !applicationPatterns.isEmpty()) {
+            for (String p : applicationPatterns) {
+                final String gav = p.contains(":") ? p : p + ":*";
+                patterns.add(Pattern.compile(Pattern.quote(gav).replace("*", "\\E.*\\Q")));
+            }
+            log.infof("Application artifacts: %s", applicationPatterns);
+        } else {
+            final Component root = sbom.getMetadata() == null ? null : sbom.getMetadata().getComponent();
+            final MavenComponent mc = root == null ? null : SbomReader.toMavenComponent(root);
+            final String group = mc != null ? mc.groupId() : root == null ? null : root.getGroup();
+            if (group == null || group.isBlank()) {
+                log.infof("No application artifacts: the SBOM's metadata component has no groupId; name them with --application");
+                return c -> false;
+            }
+            patterns.add(Pattern.compile(Pattern.quote(group + ":") + ".*"));
+            log.infof("Application artifacts: those with groupId %s, the SBOM metadata component's; name others with --application", group);
+        }
+        return c -> patterns.stream().anyMatch(p -> p.matcher(c.groupId() + ":" + c.artifactId()).matches());
+    }
+
+    private static List<InputArtifact> inputs(Bom sbom, List<ArtifactGroup> resolved, Predicate<MavenComponent> application) {
         final Map<String, List<String>> direct = new SbomReader().directDependencies(sbom);
         final Map<String, ArtifactCoordinates> analyzed = new HashMap<>();
         resolved.forEach(g -> g.members().forEach(c -> {
@@ -225,6 +277,7 @@ public class GenerateCbomCommand implements Callable<Integer> {
             }
             inputs.add(InputArtifact.builder(g.first().coordinates(), g.jar())
                     .dependencies(deps == null ? null : List.copyOf(deps))
+                    .application(g.members().stream().anyMatch(application))
                     .build());
         }
         return inputs;

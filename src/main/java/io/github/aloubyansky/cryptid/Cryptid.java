@@ -2,6 +2,7 @@ package io.github.aloubyansky.cryptid;
 
 import io.github.aloubyansky.cryptid.analysis.AnalysisRun;
 import io.github.aloubyansky.cryptid.scan.BytecodeScanner;
+import io.github.aloubyansky.cryptid.spec.EntryPointSpecs;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
@@ -23,10 +24,16 @@ public final class Cryptid {
     private static final Logger log = Logger.getLogger(Cryptid.class);
 
     private final BytecodeScanner scanner;
+    private final EntryPointSpecs entryPointSpecs;
     private final Path cacheDirectory;
 
     private Cryptid(Builder b) {
         this.scanner = new BytecodeScanner();
+        try {
+            this.entryPointSpecs = EntryPointSpecs.load();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to load the entry-point specs", e);
+        }
         this.cacheDirectory = b.cacheDirectory;
         log.infof("Loaded %s", scanner.detection());
     }
@@ -54,7 +61,7 @@ public final class Cryptid {
      */
     public CryptoInventory analyze(AnalysisInput input, AnalysisOptions options) {
         try {
-            return new AnalysisRun(scanner, cacheDirectory, options, input).run();
+            return new AnalysisRun(scanner, entryPointSpecs, cacheDirectory, options, input).run();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

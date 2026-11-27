@@ -1,5 +1,8 @@
 package io.github.aloubyansky.cryptid.bytecode;
 
+import io.smallrye.classfile.Annotation;
+import io.smallrye.classfile.AnnotationElement;
+import io.smallrye.classfile.AnnotationValue;
 import io.smallrye.classfile.Attributes;
 import io.smallrye.classfile.ClassFile;
 import io.smallrye.classfile.ClassModel;
@@ -154,6 +157,102 @@ public final class Analyzer {
                     Set.copyOf(methods)));
         }
         return result;
+    }
+
+    /**
+     * Returns the declarations of the classes read, with the annotations of interest.
+     *
+     * @param ofInterest tests an annotation type's binary name; others are left out
+     * @param allMethods whether to include every class and method; otherwise only classes and
+     *     methods with an annotation of interest, on them or on a parameter
+     * @return the declarations, in class order
+     */
+    public List<ClassDeclaration> declarations(Predicate<String> ofInterest, boolean allMethods) {
+        final List<ClassDeclaration> result = new ArrayList<>();
+        for (ClassModel cm : classes) {
+            final List<AnnotationInstance> classAnnotations = annotations(
+                    cm.findAttribute(Attributes.runtimeVisibleAnnotations()).map(a -> a.annotations()).orElse(List.of()),
+                    cm.findAttribute(Attributes.runtimeInvisibleAnnotations()).map(a -> a.annotations()).orElse(List.of()),
+                    ofInterest);
+            final List<MethodDeclaration> methods = new ArrayList<>();
+            for (MethodModel mm : cm.methods()) {
+                final List<AnnotationInstance> annotations = annotations(
+                        mm.findAttribute(Attributes.runtimeVisibleAnnotations()).map(a -> a.annotations()).orElse(List.of()),
+                        mm.findAttribute(Attributes.runtimeInvisibleAnnotations()).map(a -> a.annotations()).orElse(List.of()),
+                        ofInterest);
+                final List<List<Annotation>> visible = mm.findAttribute(Attributes.runtimeVisibleParameterAnnotations())
+                        .map(a -> a.parameterAnnotations()).orElse(List.of());
+                final List<List<Annotation>> invisible = mm.findAttribute(Attributes.runtimeInvisibleParameterAnnotations())
+                        .map(a -> a.parameterAnnotations()).orElse(List.of());
+                final List<List<AnnotationInstance>> parameters = new ArrayList<>();
+                boolean anyParameter = false;
+                for (int p = 0; p < Math.max(visible.size(), invisible.size()); p++) {
+                    final List<AnnotationInstance> pa = annotations(p < visible.size() ? visible.get(p) : List.of(),
+                            p < invisible.size() ? invisible.get(p) : List.of(), ofInterest);
+                    anyParameter |= !pa.isEmpty();
+                    parameters.add(pa);
+                }
+                if (allMethods || !annotations.isEmpty() || anyParameter) {
+                    methods.add(new MethodDeclaration(mm.methodName().stringValue() + mm.methodType().stringValue(),
+                            mm.flags().flagsMask(), annotations, anyParameter ? parameters : List.of()));
+                }
+            }
+            if (allMethods || !classAnnotations.isEmpty() || !methods.isEmpty()) {
+                result.add(new ClassDeclaration(cm.thisClass().asInternalName(), cm.flags().flagsMask(), classAnnotations, methods));
+            }
+        }
+        return result;
+    }
+
+    private static List<AnnotationInstance> annotations(List<Annotation> visible,
+            List<Annotation> invisible, Predicate<String> ofInterest) {
+        final List<AnnotationInstance> result = new ArrayList<>();
+        for (List<Annotation> list : List.of(visible, invisible)) {
+            for (Annotation a : list) {
+                final String type = binaryName(a.className().stringValue());
+                if (!ofInterest.test(type)) {
+                    continue;
+                }
+                final Map<String, Object> values = new LinkedHashMap<>();
+                for (AnnotationElement e : a.elements()) {
+                    final Object v = value(e.value());
+                    if (v != null) {
+                        values.put(e.name().stringValue(), v);
+                    }
+                }
+                result.add(new AnnotationInstance(type, values));
+            }
+        }
+        return result;
+    }
+
+    /** An annotation element's value, or {@code null} for a nested annotation. */
+    private static Object value(AnnotationValue v) {
+        if (v instanceof AnnotationValue.OfString s) {
+            return s.stringValue();
+        } else if (v instanceof AnnotationValue.OfConstant c) {
+            return c.resolvedValue();
+        } else if (v instanceof AnnotationValue.OfEnum e) {
+            return binaryName(e.className().stringValue()) + "." + e.constantName().stringValue();
+        } else if (v instanceof AnnotationValue.OfClass c) {
+            return binaryName(c.className().stringValue());
+        } else if (v instanceof AnnotationValue.OfArray a) {
+            final List<Object> values = new ArrayList<>();
+            for (AnnotationValue element : a.values()) {
+                final Object o = value(element);
+                if (o != null) {
+                    values.add(o);
+                }
+            }
+            return values;
+        }
+        return null;
+    }
+
+    /** The binary name of a type descriptor, e.g. {@code Ljakarta/ws/rs/GET;}: {@code jakarta.ws.rs.GET}. */
+    private static String binaryName(String descriptor) {
+        final String d = descriptor.startsWith("L") && descriptor.endsWith(";") ? descriptor.substring(1, descriptor.length() - 1) : descriptor;
+        return d.replace('/', '.');
     }
 
     /**

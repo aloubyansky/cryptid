@@ -45,6 +45,8 @@ java -jar target/cryptid.jar app.cdx.json -o cbom.json
 | `--work-dir` | a directory to keep each artifact's result in; reusing it skips artifacts analyzed before by the same build of cryptid, with the same resolved JARs and dependencies (default: none, nothing is kept) |
 | `--rescan` | analyze artifacts again even if `--work-dir` has results for them; the new results are kept |
 | `--threads` | threads resolving and analyzing artifacts (default: the number of CPUs) |
+| `--application` | the application's own artifacts, searched for entry points, as `groupId:artifactId` with `*`, e.g. `'org.keycloak:*'`; repeatable (default: those with the SBOM metadata component's `groupId`, none if it has none) |
+| `--entry-points` | a YAML file of entry points to add to those detected, each with `method` (`class#name(descriptor)`), `kind`, and optionally `exposure`, `address`, `authenticated` and `artifact` |
 | `-h`, `--help` | show the options |
 
 JARs are resolved from your local Maven repository and the repositories in `~/.m2/settings.xml`, Maven Central by default. Components that aren't Maven JARs, or that can't be resolved, are skipped and reported in the log:

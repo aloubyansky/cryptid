@@ -6,6 +6,7 @@ import io.github.aloubyansky.cryptid.ArtifactCoordinates;
 import io.github.aloubyansky.cryptid.CodeLocation;
 import io.github.aloubyansky.cryptid.CryptoInventory;
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
+import io.github.aloubyansky.cryptid.bytecode.ArtifactDeclarations;
 import io.github.aloubyansky.cryptid.bytecode.CallGraph;
 import io.github.aloubyansky.cryptid.bytecode.CallResolver;
 import io.github.aloubyansky.cryptid.bytecode.Hierarchy;
@@ -98,6 +99,26 @@ public final class BytecodeScanner {
      * @param callGraph the call graph to fill, or {@code null}
      */
     public void read(Path jar, ArtifactCoordinates artifact, JarCache jarCache, Hierarchy hierarchy, CallGraph callGraph) {
+        read(jar, artifact, jarCache, hierarchy, callGraph, Set.of(), false);
+    }
+
+    /**
+     * Records a JAR's classes in the class table and its methods' calls in the call graph, and
+     * returns what it declares that entry points and instantiation need.
+     *
+     * @param jar the JAR
+     * @param artifact the JAR's artifact
+     * @param jarCache the shared JAR cache
+     * @param hierarchy the class table to fill
+     * @param callGraph the call graph to fill, or {@code null}
+     * @param annotationTypes the annotation types of interest, binary names
+     * @param allMethods whether to declare every class and method, as for an artifact of the
+     *     application, searched for entry points; otherwise only those with an annotation of
+     *     interest
+     * @return the declarations
+     */
+    public ArtifactDeclarations read(Path jar, ArtifactCoordinates artifact, JarCache jarCache, Hierarchy hierarchy,
+            CallGraph callGraph, Set<String> annotationTypes, boolean allMethods) {
         final String locationPrefix = ArtifactPaths.of(artifact);
         final Analyzer analyzer = new Analyzer();
         analyzer.addJar(jar, jarCache);
@@ -105,6 +126,11 @@ public final class BytecodeScanner {
         if (callGraph != null) {
             callGraph.addMethods(locationPrefix, analyzer.graphFacts());
         }
+        if (annotationTypes.isEmpty() && !allMethods) {
+            return ArtifactDeclarations.NONE;
+        }
+        return new ArtifactDeclarations(analyzer.declarations(annotationTypes::contains, allMethods), jarCache.services(jar),
+                jarCache.mainClass(jar));
     }
 
     /**

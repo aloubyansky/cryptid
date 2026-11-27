@@ -55,17 +55,14 @@ The [foundation review](foundation.md) found that the results lack a model of th
 
 This continues [reachability-design.md](reachability-design.md), steps 2 and 3. It is extended by *Endpoints as origins of crypto use* in [foundation.md](foundation.md): crypto use traced from the endpoints external users interact with.
 
-1. **Entry points and instantiated classes.**
-   - Phase A reads annotations (class, method, parameter), `META-INF/services` and the manifest's `Main-Class`.
-   - A spec loader taking several sources, for the crypto API, entry-point and bean specs.
-   - Entry-point specs as data: annotation, parameter annotation, override and signature forms.
-   - Each spec has a kind and an exposure, external or internal.
-   - Endpoints carry the protocol, address and authentication where the code states them.
-   - Bean specs and `META-INF/services`.
-   - Application artifacts (`InputArtifact.application`) named by the user in the CLI, with a default.
-   - `--entry-points` for entry points supplied as data, into `AnalysisInput.entryPoints`.
+1. ~~**Entry points and instantiated classes.**~~ Done 2026-11-27:
+   - Phase A reads annotations (class, method, parameter, with constant values), `META-INF/services` and the manifest's `Main-Class`.
+   - `src/main/resources/entry-point-specs.yaml` (`EntryPointSpecs`, which combines sources): JAX-RS, Spring MVC, Quarkus routes, servlets, WebSockets, gRPC, reactive messaging, the Vert.x event bus, scheduled methods, CDI observers, lifecycle methods and `main`. Each spec has a kind and an exposure; addresses are built from constant annotation values; authentication from the method's annotations, else its class's.
+   - Instantiated: beans in any artifact, service providers, the classes declaring entry points.
+   - `EntryPoint.artifact()` says whose copy of the class it is.
+   - CLI: `--application`, by default the artifacts with the SBOM metadata component's `groupId`, and `--entry-points`.
 
-   Measure: the entry points found in `org.keycloak:*`, by kind and exposure, against Keycloak's known REST endpoints.
+   Keycloak (38 `org.keycloak` artifacts): 638 entry points, 625 of them HTTP, 467 with a path and 158 with a partial address (sub-resources, mounted by locators). Of the 415 operations Keycloak's admin REST API documents (`openapi.json`), 361 match a detected entry point by method and path suffix; the other 54 are collection roots, served by verb-only sub-resource methods, of which there are more than enough, and spot checks match. No authentication is known: Keycloak checks permissions in code, not with annotations. The CBOM is unchanged: entry points come into it with step 3.
 2. **Reachability walk and CBOM marking.**
    - The forward walk to a fixpoint over instantiated classes.
    - Each occurrence marked through its `CodeLocation`'s method, or as `unknown` when nothing was searched.

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -31,6 +32,22 @@ public final class TestJars {
      * @throws IOException if a file can't be written
      */
     public static Path compile(Path dir, String name, Map<String, String> sources, Path classpath) throws IOException {
+        return compile(dir, name, sources, classpath, Map.of());
+    }
+
+    /**
+     * Compiles sources with debug information into a JAR, with other entries added.
+     *
+     * @param dir the directory to work in
+     * @param name the JAR's name, without extension
+     * @param sources the sources by path, e.g. {@code org/acme/Foo.java}
+     * @param classpath the classpath to compile against, or {@code null}
+     * @param resources other entries by path, e.g. {@code META-INF/MANIFEST.MF}
+     * @return the JAR
+     * @throws IOException if a file can't be written
+     */
+    public static Path compile(Path dir, String name, Map<String, String> sources, Path classpath, Map<String, String> resources)
+            throws IOException {
         final Path src = dir.resolve(name + "-src");
         final Path classes = Files.createDirectories(dir.resolve(name + "-classes"));
         final List<String> args = new ArrayList<>(List.of("-g", "-proc:none", "-d", classes.toString()));
@@ -52,6 +69,11 @@ public final class TestJars {
             for (Path f : files.filter(Files::isRegularFile).sorted().toList()) {
                 jos.putNextEntry(new JarEntry(classes.relativize(f).toString().replace('\\', '/')));
                 jos.write(Files.readAllBytes(f));
+                jos.closeEntry();
+            }
+            for (Map.Entry<String, String> r : resources.entrySet()) {
+                jos.putNextEntry(new JarEntry(r.getKey()));
+                jos.write(r.getValue().getBytes(StandardCharsets.UTF_8));
                 jos.closeEntry();
             }
         }

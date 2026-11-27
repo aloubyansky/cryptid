@@ -5,16 +5,21 @@ import io.github.aloubyansky.cryptid.AnalysisOptions;
 import io.github.aloubyansky.cryptid.ArtifactAnalysis;
 import io.github.aloubyansky.cryptid.ArtifactCoordinates;
 import io.github.aloubyansky.cryptid.CryptoInventory;
+import io.github.aloubyansky.cryptid.EntryPoint;
 import io.github.aloubyansky.cryptid.InputArtifact;
+import io.github.aloubyansky.cryptid.bytecode.ArtifactDeclarations;
 import io.github.aloubyansky.cryptid.bytecode.CallGraph;
 import io.github.aloubyansky.cryptid.bytecode.DemandCallIndex;
 import io.github.aloubyansky.cryptid.bytecode.Hierarchy;
 import io.github.aloubyansky.cryptid.bytecode.JarCache;
 import io.github.aloubyansky.cryptid.bytecode.Types;
 import io.github.aloubyansky.cryptid.detection.ArtifactPaths;
+import io.github.aloubyansky.cryptid.reach.EntryPointDetector;
 import io.github.aloubyansky.cryptid.scan.ArtifactScan;
 import io.github.aloubyansky.cryptid.scan.BytecodeScanner;
+import io.github.aloubyansky.cryptid.spec.EntryPointSpecs;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
@@ -50,6 +55,9 @@ public final class AnalysisRun {
     private final Path cacheDir;
     private final AnalysisOptions options;
     private final AnalysisInput input;
+    private final EntryPointSpecs entryPointSpecs;
+    /** The entry points and instantiated classes found, once phase A has run. */
+    private EntryPointDetector.Result entryPoints;
     private final List<InputArtifact> artifacts;
     private final Map<ArtifactCoordinates, InputArtifact> byCoordinates = new HashMap<>();
     private final List<Path> allJars;
@@ -66,7 +74,24 @@ public final class AnalysisRun {
      * @throws IllegalArgumentException if two artifacts have the same coordinates
      */
     public AnalysisRun(BytecodeScanner scanner, Path cacheDir, AnalysisOptions options, AnalysisInput input) {
+        this(scanner, EntryPointSpecsHolder.DEFAULT, cacheDir, options, input);
+    }
+
+    /**
+     * Prepares an analysis.
+     *
+     * @param scanner the scanner, with the crypto API specs loaded
+     * @param entryPointSpecs the entry-point specs
+     * @param cacheDir the directory to keep scans in, or {@code null} for none
+     * @param options the options
+     * @param input the artifacts, with distinct coordinates, and what the caller knows of the
+     *     application
+     * @throws IllegalArgumentException if two artifacts have the same coordinates
+     */
+    public AnalysisRun(BytecodeScanner scanner, EntryPointSpecs entryPointSpecs, Path cacheDir, AnalysisOptions options,
+            AnalysisInput input) {
         this.scanner = scanner;
+        this.entryPointSpecs = entryPointSpecs;
         this.cacheDir = cacheDir;
         this.options = options;
         this.input = input;
@@ -109,9 +134,10 @@ public final class AnalysisRun {
         final List<ArtifactScan> scans;
         try (JarCache jarCache = new JarCache()) {
             // phase A: read all artifacts into the class table and the call graph, for matching
-            // specs and resolving values passed in from callers; skipped when every artifact's
-            // scan is cached
-            final DemandCallIndex callers = cached.size() < artifacts.size() ? read(jarCache) : null;
+            // specs, resolving values passed in from callers and finding entry points; skipped when
+            // every artifact's scan is cached and none is the application's
+            final boolean application = artifacts.stream().anyMatch(InputArtifact::application);
+            final DemandCallIndex callers = cached.size() < artifacts.size() || application ? read(jarCache) : null;
 
             // phase B: detect per artifact, interpreting its candidate methods and the callers asked about
             final long t1 = System.currentTimeMillis();
@@ -145,6 +171,9 @@ public final class AnalysisRun {
         // merge, in the order of the artifacts, so that the inventory is the same in every run
         final CryptoInventory.Builder inventory = CryptoInventory.builder();
         input.entryPoints().forEach(inventory::entryPoint);
+        if (entryPoints != null) {
+            entryPoints.entryPoints().forEach(inventory::entryPoint);
+        }
         for (ArtifactScan s : scans) {
             inventory.artifact(s.analysis());
             inventory.addAssets(s.assets());
@@ -170,14 +199,16 @@ public final class AnalysisRun {
             }
         }
         final CallGraph callGraph = new CallGraph(allClasses, hierarchy);
-        parallel(artifacts, a -> {
+        final Set<String> annotationTypes = entryPointSpecs.annotationTypes();
+        final List<ArtifactDeclarations> declared = parallel(artifacts, a -> {
             try {
-                scanner.read(a.jar(), a.coordinates(), jarCache, hierarchy, callGraph);
+                return scanner.read(a.jar(), a.coordinates(), jarCache, hierarchy, callGraph, annotationTypes, a.application());
             } catch (Exception | LinkageError e) {
                 log.warnf(e, "Failed to read %s", a.coordinates());
+                return ArtifactDeclarations.NONE;
             }
-            return null;
         }, "Read");
+        detectEntryPoints(declared);
         // each artifact's calls reach the copies of classes it sees, as spec matching does
         final Map<String, InputArtifact> byPath = new HashMap<>();
         artifacts.forEach(a -> byPath.put(ArtifactPaths.of(a.coordinates()), a));
@@ -194,6 +225,34 @@ public final class AnalysisRun {
             sources.put(ArtifactPaths.of(a.coordinates()), new DemandCallIndex.Source(a.coordinates(), a.jar()));
         }
         return new DemandCallIndex(allClasses, hierarchy, callGraph, sources, jarCache);
+    }
+
+    /** Finds the entry points in the application's artifacts, and the classes instantiated without a visible {@code new}. */
+    private void detectEntryPoints(List<ArtifactDeclarations> declared) {
+        final List<EntryPointDetector.Artifact> inputs = new ArrayList<>(artifacts.size());
+        int application = 0;
+        for (int i = 0; i < artifacts.size(); i++) {
+            final InputArtifact a = artifacts.get(i);
+            inputs.add(new EntryPointDetector.Artifact(a.coordinates(), a.application(), declared.get(i)));
+            if (a.application()) {
+                application++;
+            }
+        }
+        if (application == 0) {
+            log.infof("No application artifacts: entry points aren't searched for");
+            entryPoints = new EntryPointDetector.Result(List.of(), Set.of());
+            return;
+        }
+        entryPoints = new EntryPointDetector(entryPointSpecs, hierarchy).detect(inputs);
+        if (log.isDebugEnabled()) {
+            for (EntryPoint e : entryPoints.entryPoints()) {
+                log.debugf("Entry point %s %s %s %s, authenticated: %s", e.kind(), e.exposure(), e.address().orElse("-"), e.method(),
+                        e.authenticated().map(String::valueOf).orElse("?"));
+            }
+        }
+        log.infof("Found %d entry points in %d application artifacts %s, and %d classes instantiated without a visible new",
+                entryPoints.entryPoints().size(), application, EntryPointDetector.summary(entryPoints.entryPoints()),
+                entryPoints.instantiated().size());
     }
 
     /** The class table as an artifact sees it, for matching specs. */
@@ -284,6 +343,19 @@ public final class AnalysisRun {
             throw new IOException(e.getCause());
         } finally {
             pool.shutdownNow();
+        }
+    }
+
+    /** The entry-point specs that ship, loaded once. */
+    private static final class EntryPointSpecsHolder {
+        static final EntryPointSpecs DEFAULT;
+
+        static {
+            try {
+                DEFAULT = EntryPointSpecs.load();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
         }
     }
 }

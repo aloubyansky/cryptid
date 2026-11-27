@@ -49,6 +49,7 @@ public final class EntryPoint {
     }
 
     private final MethodId method;
+    private final ArtifactCoordinates artifact;
     private final String kind;
     private final Exposure exposure;
     private final String address;
@@ -57,6 +58,7 @@ public final class EntryPoint {
 
     private EntryPoint(Builder b) {
         this.method = b.method;
+        this.artifact = b.artifact;
         this.kind = b.kind;
         this.exposure = b.exposure;
         this.address = b.address;
@@ -82,6 +84,16 @@ public final class EntryPoint {
      */
     public MethodId method() {
         return method;
+    }
+
+    /**
+     * The artifact whose copy of the method's class it is, where known: a class can be in several
+     * artifacts, e.g. shaded into another.
+     *
+     * @return the artifact, or empty for any copy, e.g. of an entry point supplied without one
+     */
+    public Optional<ArtifactCoordinates> artifact() {
+        return Optional.ofNullable(artifact);
     }
 
     /**
@@ -140,6 +152,7 @@ public final class EntryPoint {
 
         private final MethodId method;
         private final String kind;
+        private ArtifactCoordinates artifact;
         private Exposure exposure = Exposure.EXTERNAL;
         private String address;
         private Boolean authenticated;
@@ -148,6 +161,17 @@ public final class EntryPoint {
         private Builder(MethodId method, String kind) {
             this.method = Objects.requireNonNull(method, "method");
             this.kind = Objects.requireNonNull(kind, "kind");
+        }
+
+        /**
+         * Sets the artifact whose copy of the method's class it is.
+         *
+         * @param artifact the artifact, or {@code null} for any copy, the default
+         * @return this builder
+         */
+        public Builder artifact(ArtifactCoordinates artifact) {
+            this.artifact = artifact;
+            return this;
         }
 
         /**

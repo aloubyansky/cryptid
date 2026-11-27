@@ -3,12 +3,17 @@ package io.github.aloubyansky.cryptid.bytecode;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.jar.Attributes;
+import java.util.jar.Manifest;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -18,6 +23,8 @@ import java.util.zip.ZipFile;
  * reads, so this class is thread-safe.
  */
 public final class JarCache implements AutoCloseable {
+
+    private static final String SERVICES = "META-INF/services/";
 
     private final Map<Path, ZipFile> zips = new ConcurrentHashMap<>();
     private final Map<Path, Set<String>> classNames = new ConcurrentHashMap<>();
@@ -90,6 +97,57 @@ public final class JarCache implements AutoCloseable {
         final List<byte[]> result = new ArrayList<>();
         classNames(jar).stream().sorted().forEach(n -> result.add(read(jar, n)));
         return result;
+    }
+
+    /**
+     * Reads the service provider files of a JAR, {@code META-INF/services/<service type>}.
+     *
+     * @param jar the JAR
+     * @return provider class names, binary, by service type, both in file order; empty if none
+     */
+    public Map<String, List<String>> services(Path jar) {
+        final Map<String, List<String>> result = new TreeMap<>();
+        final ZipFile zip = zip(jar);
+        zip.stream()
+                .filter(e -> !e.isDirectory() && e.getName().startsWith(SERVICES) && e.getName().length() > SERVICES.length())
+                .forEach(e -> {
+                    final List<String> providers = new ArrayList<>();
+                    try (InputStream in = zip.getInputStream(e)) {
+                        for (String line : new String(in.readAllBytes(), StandardCharsets.UTF_8).split("\\R")) {
+                            final int hash = line.indexOf('#');
+                            final String name = (hash < 0 ? line : line.substring(0, hash)).trim();
+                            if (!name.isEmpty()) {
+                                providers.add(name);
+                            }
+                        }
+                    } catch (IOException ex) {
+                        throw new UncheckedIOException("Failed to read " + e.getName() + " from " + jar, ex);
+                    }
+                    if (!providers.isEmpty()) {
+                        result.put(e.getName().substring(SERVICES.length()), List.copyOf(providers));
+                    }
+                });
+        return result;
+    }
+
+    /**
+     * Reads the main class a JAR's manifest names.
+     *
+     * @param jar the JAR
+     * @return the binary class name of {@code Main-Class}, or empty if the manifest names none
+     */
+    public Optional<String> mainClass(Path jar) {
+        final ZipFile zip = zip(jar);
+        final ZipEntry entry = zip.getEntry("META-INF/MANIFEST.MF");
+        if (entry == null) {
+            return Optional.empty();
+        }
+        try (InputStream in = zip.getInputStream(entry)) {
+            final String main = new Manifest(in).getMainAttributes().getValue(Attributes.Name.MAIN_CLASS);
+            return main == null || main.isBlank() ? Optional.empty() : Optional.of(main.trim());
+        } catch (IOException e) {
+            return Optional.empty();
+        }
     }
 
     @Override

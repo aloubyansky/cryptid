@@ -1,0 +1,196 @@
+# Entry-point and instantiation specifications; see docs/reachability-design.md and
+# docs/foundation.md (Endpoints as origins of crypto use). Hand-maintained.
+#
+# An entry point is a method something outside the analyzed code calls. A method is matched by
+# the first spec, in this order, with any of its forms: methodAnnotations, classAnnotations (the
+# public methods of the class), parameterAnnotations, overrides (owner#name(parameter types), or
+# (...) for any parameters) or signature. Entry points are searched for in the application's
+# artifacts only.
+specVersion: 1
+
+entryPoints:
+  # JAX-RS resource methods: any HTTP-method annotation, whether or not the class has @Path, so
+  # that sub-resources count too; their address is then partial
+  - id: jaxrs
+    kind: http
+    exposure: external
+    inherited: true
+    methodAnnotations:
+      - jakarta.ws.rs.DELETE
+      - jakarta.ws.rs.GET
+      - jakarta.ws.rs.HEAD
+      - jakarta.ws.rs.OPTIONS
+      - jakarta.ws.rs.PATCH
+      - jakarta.ws.rs.POST
+      - jakarta.ws.rs.PUT
+      - javax.ws.rs.DELETE
+      - javax.ws.rs.GET
+      - javax.ws.rs.HEAD
+      - javax.ws.rs.OPTIONS
+      - javax.ws.rs.PATCH
+      - javax.ws.rs.POST
+      - javax.ws.rs.PUT
+    address:
+      verb: annotation
+      path:
+        - jakarta.ws.rs.Path
+        - javax.ws.rs.Path
+
+  - id: spring-mvc
+    kind: http
+    exposure: external
+    inherited: true
+    methodAnnotations:
+      - org.springframework.web.bind.annotation.DeleteMapping
+      - org.springframework.web.bind.annotation.GetMapping
+      - org.springframework.web.bind.annotation.PatchMapping
+      - org.springframework.web.bind.annotation.PostMapping
+      - org.springframework.web.bind.annotation.PutMapping
+      - org.springframework.web.bind.annotation.RequestMapping
+    address:
+      verb: annotation
+      path:
+        - org.springframework.web.bind.annotation.RequestMapping
+
+  - id: quarkus-route
+    kind: http
+    exposure: external
+    methodAnnotations:
+      - io.quarkus.vertx.web.Route
+    address:
+      path:
+        - io.quarkus.vertx.web.RouteBase
+
+  - id: servlet
+    kind: servlet
+    exposure: external
+    overrides:
+      - jakarta.servlet.http.HttpServlet#doDelete(...)
+      - jakarta.servlet.http.HttpServlet#doGet(...)
+      - jakarta.servlet.http.HttpServlet#doHead(...)
+      - jakarta.servlet.http.HttpServlet#doOptions(...)
+      - jakarta.servlet.http.HttpServlet#doPost(...)
+      - jakarta.servlet.http.HttpServlet#doPut(...)
+      - jakarta.servlet.http.HttpServlet#service(...)
+      - jakarta.servlet.Filter#doFilter(...)
+      - javax.servlet.http.HttpServlet#doDelete(...)
+      - javax.servlet.http.HttpServlet#doGet(...)
+      - javax.servlet.http.HttpServlet#doHead(...)
+      - javax.servlet.http.HttpServlet#doOptions(...)
+      - javax.servlet.http.HttpServlet#doPost(...)
+      - javax.servlet.http.HttpServlet#doPut(...)
+      - javax.servlet.http.HttpServlet#service(...)
+      - javax.servlet.Filter#doFilter(...)
+
+  - id: websocket
+    kind: websocket
+    exposure: external
+    methodAnnotations:
+      - io.quarkus.websockets.next.OnBinaryMessage
+      - io.quarkus.websockets.next.OnOpen
+      - io.quarkus.websockets.next.OnTextMessage
+      - jakarta.websocket.OnMessage
+      - jakarta.websocket.OnOpen
+      - javax.websocket.OnMessage
+      - javax.websocket.OnOpen
+
+  - id: grpc
+    kind: grpc
+    exposure: external
+    classAnnotations:
+      - io.quarkus.grpc.GrpcService
+
+  # can be fed from a broker; a supplied entry point can say otherwise
+  - id: reactive-messaging
+    kind: messaging
+    exposure: external
+    methodAnnotations:
+      - org.eclipse.microprofile.reactive.messaging.Incoming
+    address:
+      value: org.eclipse.microprofile.reactive.messaging.Incoming
+
+  # the in-process event bus
+  - id: vertx-event-bus
+    kind: messaging
+    exposure: internal
+    methodAnnotations:
+      - io.quarkus.vertx.ConsumeEvent
+    address:
+      value: io.quarkus.vertx.ConsumeEvent
+
+  - id: scheduled
+    kind: scheduled
+    exposure: internal
+    methodAnnotations:
+      - io.quarkus.scheduler.Scheduled
+      - jakarta.ejb.Schedule
+      - org.springframework.scheduling.annotation.Scheduled
+
+  - id: cdi-observer
+    kind: observer
+    exposure: internal
+    parameterAnnotations:
+      - jakarta.enterprise.event.Observes
+      - jakarta.enterprise.event.ObservesAsync
+      - javax.enterprise.event.Observes
+      - javax.enterprise.event.ObservesAsync
+
+  # the runtime calls these on beans it creates, or on startup
+  - id: lifecycle
+    kind: lifecycle
+    exposure: internal
+    methodAnnotations:
+      - io.quarkus.runtime.Startup
+      - jakarta.annotation.PostConstruct
+      - javax.annotation.PostConstruct
+    overrides:
+      - io.quarkus.runtime.QuarkusApplication#run(...)
+
+  - id: main
+    kind: main
+    exposure: internal
+    mainClass: true
+    signature:
+      name: main
+      descriptor: ([Ljava/lang/String;)V
+      static: true
+      public: true
+
+# whether calling an entry point needs authentication: the method's annotation, else its class's
+authentication:
+  required:
+    - io.quarkus.security.Authenticated
+    - io.quarkus.security.PermissionsAllowed
+    - jakarta.annotation.security.DenyAll
+    - jakarta.annotation.security.RolesAllowed
+    - javax.annotation.security.DenyAll
+    - javax.annotation.security.RolesAllowed
+    - org.springframework.security.access.annotation.Secured
+    - org.springframework.security.access.prepost.PreAuthorize
+  notRequired:
+    - jakarta.annotation.security.PermitAll
+    - javax.annotation.security.PermitAll
+
+# classes instantiated without a `new` the analysis sees
+instantiated:
+  beanAnnotations:
+    - io.quarkus.arc.Unremovable
+    - jakarta.enterprise.context.ApplicationScoped
+    - jakarta.enterprise.context.Dependent
+    - jakarta.enterprise.context.RequestScoped
+    - jakarta.enterprise.context.SessionScoped
+    - jakarta.inject.Singleton
+    - jakarta.ws.rs.ext.Provider
+    - javax.enterprise.context.ApplicationScoped
+    - javax.enterprise.context.Dependent
+    - javax.enterprise.context.RequestScoped
+    - javax.enterprise.context.SessionScoped
+    - javax.inject.Singleton
+    - javax.ws.rs.ext.Provider
+    - org.springframework.stereotype.Component
+    - org.springframework.stereotype.Controller
+    - org.springframework.stereotype.Repository
+    - org.springframework.stereotype.Service
+    - org.springframework.web.bind.annotation.RestController
+  services: true
+  entryPointClasses: true
