@@ -15,6 +15,8 @@ public final class EntryPoint {
 
     /** An HTTP endpoint, e.g. a JAX-RS or Spring resource method. */
     public static final String HTTP = "http";
+    /** A JAX-RS locator: a method returning the sub-resource an HTTP request goes on to. */
+    public static final String HTTP_LOCATOR = "http-locator";
     /** A gRPC service method. */
     public static final String GRPC = "grpc";
     /** A WebSocket endpoint. */

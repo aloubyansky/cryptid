@@ -54,15 +54,22 @@ public record EntryPointSpecs(int specVersion, List<EntryPointSpec> entryPoints,
      * @param overrides a method overriding one of these, {@code owner#name(parameter types)} with
      *     binary names, or {@code (...)} for any parameters
      * @param signature a method of this name and descriptor
-     * @param mainClass with {@code signature}: only the class the artifact's manifest names as
-     *     {@code Main-Class}, when it names one
+     * @param mainClass with {@code signature}: only in a main class, the class the artifact's
+     *     manifest names as {@code Main-Class} or a class carrying one of {@code
+     *     mainClassAnnotations}
+     * @param mainClassAnnotations with {@code mainClass}: annotations making a class a main class
      * @param inherited with {@code methodAnnotations}: also a method overriding an annotated method
      *     of a supertype
+     * @param requiredClassAnnotations a method matching another form counts only if its class, or
+     *     a supertype, carries one of these, e.g. JAX-RS's {@code @Path} for a root resource
+     * @param callback whether the framework calls such methods on objects that exist, e.g. a
+     *     JAX-RS sub-resource's: they are entry points only once their class is instantiated
      * @param address how to build the entry point's address from annotation values
      */
     public record EntryPointSpec(String id, String kind, String exposure, List<String> methodAnnotations,
             List<String> classAnnotations, List<String> parameterAnnotations, List<String> overrides, Signature signature,
-            boolean mainClass, boolean inherited, Address address) {
+            boolean mainClass, List<String> mainClassAnnotations, boolean inherited, List<String> requiredClassAnnotations,
+            boolean callback, Address address) {
 
         /** Normalizes missing lists to empty ones. */
         public EntryPointSpec {
@@ -70,6 +77,8 @@ public record EntryPointSpecs(int specVersion, List<EntryPointSpec> entryPoints,
             classAnnotations = classAnnotations == null ? List.of() : List.copyOf(classAnnotations);
             parameterAnnotations = parameterAnnotations == null ? List.of() : List.copyOf(parameterAnnotations);
             overrides = overrides == null ? List.of() : List.copyOf(overrides);
+            mainClassAnnotations = mainClassAnnotations == null ? List.of() : List.copyOf(mainClassAnnotations);
+            requiredClassAnnotations = requiredClassAnnotations == null ? List.of() : List.copyOf(requiredClassAnnotations);
         }
     }
 
@@ -197,6 +206,8 @@ public record EntryPointSpecs(int specVersion, List<EntryPointSpec> entryPoints,
             result.addAll(e.methodAnnotations());
             result.addAll(e.classAnnotations());
             result.addAll(e.parameterAnnotations());
+            result.addAll(e.mainClassAnnotations());
+            result.addAll(e.requiredClassAnnotations());
             if (e.address() != null) {
                 result.addAll(e.address().path());
                 if (e.address().value() != null) {

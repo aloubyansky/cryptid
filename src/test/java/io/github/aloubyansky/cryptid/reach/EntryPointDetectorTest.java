@@ -44,6 +44,8 @@ class EntryPointDetectorTest {
                 + " @Retention(RetentionPolicy.RUNTIME) public @interface Observes {}");
         API.put("jakarta/enterprise/context/ApplicationScoped.java", "package jakarta.enterprise.context; import java.lang.annotation.*;"
                 + " @Retention(RetentionPolicy.RUNTIME) public @interface ApplicationScoped {}");
+        API.put("io/quarkus/runtime/annotations/QuarkusMain.java", "package io.quarkus.runtime.annotations; import java.lang.annotation.*;"
+                + " @Retention(RetentionPolicy.RUNTIME) public @interface QuarkusMain {}");
         API.put("jakarta/servlet/http/HttpServlet.java", "package jakarta.servlet.http;"
                 + " public abstract class HttpServlet { protected void doGet(Object req, Object resp) {} }");
     }
@@ -103,6 +105,8 @@ class EntryPointDetectorTest {
                 """);
         app.put("org/acme/Main.java", "package org.acme; public class Main { public static void main(String[] args) {} }");
         app.put("org/acme/Other.java", "package org.acme; public class Other { public static void main(String[] args) {} }");
+        app.put("org/acme/QMain.java", "package org.acme; @io.quarkus.runtime.annotations.QuarkusMain"
+                + " public class QMain { public static void main(String[] args) {} }");
         app.put("org/acme/Provider.java", "package org.acme; public class Provider implements Runnable { public void run() {} }");
         final Path appJar = TestJars.compile(dir, "app", app, api, Map.of(
                 "META-INF/MANIFEST.MF", "Manifest-Version: 1.0\nMain-Class: org.acme.Main\n",
@@ -138,9 +142,17 @@ class EntryPointDetectorTest {
         }
     }
 
+    /** A root entry point. */
     private static Optional<EntryPoint> at(String className, String name) {
         return result.entryPoints().stream()
                 .filter(e -> e.method().className().equals(className) && e.method().name().equals(name))
+                .findFirst();
+    }
+
+    /** A callback of a class. */
+    private static Optional<EntryPoint> callback(String className, String name) {
+        return result.callbacks().getOrDefault(className.replace('.', '/'), List.of()).stream()
+                .filter(e -> e.method().name().equals(name))
                 .findFirst();
     }
 
@@ -153,10 +165,14 @@ class EntryPointDetectorTest {
         assertEquals(EntryPoint.Source.DETECTED, realm.source());
         assertEquals(Optional.of(APP), realm.artifact());
         assertEquals(Optional.of("POST /realms"), at("org.acme.RealmsResource", "create").orElseThrow().address());
-        // a sub-resource has no path of its own class: its address is partial
-        assertEquals(Optional.of("DELETE /{id}"), at("org.acme.UsersResource", "delete").orElseThrow().address());
-        // a locator without an HTTP method isn't one, nor is a method without annotations
-        assertTrue(at("org.acme.RealmsResource", "users").isEmpty());
+        // a sub-resource's methods are callbacks of its class, with a partial address
+        assertTrue(at("org.acme.UsersResource", "delete").isEmpty());
+        assertEquals(Optional.of("DELETE /{id}"), callback("org.acme.UsersResource", "delete").orElseThrow().address());
+        // a locator is a root of its own kind, with a path and no verb; a method without
+        // annotations isn't an entry point
+        final EntryPoint users = at("org.acme.RealmsResource", "users").orElseThrow();
+        assertEquals(EntryPoint.HTTP_LOCATOR, users.kind());
+        assertEquals(Optional.of("/realms/{realm}/users"), users.address());
         assertTrue(at("org.acme.RealmsResource", "notAnEndpoint").isEmpty());
     }
 
@@ -169,19 +185,22 @@ class EntryPointDetectorTest {
     void authenticationFromTheMethodElseTheClass() {
         assertEquals(Optional.of(true), at("org.acme.RealmsResource", "realm").orElseThrow().authenticated());
         assertEquals(Optional.of(false), at("org.acme.RealmsResource", "create").orElseThrow().authenticated());
-        assertEquals(Optional.empty(), at("org.acme.UsersResource", "delete").orElseThrow().authenticated());
+        assertEquals(Optional.empty(), callback("org.acme.UsersResource", "delete").orElseThrow().authenticated());
     }
 
     @Test
     void observersServletsAndMains() {
-        final EntryPoint observer = at("org.acme.Lifecycle", "onStart").orElseThrow();
+        // an observer is a callback of its bean
+        assertTrue(at("org.acme.Lifecycle", "onStart").isEmpty());
+        final EntryPoint observer = callback("org.acme.Lifecycle", "onStart").orElseThrow();
         assertEquals(EntryPoint.OBSERVER, observer.kind());
         assertEquals(EntryPoint.Exposure.INTERNAL, observer.exposure());
         assertEquals(EntryPoint.SERVLET, at("org.acme.Servlet", "doGet").orElseThrow().kind());
-        // the manifest's Main-Class only, where there is one; every main where there isn't
+        // a main only in a main class: the manifest's Main-Class, or a Quarkus main
         assertEquals(EntryPoint.MAIN, at("org.acme.Main", "main").orElseThrow().kind());
+        assertTrue(at("org.acme.QMain", "main").isPresent());
         assertTrue(at("org.acme.Other", "main").isEmpty());
-        assertTrue(at("org.acme.tool.Tool", "main").isPresent());
+        assertTrue(at("org.acme.tool.Tool", "main").isEmpty());
     }
 
     @Test
@@ -196,8 +215,9 @@ class EntryPointDetectorTest {
         assertTrue(result.instantiated().contains("org/other/LibResource"));
         assertTrue(result.instantiated().contains("org/acme/Provider"));
         assertTrue(result.instantiated().contains("org/acme/RealmsResource"));
-        // a class whose only entry point is static isn't
+        // a class whose only entry point is static isn't, nor is one with only callbacks
         assertFalse(result.instantiated().contains("org/acme/Main"));
+        assertFalse(result.instantiated().contains("org/acme/UsersResource"));
     }
 
     @Test

@@ -68,7 +68,13 @@ This continues [reachability-design.md](reachability-design.md), steps 2 and 3. 
    2. ~~`AssetOccurrence.role()`: uses and provisions.~~ Done 2026-11-27: a provision when the occurrence's class implements a type of `crypto-implementation-specs.yaml` (the JCA SPIs and providers, Bouncy Castle's primitive interfaces and provider registrations), or when the occurrence calls a specified crypto API of its own artifact, as a library composing its own primitives does; a use otherwise, also where a caller passes a value to a wrapper of its own. Components `dependsOn` the assets of their uses and `provides` those of their provisions. Code that only names an algorithm (xmlsec's `JCEMapper`) counts as a use until a third role is needed.
 
       Keycloak: 2,449 provisions, 2,447 of them in bcprov and 2 in Elytron's credential module, and 2,055 uses. Component links: 850 `dependsOn` and 501 `provides`, instead of 1,345 `dependsOn`; bcprov provides 499 assets and depends on 22. Assets and occurrences unchanged. Known gap: 50 of bcprov's occurrences stay uses, 21 of them its implementation's own helpers that implement no listed type (`CompositeMLKEMEngine`, `BcKeyStoreSpi`'s inner classes); the others are bcprov calling the JDK's JCA, which are uses.
-   3. Roots and callbacks: `main` only from a manifest `Main-Class` or `@QuarkusMain`; JAX-RS root resources as roots, sub-resource methods, `@PostConstruct` and observers as callbacks of instantiated classes, which the walk adds as their classes become instantiated.
+   3. ~~Roots and callbacks.~~ Done 2026-11-27:
+      - Specs gain `callback`, for methods the framework calls on objects that exist, `requiredClassAnnotations`, and `mainClassAnnotations`.
+      - Roots: JAX-RS methods and locators in classes with `@Path`, Spring MVC in controllers, WebSocket endpoints in their endpoint classes, servlets, scheduled methods, messaging, `@Startup`, `QuarkusApplication.run`, and `main` only in a manifest's `Main-Class` or a `@QuarkusMain` class.
+      - Callbacks: JAX-RS sub-resource methods and locators, CDI observers, `@PostConstruct`. The walk adds them as their classes become instantiated.
+      - JAX-RS locators are entry points of their own kind, `http-locator`, with a path and no verb.
+
+      Keycloak: 35 roots (19 HTTP methods, 14 locators, `KeycloakMain.main` and `run`) and 722 callbacks in 145 classes, instead of 638 entry points; the shaded and tool `main`s are gone. The CBOM is unchanged.
 3. **Reachability walk and CBOM marking.**
    - The forward walk to a fixpoint over instantiated classes.
    - Each occurrence marked through its `CodeLocation`'s method, or as `unknown` when nothing was searched.

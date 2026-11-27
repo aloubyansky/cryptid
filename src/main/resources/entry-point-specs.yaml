@@ -4,17 +4,24 @@
 # An entry point is a method something outside the analyzed code calls. A method is matched by
 # the first spec, in this order, with any of its forms: methodAnnotations, classAnnotations (the
 # public methods of the class), parameterAnnotations, overrides (owner#name(parameter types), or
-# (...) for any parameters) or signature. Entry points are searched for in the application's
+# (...) for any parameters) or signature; with requiredClassAnnotations, only in a class, or a
+# subtype of one, carrying one of them. Entry points are searched for in the application's
 # artifacts only.
+#
+# Most entry points are roots: the runtime starts them by itself. A spec with `callback: true`
+# matches methods the framework calls on objects that exist, such as a JAX-RS sub-resource's or a
+# bean's observer: they are entry points only once their class is instantiated.
 specVersion: 1
 
 entryPoints:
-  # JAX-RS resource methods: any HTTP-method annotation, whether or not the class has @Path, so
-  # that sub-resources count too; their address is then partial
+  # JAX-RS root resources: an HTTP-method annotation in a class with @Path
   - id: jaxrs
     kind: http
     exposure: external
     inherited: true
+    requiredClassAnnotations:
+      - jakarta.ws.rs.Path
+      - javax.ws.rs.Path
     methodAnnotations:
       - jakarta.ws.rs.DELETE
       - jakarta.ws.rs.GET
@@ -36,10 +43,72 @@ entryPoints:
         - jakarta.ws.rs.Path
         - javax.ws.rs.Path
 
+  # JAX-RS locators of root resources: @Path without an HTTP method; they return the sub-resource
+  # the request goes on to
+  - id: jaxrs-locator
+    kind: http-locator
+    exposure: external
+    inherited: true
+    requiredClassAnnotations:
+      - jakarta.ws.rs.Path
+      - javax.ws.rs.Path
+    methodAnnotations:
+      - jakarta.ws.rs.Path
+      - javax.ws.rs.Path
+    address:
+      path:
+        - jakarta.ws.rs.Path
+        - javax.ws.rs.Path
+
+  # JAX-RS sub-resources: an HTTP-method annotation in a class without @Path, called on the object
+  # a locator returns; their address is partial
+  - id: jaxrs-subresource
+    kind: http
+    exposure: external
+    inherited: true
+    callback: true
+    methodAnnotations:
+      - jakarta.ws.rs.DELETE
+      - jakarta.ws.rs.GET
+      - jakarta.ws.rs.HEAD
+      - jakarta.ws.rs.OPTIONS
+      - jakarta.ws.rs.PATCH
+      - jakarta.ws.rs.POST
+      - jakarta.ws.rs.PUT
+      - javax.ws.rs.DELETE
+      - javax.ws.rs.GET
+      - javax.ws.rs.HEAD
+      - javax.ws.rs.OPTIONS
+      - javax.ws.rs.PATCH
+      - javax.ws.rs.POST
+      - javax.ws.rs.PUT
+    address:
+      verb: annotation
+      path:
+        - jakarta.ws.rs.Path
+        - javax.ws.rs.Path
+
+  # JAX-RS locators of sub-resources, called on the object a locator returns
+  - id: jaxrs-subresource-locator
+    kind: http-locator
+    exposure: external
+    inherited: true
+    callback: true
+    methodAnnotations:
+      - jakarta.ws.rs.Path
+      - javax.ws.rs.Path
+    address:
+      path:
+        - jakarta.ws.rs.Path
+        - javax.ws.rs.Path
+
   - id: spring-mvc
     kind: http
     exposure: external
     inherited: true
+    requiredClassAnnotations:
+      - org.springframework.stereotype.Controller
+      - org.springframework.web.bind.annotation.RestController
     methodAnnotations:
       - org.springframework.web.bind.annotation.DeleteMapping
       - org.springframework.web.bind.annotation.GetMapping
@@ -85,6 +154,15 @@ entryPoints:
   - id: websocket
     kind: websocket
     exposure: external
+    requiredClassAnnotations:
+      - io.quarkus.websockets.next.WebSocket
+      - jakarta.websocket.server.ServerEndpoint
+      - javax.websocket.server.ServerEndpoint
+    address:
+      path:
+        - io.quarkus.websockets.next.WebSocket
+        - jakarta.websocket.server.ServerEndpoint
+        - javax.websocket.server.ServerEndpoint
     methodAnnotations:
       - io.quarkus.websockets.next.OnBinaryMessage
       - io.quarkus.websockets.next.OnOpen
@@ -126,30 +204,42 @@ entryPoints:
       - jakarta.ejb.Schedule
       - org.springframework.scheduling.annotation.Scheduled
 
+  # called on beans
   - id: cdi-observer
     kind: observer
     exposure: internal
+    callback: true
     parameterAnnotations:
       - jakarta.enterprise.event.Observes
       - jakarta.enterprise.event.ObservesAsync
       - javax.enterprise.event.Observes
       - javax.enterprise.event.ObservesAsync
 
-  # the runtime calls these on beans it creates, or on startup
-  - id: lifecycle
+  # the runtime calls these on startup
+  - id: startup
     kind: lifecycle
     exposure: internal
     methodAnnotations:
       - io.quarkus.runtime.Startup
-      - jakarta.annotation.PostConstruct
-      - javax.annotation.PostConstruct
     overrides:
       - io.quarkus.runtime.QuarkusApplication#run(...)
 
+  # the runtime calls these on the beans it creates
+  - id: post-construct
+    kind: lifecycle
+    exposure: internal
+    callback: true
+    methodAnnotations:
+      - jakarta.annotation.PostConstruct
+      - javax.annotation.PostConstruct
+
+  # only in a main class: the manifest's Main-Class, or a Quarkus main
   - id: main
     kind: main
     exposure: internal
     mainClass: true
+    mainClassAnnotations:
+      - io.quarkus.runtime.annotations.QuarkusMain
     signature:
       name: main
       descriptor: ([Ljava/lang/String;)V

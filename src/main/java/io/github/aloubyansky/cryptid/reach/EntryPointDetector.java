@@ -27,7 +27,9 @@ import java.util.TreeSet;
 /**
  * Finds an application's entry points in its artifacts with the {@link EntryPointSpecs}, and the
  * classes instantiated without a {@code new} the analysis can see: beans, service providers and
- * the classes declaring entry points.
+ * the classes declaring entry points. Entry points are roots, which the runtime starts by itself,
+ * or callbacks, which the framework calls on objects that exist, e.g. JAX-RS sub-resource methods:
+ * those are entry points only once the walk instantiates their class.
  *
  * <p>Entry points are searched for in the application's artifacts only. Annotations on supertypes'
  * methods, for specs that inherit them, and bean annotations are read from every artifact.
@@ -46,10 +48,33 @@ public final class EntryPointDetector {
     /**
      * The entry points and instantiated classes found.
      *
-     * @param entryPoints the entry points, in the order of the artifacts, then of class and member
+     * @param entryPoints the roots: entry points the runtime starts by itself, in the order of the
+     *     artifacts, then of class and member
+     * @param callbacks entry points the framework calls on objects that exist, by the internal name
+     *     of their class: entry points only once their class is instantiated
      * @param instantiated internal names of the classes instantiated without a visible {@code new}
      */
-    public record Result(List<EntryPoint> entryPoints, Set<String> instantiated) {}
+    public record Result(List<EntryPoint> entryPoints, Map<String, List<EntryPoint>> callbacks, Set<String> instantiated) {
+
+        /** Copies the collections. */
+        public Result {
+            entryPoints = List.copyOf(entryPoints);
+            callbacks = Map.copyOf(callbacks);
+            instantiated = Set.copyOf(instantiated);
+        }
+
+        /**
+         * The number of callbacks, for logging.
+         *
+         * @return the callbacks over all classes
+         */
+        public int callbackCount() {
+            return callbacks.values().stream().mapToInt(List::size).sum();
+        }
+    }
+
+    /** An entry point a method is, and whether it is a callback. */
+    private record Found(EntryPoint entryPoint, boolean callback) {}
 
     /**
      * How a method matched a spec: the annotation it matched by, if any, and the method declaring
@@ -101,6 +126,7 @@ public final class EntryPointDetector {
             }
         }
         final List<EntryPoint> entryPoints = new ArrayList<>();
+        final Map<String, List<EntryPoint>> callbacks = new LinkedHashMap<>();
         final Set<String> instantiated = new TreeSet<>();
         for (Artifact a : artifacts) {
             for (ClassDeclaration c : a.declarations().classes()) {
@@ -123,9 +149,14 @@ public final class EntryPointDetector {
                     if (!m.isRegular()) {
                         continue;
                     }
-                    final EntryPoint e = entryPoint(a, c, m, byClass);
-                    if (e != null) {
-                        entryPoints.add(e);
+                    final Found f = entryPoint(a, c, m, byClass);
+                    if (f == null) {
+                        continue;
+                    }
+                    if (f.callback()) {
+                        callbacks.computeIfAbsent(c.className(), k -> new ArrayList<>()).add(f.entryPoint());
+                    } else {
+                        entryPoints.add(f.entryPoint());
                         if (specs.instantiated().entryPointClasses() && !m.isStatic()) {
                             instantiated.add(c.className());
                         }
@@ -133,26 +164,41 @@ public final class EntryPointDetector {
                 }
             }
         }
-        return new Result(List.copyOf(entryPoints), Set.copyOf(instantiated));
+        return new Result(entryPoints, callbacks, instantiated);
     }
 
     /** The entry point a method is by the first spec it matches, or {@code null}. */
-    private EntryPoint entryPoint(Artifact a, ClassDeclaration c, MethodDeclaration m, Map<String, List<ClassDeclaration>> byClass) {
+    private Found entryPoint(Artifact a, ClassDeclaration c, MethodDeclaration m, Map<String, List<ClassDeclaration>> byClass) {
         for (EntryPointSpec s : specs.entryPoints()) {
             final Match matched = matches(s, a, c, m, byClass);
-            if (matched == null) {
+            if (matched == null || !s.requiredClassAnnotations().isEmpty() && !hasClassAnnotation(c, s.requiredClassAnnotations(), byClass)) {
                 continue;
             }
             final String binary = c.className().replace('/', '.');
-            return EntryPoint.builder(new MethodId(binary, m.name(), m.descriptor()), s.kind())
+            return new Found(EntryPoint.builder(new MethodId(binary, m.name(), m.descriptor()), s.kind())
                     .artifact(a.artifact())
                     .exposure("internal".equalsIgnoreCase(s.exposure()) ? EntryPoint.Exposure.INTERNAL : EntryPoint.Exposure.EXTERNAL)
                     .address(address(s, c, matched, byClass))
                     .authenticated(authenticated(c, matched.declaring()))
                     .source(EntryPoint.Source.DETECTED)
-                    .build();
+                    .build(), s.callback());
         }
         return null;
+    }
+
+    /** Whether a class, or one of its supertypes, carries one of the annotations. */
+    private boolean hasClassAnnotation(ClassDeclaration c, List<String> types, Map<String, List<ClassDeclaration>> byClass) {
+        if (first(c.annotations(), types) != null) {
+            return true;
+        }
+        for (String t : hierarchy.supertypes(c.className())) {
+            for (ClassDeclaration sc : byClass.getOrDefault(t, List.of())) {
+                if (first(sc.annotations(), types) != null) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** Placeholder for a match without an annotation, e.g. by signature. */
@@ -207,7 +253,8 @@ public final class EntryPointDetector {
         if (sig != null && sig.name().equals(m.name()) && sig.descriptor().equals(m.descriptor())
                 && (!sig.isStatic() || m.isStatic()) && (!sig.isPublic() || m.isPublic())) {
             final Optional<String> main = a.declarations().mainClass();
-            if (!s.mainClass() || main.isEmpty() || main.get().equals(c.className().replace('/', '.'))) {
+            if (!s.mainClass() || main.isPresent() && main.get().equals(c.className().replace('/', '.'))
+                    || first(c.annotations(), s.mainClassAnnotations()) != null) {
                 return new Match(NO_ANNOTATION, m);
             }
         }

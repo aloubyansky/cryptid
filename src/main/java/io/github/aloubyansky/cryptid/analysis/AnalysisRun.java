@@ -240,7 +240,7 @@ public final class AnalysisRun {
         }
         if (application == 0) {
             log.infof("No application artifacts: entry points aren't searched for");
-            entryPoints = new EntryPointDetector.Result(List.of(), Set.of());
+            entryPoints = new EntryPointDetector.Result(List.of(), Map.of(), Set.of());
             return;
         }
         entryPoints = new EntryPointDetector(entryPointSpecs, hierarchy).detect(inputs);
@@ -250,9 +250,10 @@ public final class AnalysisRun {
                         e.authenticated().map(String::valueOf).orElse("?"));
             }
         }
-        log.infof("Found %d entry points in %d application artifacts %s, and %d classes instantiated without a visible new",
+        log.infof("Found %d entry points in %d application artifacts %s, %d callbacks in %d classes, and %d classes instantiated"
+                        + " without a visible new",
                 entryPoints.entryPoints().size(), application, EntryPointDetector.summary(entryPoints.entryPoints()),
-                entryPoints.instantiated().size());
+                entryPoints.callbackCount(), entryPoints.callbacks().size(), entryPoints.instantiated().size());
     }
 
     /** The class table as an artifact sees it, for matching specs. */
