@@ -91,6 +91,18 @@ The CBOM's `metadata.component` is the SBOM's root component. `components` lists
 
 An occurrence's `location` is the artifact path (`groupId/artifactId/version`) followed by the source file, as recorded in the class file. `line` is missing when the class has no line numbers. `additionalContext` is the method called there: the crypto API, or, where the value comes from a caller, the method the caller passes it to (here, `Sha2Crypt.java` line 114 calls `sha2Crypt` with `"SHA-256"`).
 
+#### Reachability
+
+With entry points, detected in the application's artifacts (`--application`) or supplied (`--entry-points`), the call graph is walked from them, and every occurrence is reached or not. CycloneDX has no field for this, so it's written as properties:
+
+- each occurrence has a `bom-ref`, `<asset bom-ref>/occurrence/<n>`;
+- an asset has `cryptid:reachability`: `reached` if any occurrence is, `not-reached`, or `unknown` when there were no entry points;
+- for each reached occurrence, a `cryptid:reached` property: its `bom-ref`, the number of entry points reaching it, and the first one, as `kind address` (`http GET /realms/{realm}/...`), or `runtime` when only the runtime reaches it, e.g. in a bean's constructor;
+- `evidence.callstack` of a reached asset is a shortest path from an entry point to it, innermost frame first;
+- `metadata` has `cryptid:reachability` (`computed` or `unknown`) and `cryptid:reachability:entry-points`, a count per kind, exposure and source.
+
+A virtual call reaches the implementations of the classes instantiated in reached code, or by the runtime: beans, service providers, the classes declaring entry points. Reflection, other than service loading, isn't followed.
+
 ### Limitations
 
 - Only Java bytecode, and only the APIs in the specs (JCA/JCE, JSSE, Bouncy Castle). Other libraries, such as Google Tink or Conscrypt, need spec entries.

@@ -4,6 +4,7 @@ import io.github.aloubyansky.cryptid.ArtifactCoordinates;
 import io.github.aloubyansky.cryptid.AssetOccurrence;
 import io.github.aloubyansky.cryptid.CryptoAsset;
 import io.github.aloubyansky.cryptid.CryptoInventory;
+import io.github.aloubyansky.cryptid.EntryPoint;
 import io.github.aloubyansky.cryptid.analysis.BuildInfo;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -14,8 +15,10 @@ import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.Function;
 import org.cyclonedx.Version;
 import org.cyclonedx.exception.GeneratorException;
@@ -24,6 +27,7 @@ import org.cyclonedx.model.Bom;
 import org.cyclonedx.model.Component;
 import org.cyclonedx.model.Dependency;
 import org.cyclonedx.model.Metadata;
+import org.cyclonedx.model.Property;
 import org.cyclonedx.model.metadata.ToolInformation;
 
 /**
@@ -58,6 +62,7 @@ public final class CbomWriter {
             Component metadataComponent) {
         final Bom bom = new Bom();
         bom.setMetadata(metadata());
+        reachabilityMetadata(inventory, bom.getMetadata());
         final String rootRef = metadataComponent == null ? null : metadataComponent.getBomRef();
         if (metadataComponent != null) {
             bom.getMetadata().setComponent(metadataComponent);
@@ -83,6 +88,22 @@ public final class CbomWriter {
         written.dependencies().forEach(bom::addDependency);
         links.values().forEach(bom::addDependency);
         return bom;
+    }
+
+    /** What the reachability search was: whether it ran, and the entry points it started from, by kind and exposure. */
+    private static void reachabilityMetadata(CryptoInventory inventory, Metadata metadata) {
+        final boolean computed = inventory.assets().stream()
+                .flatMap(a -> a.occurrences().stream())
+                .anyMatch(o -> o.reachability() != AssetOccurrence.Reachability.UNKNOWN);
+        metadata.addProperty(new Property("cryptid:reachability", computed ? "computed" : "unknown"));
+        if (!inventory.entryPoints().isEmpty()) {
+            final Map<String, Integer> counts = new TreeMap<>();
+            for (EntryPoint e : inventory.entryPoints()) {
+                counts.merge(e.kind() + " " + e.exposure().name().toLowerCase(Locale.ROOT) + " " + e.source().name().toLowerCase(Locale.ROOT),
+                        1, Integer::sum);
+            }
+            counts.forEach((k, n) -> metadata.addProperty(new Property("cryptid:reachability:entry-points", k + " " + n)));
+        }
     }
 
     /**

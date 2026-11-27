@@ -6,6 +6,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.UnaryOperator;
 
 /**
  * A cryptographic asset: what it is, where it occurs, and the assets it depends on, e.g. an RSA-PSS
@@ -69,6 +70,13 @@ public final class CryptoAsset {
     void addOccurrence(AssetOccurrence occurrence) {
         if (occurrenceSet.add(occurrence)) {
             occurrences.add(occurrence);
+        }
+    }
+
+    /** Replaces the occurrences with those a function makes of them, e.g. with their reachability. */
+    void replaceOccurrences(UnaryOperator<AssetOccurrence> f) {
+        for (int i = 0; i < occurrences.size(); i++) {
+            occurrences.set(i, f.apply(occurrences.get(i)));
         }
     }
 

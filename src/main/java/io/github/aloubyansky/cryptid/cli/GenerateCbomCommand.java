@@ -4,7 +4,9 @@ import io.github.aloubyansky.cryptid.AnalysisInput;
 import io.github.aloubyansky.cryptid.AnalysisOptions;
 import io.github.aloubyansky.cryptid.ArtifactAnalysis;
 import io.github.aloubyansky.cryptid.ArtifactCoordinates;
+import io.github.aloubyansky.cryptid.AssetOccurrence;
 import io.github.aloubyansky.cryptid.Cryptid;
+import io.github.aloubyansky.cryptid.CryptoAsset;
 import io.github.aloubyansky.cryptid.CryptoInventory;
 import io.github.aloubyansky.cryptid.InputArtifact;
 import io.github.aloubyansky.cryptid.cyclonedx.CbomWriter;
@@ -14,6 +16,7 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -196,6 +199,7 @@ public class GenerateCbomCommand implements Callable<Integer> {
         final CbomAssembler.Result result =
                 assembler.assemble(sbom, resolved.stream().map(ArtifactGroup::members).toList(), inventory);
         CbomWriter.write(result.bom(), output);
+        logReachability(inventory);
         log.infof(
                 "Wrote CBOM to %s: %d findings in %d components, total time %ds",
                 output,
@@ -203,6 +207,29 @@ public class GenerateCbomCommand implements Callable<Integer> {
                 result.componentsWithAssets(),
                 (System.currentTimeMillis() - start) / 1000);
         return 0;
+    }
+
+    /** Logs how many occurrences and assets are reached, unless reachability is unknown. */
+    private static void logReachability(CryptoInventory inventory) {
+        final Map<AssetOccurrence.Reachability, Integer> occurrences = new EnumMap<>(AssetOccurrence.Reachability.class);
+        int reachedAssets = 0;
+        for (CryptoAsset a : inventory.assets()) {
+            boolean reached = false;
+            for (AssetOccurrence o : a.occurrences()) {
+                occurrences.merge(o.reachability(), 1, Integer::sum);
+                reached |= o.reachability() == AssetOccurrence.Reachability.REACHED;
+            }
+            if (reached) {
+                reachedAssets++;
+            }
+        }
+        if (occurrences.keySet().equals(Set.of(AssetOccurrence.Reachability.UNKNOWN))) {
+            return;
+        }
+        log.infof("Reachability: %d occurrences reached, %d not reached; %d of %d assets reached",
+                occurrences.getOrDefault(AssetOccurrence.Reachability.REACHED, 0),
+                occurrences.getOrDefault(AssetOccurrence.Reachability.NOT_REACHED, 0),
+                reachedAssets, inventory.assets().size());
     }
 
     /**

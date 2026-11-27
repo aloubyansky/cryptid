@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * The crypto assets found in a set of artifacts, which a CBOM is written from, with the entry
@@ -67,6 +68,7 @@ public final class CryptoInventory {
 
         private final List<ArtifactAnalysis> artifacts = new ArrayList<>();
         private final List<EntryPoint> entryPoints = new ArrayList<>();
+        private Function<CodeLocation, AssetOccurrence.Reach> reachability;
         private final Map<CryptoAsset, CryptoAsset> assets = new LinkedHashMap<>();
         private boolean built;
 
@@ -134,6 +136,20 @@ public final class CryptoInventory {
         public Builder artifact(ArtifactAnalysis analysis) {
             check();
             artifacts.add(analysis);
+            return this;
+        }
+
+        /**
+         * Sets how the occurrences are reached, applied to every occurrence when the inventory is
+         * built. Without it, every occurrence's reachability is unknown.
+         *
+         * @param reach whether the code at a location is reached, from which entry points, and by
+         *     which path
+         * @return this builder
+         */
+        public Builder reachability(Function<CodeLocation, AssetOccurrence.Reach> reach) {
+            check();
+            this.reachability = reach;
             return this;
         }
 
@@ -214,6 +230,9 @@ public final class CryptoInventory {
         public CryptoInventory build() {
             check();
             built = true;
+            if (reachability != null) {
+                assets.values().forEach(a -> a.replaceOccurrences(o -> o.withReach(reachability.apply(o.location()))));
+            }
             return new CryptoInventory(artifacts, new ArrayList<>(assets.values()), entryPoints);
         }
 

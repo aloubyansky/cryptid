@@ -5,7 +5,11 @@ import io.github.aloubyansky.cryptid.CipherSuite;
 import io.github.aloubyansky.cryptid.CodeLocation;
 import io.github.aloubyansky.cryptid.CryptoAsset;
 import io.github.aloubyansky.cryptid.CryptoAssetProperties;
+import io.github.aloubyansky.cryptid.EntryPoint;
+import io.github.aloubyansky.cryptid.MethodId;
 import io.github.aloubyansky.cryptid.detection.ArtifactPaths;
+import java.lang.constant.ClassDesc;
+import java.lang.constant.MethodTypeDesc;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -15,6 +19,7 @@ import java.util.UUID;
 import org.cyclonedx.model.Component;
 import org.cyclonedx.model.Dependency;
 import org.cyclonedx.model.Evidence;
+import org.cyclonedx.model.Property;
 import org.cyclonedx.model.component.crypto.AlgorithmProperties;
 import org.cyclonedx.model.component.crypto.CryptoProperties;
 import org.cyclonedx.model.component.crypto.ProtocolProperties;
@@ -26,6 +31,8 @@ import org.cyclonedx.model.component.crypto.enums.Padding;
 import org.cyclonedx.model.component.crypto.enums.Primitive;
 import org.cyclonedx.model.component.crypto.enums.ProtocolType;
 import org.cyclonedx.model.component.crypto.enums.RelatedCryptoMaterialType;
+import org.cyclonedx.model.component.evidence.Callstack;
+import org.cyclonedx.model.component.evidence.Frame;
 import org.cyclonedx.model.component.evidence.Occurrence;
 
 /**
@@ -112,8 +119,23 @@ final class CryptoAssetComponents {
         c.setName(a.properties() instanceof CryptoAssetProperties.RelatedMaterial ? a.name() + "@" + ref : a.name());
         if (!a.occurrences().isEmpty()) {
             final List<Occurrence> occurrences = new ArrayList<>(a.occurrences().size());
-            for (AssetOccurrence o : a.occurrences()) {
+            final List<Property> reached = new ArrayList<>();
+            AssetOccurrence shortest = null;
+            boolean anyKnown = false;
+            for (int i = 0; i < a.occurrences().size(); i++) {
+                final AssetOccurrence o = a.occurrences().get(i);
                 final Occurrence out = new Occurrence();
+                final String occurrenceRef = ref + "/occurrence/" + i;
+                out.setBomRef(occurrenceRef);
+                anyKnown |= o.reachability() != AssetOccurrence.Reachability.UNKNOWN;
+                if (o.reachability() == AssetOccurrence.Reachability.REACHED) {
+                    reached.add(new Property(REACHED, occurrenceRef + " " + o.reachedBy().size() + " " + firstEntryPoint(o)));
+                    // the call stack of the shortest path from an entry point; one only the runtime
+                    // reaches, e.g. a service provider's constructor, if there's no other
+                    if (shortest == null || better(o, shortest)) {
+                        shortest = o;
+                    }
+                }
                 out.setLocation(location(o.location()));
                 if (o.location().line() > 0) {
                     out.setLine(o.location().line());
@@ -126,10 +148,77 @@ final class CryptoAssetComponents {
             }
             final Evidence evidence = new Evidence();
             evidence.setOccurrences(occurrences);
+            if (shortest != null) {
+                evidence.setCallstack(callstack(shortest.path()));
+            }
             c.setEvidence(evidence);
+            c.addProperty(new Property(REACHABILITY, !anyKnown ? "unknown" : reached.isEmpty() ? "not-reached" : "reached"));
+            reached.forEach(c::addProperty);
         }
         c.setCryptoProperties(properties(a.properties(), refs));
         return c;
+    }
+
+    /** The asset property saying whether any of its occurrences is reached: reached, not-reached or unknown. */
+    static final String REACHABILITY = "cryptid:reachability";
+
+    /**
+     * The asset property of a reached occurrence: its bom-ref, the number of entry points reaching
+     * it, and the kind and address, or method, of the one it was first reached from.
+     */
+    static final String REACHED = "cryptid:reached";
+
+    /** The entry point an occurrence was first reached from, as {@code kind address-or-method}, or {@code runtime}. */
+    private static String firstEntryPoint(AssetOccurrence o) {
+        final MethodId start = o.path().isEmpty() ? null : o.path().get(0);
+        EntryPoint first = null;
+        for (EntryPoint e : o.reachedBy()) {
+            if (e.method().equals(start)) {
+                first = e;
+                break;
+            }
+        }
+        if (first == null && !o.reachedBy().isEmpty()) {
+            first = o.reachedBy().get(0);
+        }
+        if (first == null) {
+            return "runtime";
+        }
+        return first.kind() + " " + first.address().orElse(first.method().toString());
+    }
+
+    /** Whether an occurrence's path makes a better call stack than another's: from an entry point, then shorter. */
+    private static boolean better(AssetOccurrence o, AssetOccurrence than) {
+        final boolean fromEntry = !o.reachedBy().isEmpty();
+        final boolean thanFromEntry = !than.reachedBy().isEmpty();
+        if (fromEntry != thanFromEntry) {
+            return fromEntry;
+        }
+        return o.path().size() < than.path().size();
+    }
+
+    /** A call stack of a path, innermost first, as a stack trace lists frames. */
+    private static Callstack callstack(List<MethodId> path) {
+        final List<Frame> frames = new ArrayList<>(path.size());
+        for (int i = path.size() - 1; i >= 0; i--) {
+            final MethodId m = path.get(i);
+            final Frame f = new Frame();
+            final int dot = m.className().lastIndexOf('.');
+            if (dot > 0) {
+                f.setPackageFrame(m.className().substring(0, dot));
+            }
+            f.setModule(m.className());
+            f.setFunction(m.name());
+            final List<String> parameters = MethodTypeDesc.ofDescriptor(m.descriptor()).parameterList().stream()
+                    .map(ClassDesc::displayName).toList();
+            if (!parameters.isEmpty()) {
+                f.setParameters(parameters);
+            }
+            frames.add(f);
+        }
+        final Callstack callstack = new Callstack();
+        callstack.setFrames(frames);
+        return callstack;
     }
 
     private static CryptoProperties properties(CryptoAssetProperties properties, Map<CryptoAsset, String> refs) {

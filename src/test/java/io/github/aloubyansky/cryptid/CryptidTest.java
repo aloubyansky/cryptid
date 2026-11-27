@@ -111,7 +111,7 @@ class CryptidTest {
     }
 
     @Test
-    void keepsSuppliedEntryPointsAndLeavesReachabilityUnknown() {
+    void keepsSuppliedEntryPointsAndWalksFromThem() {
         final EntryPoint run = EntryPoint.builder(new MethodId("org.acme.app.App", "run", "()V"), EntryPoint.HTTP)
                 .address("GET /run")
                 .build();
@@ -127,8 +127,22 @@ class CryptidTest {
         assertTrue(run.authenticated().isEmpty());
         for (CryptoAsset a : inventory.assets()) {
             for (AssetOccurrence o : a.occurrences()) {
+                assertTrue(o.reachability() != AssetOccurrence.Reachability.UNKNOWN, o.toString());
+                if (o.reachability() == AssetOccurrence.Reachability.REACHED && !o.reachedBy().isEmpty()) {
+                    assertEquals(List.of(run), o.reachedBy());
+                    assertEquals(run.method(), o.path().get(0));
+                }
+            }
+        }
+    }
+
+    @Test
+    void withoutEntryPointsReachabilityIsUnknown() {
+        for (CryptoAsset a : cryptid.analyze(inputs(), AnalysisOptions.defaults()).assets()) {
+            for (AssetOccurrence o : a.occurrences()) {
                 assertEquals(AssetOccurrence.Reachability.UNKNOWN, o.reachability());
                 assertEquals(List.of(), o.reachedBy());
+                assertEquals(List.of(), o.path());
             }
         }
     }

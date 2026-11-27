@@ -4,6 +4,8 @@ import io.github.aloubyansky.cryptid.AnalysisInput;
 import io.github.aloubyansky.cryptid.AnalysisOptions;
 import io.github.aloubyansky.cryptid.ArtifactAnalysis;
 import io.github.aloubyansky.cryptid.ArtifactCoordinates;
+import io.github.aloubyansky.cryptid.AssetOccurrence;
+import io.github.aloubyansky.cryptid.CodeLocation;
 import io.github.aloubyansky.cryptid.CryptoInventory;
 import io.github.aloubyansky.cryptid.EntryPoint;
 import io.github.aloubyansky.cryptid.InputArtifact;
@@ -15,6 +17,7 @@ import io.github.aloubyansky.cryptid.bytecode.JarCache;
 import io.github.aloubyansky.cryptid.bytecode.Types;
 import io.github.aloubyansky.cryptid.detection.ArtifactPaths;
 import io.github.aloubyansky.cryptid.reach.EntryPointDetector;
+import io.github.aloubyansky.cryptid.reach.ReachabilityWalk;
 import io.github.aloubyansky.cryptid.scan.ArtifactScan;
 import io.github.aloubyansky.cryptid.scan.BytecodeScanner;
 import io.github.aloubyansky.cryptid.spec.EntryPointSpecs;
@@ -37,6 +40,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import org.jboss.logging.Logger;
 
 /**
@@ -58,6 +62,10 @@ public final class AnalysisRun {
     private final EntryPointSpecs entryPointSpecs;
     /** The entry points and instantiated classes found, once phase A has run. */
     private EntryPointDetector.Result entryPoints;
+    /** The entry points of the walk, roots and callbacks, once it has run. */
+    private List<EntryPoint> reachableEntryPoints;
+    /** How each location is reached, once the walk has run. */
+    private Function<CodeLocation, AssetOccurrence.Reach> reachability;
     private final List<InputArtifact> artifacts;
     private final Map<ArtifactCoordinates, InputArtifact> byCoordinates = new HashMap<>();
     private final List<Path> allJars;
@@ -170,9 +178,14 @@ public final class AnalysisRun {
 
         // merge, in the order of the artifacts, so that the inventory is the same in every run
         final CryptoInventory.Builder inventory = CryptoInventory.builder();
-        input.entryPoints().forEach(inventory::entryPoint);
-        if (entryPoints != null) {
-            entryPoints.entryPoints().forEach(inventory::entryPoint);
+        if (reachableEntryPoints != null) {
+            reachableEntryPoints.forEach(inventory::entryPoint);
+            inventory.reachability(reachability);
+        } else {
+            input.entryPoints().forEach(inventory::entryPoint);
+            if (entryPoints != null) {
+                entryPoints.entryPoints().forEach(inventory::entryPoint);
+            }
         }
         for (ArtifactScan s : scans) {
             inventory.artifact(s.analysis());
@@ -224,7 +237,42 @@ public final class AnalysisRun {
         for (InputArtifact a : artifacts) {
             sources.put(ArtifactPaths.of(a.coordinates()), new DemandCallIndex.Source(a.coordinates(), a.jar()));
         }
+        walk(callGraph);
         return new DemandCallIndex(allClasses, hierarchy, callGraph, sources, jarCache);
+    }
+
+    /**
+     * Walks the call graph from the entry points: the roots detected and supplied, and the
+     * callbacks of the classes that become instantiated. Without entry points, reachability stays
+     * unknown.
+     */
+    private void walk(CallGraph callGraph) {
+        final List<EntryPoint> roots = new ArrayList<>(input.entryPoints());
+        roots.addAll(entryPoints.entryPoints());
+        if (roots.isEmpty()) {
+            log.infof("No entry points: reachability is unknown");
+            return;
+        }
+        final long t0 = System.currentTimeMillis();
+        final Set<String> runtimeInstantiated = new HashSet<>(entryPoints.instantiated());
+        input.instantiatedClasses().forEach(c -> runtimeInstantiated.add(c.replace('.', '/')));
+        final ReachabilityWalk walk = new ReachabilityWalk(callGraph, hierarchy, roots, entryPoints.callbacks());
+        final ReachabilityWalk.Summary summary = walk.walk(runtimeInstantiated);
+        reachableEntryPoints = summary.entryPoints();
+        reachability = l -> {
+            if (l.artifact() == null) {
+                return AssetOccurrence.Reach.UNKNOWN;
+            }
+            final int m = callGraph.method(ArtifactPaths.of(l.artifact()),
+                    l.method().className().replace('.', '/') + "." + l.method().name() + l.method().descriptor());
+            return walk.isReached(m)
+                    ? new AssetOccurrence.Reach(AssetOccurrence.Reachability.REACHED, walk.entryPointsOf(m), walk.pathTo(m))
+                    : AssetOccurrence.Reach.NOT_REACHED;
+        };
+        log.infof("Reached %d of %d methods from %d entry points (%d roots, %d callbacks of instantiated classes),"
+                        + " %d types instantiated, in %d ms",
+                summary.reachedMethods(), callGraph.methodCount(), summary.entryPoints().size(), roots.size(),
+                summary.entryPoints().size() - roots.size(), summary.instantiatedTypes(), System.currentTimeMillis() - t0);
     }
 
     /** Finds the entry points in the application's artifacts, and the classes instantiated without a visible {@code new}. */

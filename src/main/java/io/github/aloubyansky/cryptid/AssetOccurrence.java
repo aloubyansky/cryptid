@@ -36,20 +36,43 @@ public final class AssetOccurrence {
         PROVISION
     }
 
-    private final CodeLocation location;
-    private final Role role;
-    private final Reachability reachability;
-    private final List<EntryPoint> reachedBy;
+    /**
+     * Whether an occurrence is reached, from which entry points, and by which path.
+     *
+     * @param reachability the reachability
+     * @param reachedBy the entry points reaching the occurrence's method; empty if not reached, or
+     *     if it is reached only by the runtime, e.g. a bean's constructor
+     * @param path a shortest call path to the occurrence's method, the entry point's method first;
+     *     empty if not reached
+     */
+    public record Reach(Reachability reachability, List<EntryPoint> reachedBy, List<MethodId> path) {
 
-    AssetOccurrence(CodeLocation location, Role role) {
-        this(location, role, Reachability.UNKNOWN, List.of());
+        /** Unknown reachability. */
+        public static final Reach UNKNOWN = new Reach(Reachability.UNKNOWN, List.of(), List.of());
+
+        /** Not reached. */
+        public static final Reach NOT_REACHED = new Reach(Reachability.NOT_REACHED, List.of(), List.of());
+
+        /** Copies the lists. */
+        public Reach {
+            Objects.requireNonNull(reachability, "reachability");
+            reachedBy = List.copyOf(reachedBy);
+            path = List.copyOf(path);
+        }
     }
 
-    AssetOccurrence(CodeLocation location, Role role, Reachability reachability, List<EntryPoint> reachedBy) {
+    private final CodeLocation location;
+    private final Role role;
+    private final Reach reach;
+
+    AssetOccurrence(CodeLocation location, Role role) {
+        this(location, role, Reach.UNKNOWN);
+    }
+
+    AssetOccurrence(CodeLocation location, Role role, Reach reach) {
         this.location = Objects.requireNonNull(location, "location");
         this.role = Objects.requireNonNull(role, "role");
-        this.reachability = Objects.requireNonNull(reachability, "reachability");
-        this.reachedBy = List.copyOf(reachedBy);
+        this.reach = Objects.requireNonNull(reach, "reach");
     }
 
     /**
@@ -76,16 +99,33 @@ public final class AssetOccurrence {
      * @return {@link Reachability#UNKNOWN} until reachability is computed
      */
     public Reachability reachability() {
-        return reachability;
+        return reach.reachability();
     }
 
     /**
      * The entry points the occurrence is reached from.
      *
-     * @return the entry points; empty unless {@link Reachability#REACHED}
+     * @return the entry points, in the inventory's order; empty unless {@link
+     *     Reachability#REACHED}, and empty for an occurrence reached only by the runtime, e.g. in a
+     *     bean's constructor
      */
     public List<EntryPoint> reachedBy() {
-        return reachedBy;
+        return reach.reachedBy();
+    }
+
+    /**
+     * A shortest call path from an entry point to the occurrence's method.
+     *
+     * @return the methods, the entry point's first and the occurrence's last; empty unless
+     *     {@link Reachability#REACHED}
+     */
+    public List<MethodId> path() {
+        return reach.path();
+    }
+
+    /** This occurrence with a reachability. */
+    AssetOccurrence withReach(Reach r) {
+        return new AssetOccurrence(location, role, r);
     }
 
     /**
@@ -106,6 +146,6 @@ public final class AssetOccurrence {
 
     @Override
     public String toString() {
-        return "AssetOccurrence[location=" + location + ", role=" + role + ", reachability=" + reachability + "]";
+        return "AssetOccurrence[location=" + location + ", role=" + role + ", reachability=" + reach.reachability() + "]";
     }
 }

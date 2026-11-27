@@ -75,17 +75,15 @@ This continues [reachability-design.md](reachability-design.md), steps 2 and 3. 
       - JAX-RS locators are entry points of their own kind, `http-locator`, with a path and no verb.
 
       Keycloak: 35 roots (19 HTTP methods, 14 locators, `KeycloakMain.main` and `run`) and 722 callbacks in 145 classes, instead of 638 entry points; the shaded and tool `main`s are gone. The CBOM is unchanged.
-3. **Reachability walk and CBOM marking.**
-   - The forward walk to a fixpoint over instantiated classes.
-   - Each occurrence marked through its `CodeLocation`'s method, or as `unknown` when nothing was searched.
-   - Metadata on the search.
-   - `--paths` for the paths.
-   - Reached and not-reached counts in the summary.
+3. ~~**Reachability walk and CBOM marking.**~~ Done 2026-11-27:
+   - `ReachabilityWalk`: breadth first from the roots, over exact calls, virtual calls dispatched to the instantiated subtypes (also those instantiated later), method handles, static initializers, and the overrides of JDK methods (`Runnable.run`) of instantiated types. The runtime-instantiated classes' constructors are reached with no entry point; an instantiated class's callbacks become entry points.
+   - The set of entry points reaching each method, as bitsets propagated over the walk's edges, and a shortest path from the first one: `AssetOccurrence.reachedBy()` and `path()`, set through `CryptoInventory.Builder.reachability`. Without entry points, `unknown`.
+   - The CBOM: each occurrence has a `bom-ref`; an asset has `cryptid:reachability` (`reached`, `not-reached`, `unknown`), a `cryptid:reached` per reached occurrence (its `bom-ref`, the number of entry points, the first one), and `evidence.callstack` of its shortest path from an entry point. `metadata` has `cryptid:reachability` and the entry points by kind, exposure and source.
+   - Reached and not-reached counts in the log.
+   - `--paths` deferred: the call stack gives one path per asset.
 
-   Measure: the share of Keycloak's occurrences reached, and a manual check of a sample of each outcome. Target: under a minute, in the same heap.
-4. **Endpoint sets and services.**
-   - For each occurrence, the set of entry points reaching it, propagated as bitsets over the resolved graph.
-   - Endpoints written as CycloneDX `services` that `dependsOn` the assets they reach.
+   Keycloak: 151,656 of 786,908 methods reached from 745 entry points (35 roots, 710 callbacks), 14,952 types instantiated, in about 1 s; 930 of 4,320 occurrences reached (252 of them only by the runtime) and 209 of 725 assets; the whole run 13 s in a 2 GB heap. Not reached, as expected: `keycloak-admin-cli` (not yet an entry point), most of bcprov's 2,497, client-side `JWTClientSecretCredentialsProvider`. To check: xmlsec has 386 of its 410 occurrences reached, which looks high; the cause may be its static initializers, or a virtual call dispatched to every instantiated subtype.
+4. **Services.** Endpoints written as CycloneDX `services` that `dependsOn` the assets they reach, from the sets step 3 computes.
 5. **Review the open encoding questions** against real output: property names, services per method or per resource class, whether paths belong in the CBOM, and the `unknown` state.
 6. **Facts cache.** The graph facts (edges, instantiations, matched annotations, services) are cached per JAR content too, as detection's results are since step 2.4.
 

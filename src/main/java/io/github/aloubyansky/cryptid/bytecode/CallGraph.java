@@ -650,6 +650,84 @@ public final class CallGraph {
     }
 
     /**
+     * The method an instance of a type runs for a member, along its superclass chain and then its
+     * interfaces, as {@link #dispatch} does for a declared method.
+     *
+     * @param type the id of the instance's type
+     * @param member {@code name+descriptor}
+     * @return the method's id, or {@code -1} if no analyzed supertype declares it
+     */
+    public int implementation(int type, String member) {
+        final int m = Arrays.binarySearch(memberNames, member);
+        return m < 0 ? -1 : dispatchCache.computeIfAbsent((long) type << 32 | m, k -> implementation(type, m));
+    }
+
+    /**
+     * The static initializer of a type.
+     *
+     * @param type the type's id
+     * @return the id of its {@code <clinit>}, or {@code -1} if it has none
+     */
+    public int staticInitializer(int type) {
+        return methodOf(type, "<clinit>()V");
+    }
+
+    /**
+     * The methods a type declares.
+     *
+     * @param type the type's id
+     * @return the ids of its methods, ascending
+     */
+    public int[] declaredMethods(int type) {
+        final int[] result = new int[typeMethodsEnd[type] - typeMethodsStart[type]];
+        for (int i = 0; i < result.length; i++) {
+            result[i] = typeMethodsStart[type] + i;
+        }
+        return result;
+    }
+
+    /**
+     * The member of a method, without its class.
+     *
+     * @param method the method's id
+     * @return {@code name+descriptor}
+     */
+    public String member(int method) {
+        return memberNames[methodMember[method]];
+    }
+
+    /**
+     * Returns the ids of every copy of a class.
+     *
+     * @param internalName the class's internal name
+     * @return the type ids, ascending; empty if the class isn't analyzed
+     */
+    public int[] types(String internalName) {
+        final Integer first = firstType.get(internalName);
+        if (first == null) {
+            return NONE;
+        }
+        int end = first;
+        while (end < typeNames.length && typeNames[end].equals(internalName)) {
+            end++;
+        }
+        final int[] result = new int[end - first];
+        for (int i = 0; i < result.length; i++) {
+            result[i] = first + i;
+        }
+        return result;
+    }
+
+    /**
+     * Returns the number of types: copies of analyzed classes.
+     *
+     * @return the number of types
+     */
+    public int typeCount() {
+        return typeNames.length;
+    }
+
+    /**
      * Returns the number of methods of the analyzed classes, counted per copy.
      *
      * @return the number of methods

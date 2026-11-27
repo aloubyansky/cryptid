@@ -2,6 +2,7 @@ package io.github.aloubyansky.cryptid.bytecode;
 
 import io.smallrye.classfile.ClassFile;
 import io.smallrye.classfile.ClassModel;
+import io.smallrye.classfile.MethodModel;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -115,6 +116,57 @@ public final class Types {
      */
     public static Types of(Hierarchy.View view) {
         return new Types(JdkClasses::read, null, List.of(), view);
+    }
+
+    private static final Map<String, Set<String>> JDK_MEMBERS = new ConcurrentHashMap<>();
+
+    /**
+     * The instance methods a JDK type declares or inherits from the JDK, which the JDK may call on
+     * an object of a subclass, e.g. {@code run()V} of {@code java/lang/Runnable}.
+     *
+     * @param internalName a class's internal name
+     * @return {@code name+descriptor} of its non-private, non-static methods and those of its JDK
+     *     supertypes, constructors left out; empty if it isn't a JDK class
+     */
+    public static Set<String> jdkMembers(String internalName) {
+        final Set<String> known = JDK_MEMBERS.get(internalName);
+        if (known != null) {
+            return known;
+        }
+        // not computeIfAbsent: computing a class's members needs its supertypes', recursively
+        final Set<String> members = readJdkMembers(internalName);
+        final Set<String> raced = JDK_MEMBERS.putIfAbsent(internalName, members);
+        return raced == null ? members : raced;
+    }
+
+    /** Reads the members {@link #jdkMembers} returns. */
+    private static Set<String> readJdkMembers(String n) {
+        final byte[] bytes;
+        try {
+            bytes = JdkClasses.read(n);
+        } catch (IOException e) {
+            return Set.of();
+        }
+        if (bytes == null) {
+            return Set.of();
+        }
+        final ClassModel cm;
+        try {
+            cm = ClassFile.of().parse(bytes);
+        } catch (RuntimeException e) {
+            return Set.of();
+        }
+        final Set<String> result = new HashSet<>();
+        for (MethodModel mm : cm.methods()) {
+            final String name = mm.methodName().stringValue();
+            final int flags = mm.flags().flagsMask();
+            if (!name.startsWith("<") && (flags & (0x0002 | 0x0008)) == 0) {
+                result.add(name + mm.methodType().stringValue());
+            }
+        }
+        cm.superclass().ifPresent(c -> result.addAll(jdkMembers(c.asInternalName())));
+        cm.interfaces().forEach(c -> result.addAll(jdkMembers(c.asInternalName())));
+        return Set.copyOf(result);
     }
 
     /**
