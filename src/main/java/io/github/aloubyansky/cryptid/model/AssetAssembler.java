@@ -6,6 +6,7 @@ import com.ibm.engine.rule.IBundle;
 import com.ibm.mapper.model.INode;
 import com.ibm.mapper.model.NodeOrigin;
 import com.ibm.mapper.model.collections.AbstractAssetCollection;
+import com.ibm.mapper.utils.DetectionLocation;
 import io.github.aloubyansky.cryptid.detection.CryptoEvent;
 import io.github.aloubyansky.cryptid.detection.CryptoEventDetector;
 import io.github.aloubyansky.cryptid.detection.Loc;
@@ -59,16 +60,33 @@ final class AssetAssembler {
         Optional<INode> translate(IBundle library, IValue<Loc> value, IDetectionContext context, String file);
     }
 
+    /** Locates a node of cryptid's own model. */
+    @FunctionalInterface
+    interface Locator {
+        /**
+         * Returns where a node is.
+         *
+         * @param library the event's library
+         * @param loc the call site
+         * @param file the source file the node is located in
+         * @return the location
+         */
+        DetectionLocation locate(IBundle library, Loc loc, String file);
+    }
+
     private final ValueTranslator translator;
+    private final Locator locator;
     private final List<INode> alternatives = new ArrayList<>();
 
     /**
      * Creates an assembler for one event tree.
      *
      * @param translator translates each action and value with its context's translator
+     * @param locator locates the nodes of cryptid's own model
      */
-    AssetAssembler(ValueTranslator translator) {
+    AssetAssembler(ValueTranslator translator, Locator locator) {
         this.translator = translator;
+        this.locator = locator;
     }
 
     /**
@@ -90,7 +108,7 @@ final class AssetAssembler {
     private Map<Integer, List<INode>> own(CryptoEvent d) {
         final Map<Integer, List<INode>> nodes = new TreeMap<>();
         d.action().ifPresent(a -> (d.model().isPresent()
-                        ? OwnModels.create(d.model().get(), CryptoAssetModeler.location(d.library(), a.getLocation(), d.file()))
+                        ? OwnModels.create(d.model().get(), locator.locate(d.library(), a.getLocation(), d.file()))
                         : translator.translate(d.library(), a, d.detectionContext(), d.file()))
                 .ifPresent(n -> nodes.computeIfAbsent(-1, k -> new ArrayList<>()).add(n)));
         d.values().forEach((index, values) -> {

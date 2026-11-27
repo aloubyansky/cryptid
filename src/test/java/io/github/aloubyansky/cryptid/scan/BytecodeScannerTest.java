@@ -4,7 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.aloubyansky.cryptid.ArtifactCoordinates;
+import io.github.aloubyansky.cryptid.CodeLocation;
+import io.github.aloubyansky.cryptid.CryptoInventory;
+import io.github.aloubyansky.cryptid.MethodId;
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
+import io.github.aloubyansky.cryptid.cyclonedx.CryptoAssetComponents;
 import io.github.aloubyansky.cryptid.bytecode.CallGraph;
 import io.github.aloubyansky.cryptid.bytecode.CallIndex;
 import io.github.aloubyansky.cryptid.bytecode.JarCache;
@@ -60,11 +65,11 @@ class BytecodeScannerTest {
     @Test
     void detectsCryptoAssetsInBytecode() throws Exception {
         final Path jar = compile("org/acme/sample/Sample.java", SOURCE);
-        final BytecodeScanner.Result result;
+        final CryptoInventory result;
         try (JarCache jars = new JarCache()) {
-            result = new BytecodeScanner().scan(jar, "org.acme/sample/1.0", List.of(), jars, null);
+            result = new BytecodeScanner().scan(jar, coords("org.acme/sample/1.0"), List.of(), jars, null);
         }
-        final Bom bom = result.bom();
+        final Bom bom = bom(result);
         final Map<String, Occurrence> byName = new TreeMap<>();
         for (Component c : bom.getComponents()) {
             for (Occurrence o : c.getEvidence().getOccurrences()) {
@@ -77,9 +82,19 @@ class BytecodeScannerTest {
         final Occurrence digest = byName.getOrDefault("SHA256", byName.get("SHA-256"));
         assertEquals("org.acme/sample/1.0/org/acme/sample/Sample.java", digest.getLocation());
         assertEquals(13, digest.getLine());
+        assertTrue(digest.getSymbol().startsWith("org.acme.sample.Sample#"), digest.getSymbol());
         assertTrue(digest.getAdditionalContext().startsWith("java.security.MessageDigest#getInstance"),
                 digest.getAdditionalContext());
-        assertEquals(1, result.classes());
+        assertEquals(1, result.artifacts().get(0).classes());
+        // the result model locates the occurrence in its method and artifact
+        final CodeLocation location = result.assets().stream()
+                .filter(a -> a.name().equals("SHA256") || a.name().equals("SHA-256"))
+                .flatMap(a -> a.occurrences().stream()).findFirst().orElseThrow().location();
+        assertEquals(coords("org.acme/sample/1.0"), location.artifact());
+        assertEquals("org/acme/sample/Sample.java", location.sourceFile());
+        assertEquals("org.acme.sample.Sample", location.method().className());
+        assertEquals(new MethodId("java.security.MessageDigest", "getInstance", "(Ljava/lang/String;)Ljava/security/MessageDigest;"),
+                location.invokedMethod());
     }
 
     private static final String MAPPING = """
@@ -113,7 +128,7 @@ class BytecodeScannerTest {
         final Path jar = compile("org/acme/jose/Signer.java", MAPPING);
         final Bom bom;
         try (JarCache jars = new JarCache()) {
-            bom = new BytecodeScanner().scan(jar, "org.acme/jose/1.0", List.of(), jars, null).bom();
+            bom = bom(new BytecodeScanner().scan(jar, coords("org.acme/jose/1.0"), List.of(), jars, null));
         }
         final List<String> names = bom.getComponents().stream().map(Component::getName).toList();
         assertTrue(names.stream().anyMatch(n -> n.contains("RSA")), names.toString());
@@ -150,7 +165,7 @@ class BytecodeScannerTest {
         final Path jar = compile("org/acme/jose/Secrets.java", SECRET);
         final Bom bom;
         try (JarCache jars = new JarCache()) {
-            bom = new BytecodeScanner().scan(jar, "org.acme/jose/1.0", List.of(), jars, null).bom();
+            bom = bom(new BytecodeScanner().scan(jar, coords("org.acme/jose/1.0"), List.of(), jars, null));
         }
         final List<String> names = bom.getComponents().stream().map(Component::getName).toList();
         assertTrue(names.stream().anyMatch(n -> n.startsWith("HMAC")), names.toString());
@@ -221,7 +236,7 @@ class BytecodeScannerTest {
         final Path jar = compile("saml", "org/acme/saml/Encrypt.java", XML_ENCRYPTION, stub);
         final Bom bom;
         try (JarCache jars = new JarCache()) {
-            bom = new BytecodeScanner().scan(jar, "org.acme/saml/1.0", List.of(stub), jars, null).bom();
+            bom = bom(new BytecodeScanner().scan(jar, coords("org.acme/saml/1.0"), List.of(stub), jars, null));
         }
         final Map<String, Component> byName = new TreeMap<>();
         bom.getComponents().forEach(c -> byName.put(c.getName(), c));
@@ -260,7 +275,7 @@ class BytecodeScannerTest {
         final Path jar = compile("cert", "org/acme/cert/Certs.java", CONTENT_SIGNER, Path.of(System.getProperty("java.class.path")));
         final Bom bom;
         try (JarCache jars = new JarCache()) {
-            bom = new BytecodeScanner().scan(jar, "org.acme/cert/1.0", List.of(), jars, null).bom();
+            bom = bom(new BytecodeScanner().scan(jar, coords("org.acme/cert/1.0"), List.of(), jars, null));
         }
         final Map<String, Component> byName = new TreeMap<>();
         bom.getComponents().forEach(c -> byName.put(c.getName(), c));
@@ -305,7 +320,7 @@ class BytecodeScannerTest {
         final Path jar = compile("org/acme/jose/Pss.java", JCA_PSS);
         final Bom bom;
         try (JarCache jars = new JarCache()) {
-            bom = new BytecodeScanner().scan(jar, "org.acme/jose/1.0", List.of(), jars, null).bom();
+            bom = bom(new BytecodeScanner().scan(jar, coords("org.acme/jose/1.0"), List.of(), jars, null));
         }
         final Map<String, Component> byName = new TreeMap<>();
         bom.getComponents().forEach(c -> byName.put(c.getName(), c));
@@ -366,15 +381,15 @@ class BytecodeScannerTest {
             final Set<String> classes = new HashSet<>(jars.classNames(lib));
             classes.addAll(jars.classNames(app));
             final CallIndex index = new CallIndex(classes);
-            scanner.index(lib, "org.acme/lib/1.0", List.of(), jars, index, null, false);
-            scanner.index(app, "org.acme/app/1.0", List.of(lib), jars, index, null, false);
+            scanner.index(lib, coords("org.acme/lib/1.0"), List.of(), jars, index, null, false);
+            scanner.index(app, coords("org.acme/app/1.0"), List.of(lib), jars, index, null, false);
             index.finish();
-            final Bom libBom = scanner.scan(lib, "org.acme/lib/1.0", List.of(), jars, index).bom();
+            final Bom libBom = bom(scanner.scan(lib, coords("org.acme/lib/1.0"), List.of(), jars, index));
             final List<String> inApp = libBom.getComponents() == null ? List.of() : libBom.getComponents().stream()
                     .filter(c -> c.getEvidence().getOccurrences().stream().anyMatch(o -> o.getLocation().startsWith("org.acme/app/")))
                     .map(Component::getName).toList();
             assertEquals(List.of(), inApp);
-            final Bom appBom = scanner.scan(app, "org.acme/app/1.0", List.of(lib), jars, index).bom();
+            final Bom appBom = bom(scanner.scan(app, coords("org.acme/app/1.0"), List.of(lib), jars, index));
             final Component rsa = appBom.getComponents().stream().filter(c -> c.getName().equals("RSA-PKCS1-1.5-SHA-256"))
                     .findFirst().orElseThrow(() -> new AssertionError(names(appBom)));
             assertEquals(List.of(CryptoFunction.SIGN), rsa.getCryptoProperties().getAlgorithmProperties().getCryptoFunctions());
@@ -406,7 +421,7 @@ class BytecodeScannerTest {
         final Path jar = compile("argon2", "org/acme/hash/Hasher.java", ARGON2, Path.of(System.getProperty("java.class.path")));
         final Bom bom;
         try (JarCache jars = new JarCache()) {
-            bom = new BytecodeScanner().scan(jar, "org.acme/hash/1.0", List.of(), jars, null).bom();
+            bom = bom(new BytecodeScanner().scan(jar, coords("org.acme/hash/1.0"), List.of(), jars, null));
         }
         final Component argon2 = (bom.getComponents() == null ? List.<Component>of() : bom.getComponents()).stream()
                 .filter(c -> c.getName().equals("Argon2")).findFirst()
@@ -440,7 +455,7 @@ class BytecodeScannerTest {
         final Path jar = compile("ssh", "org/acme/ssh/Decrypt.java", KEY_LENGTH, Path.of(System.getProperty("java.class.path")));
         final Bom bom;
         try (JarCache jars = new JarCache()) {
-            bom = new BytecodeScanner().scan(jar, "org.acme/ssh/1.0", List.of(), jars, null).bom();
+            bom = bom(new BytecodeScanner().scan(jar, coords("org.acme/ssh/1.0"), List.of(), jars, null));
         }
         final List<String> names = names(bom);
         assertTrue(names.stream().anyMatch(n -> n.startsWith("AES-256")), names.toString());
@@ -485,17 +500,17 @@ class BytecodeScannerTest {
             final Set<String> classes = new HashSet<>(jars.classNames(wrapper));
             classes.addAll(jars.classNames(app));
             final CallIndex index = new CallIndex(classes);
-            final BytecodeScanner.CandidateMethods candidates = scanner.index(wrapper, "org.acme/wrap/1.0", List.of(), jars, index, null, true);
-            assertNull(scanner.index(app, "org.acme/app/1.0", List.of(), jars, index, null, false));
+            final BytecodeScanner.CandidateMethods candidates = scanner.index(wrapper, coords("org.acme/wrap/1.0"), List.of(), jars, index, null, true);
+            assertNull(scanner.index(app, coords("org.acme/app/1.0"), List.of(), jars, index, null, false));
             index.finish();
             // within the wrapper alone, the algorithm is unknown
-            assertTrue(scanner.scan(wrapper, "org.acme/wrap/1.0", List.of(), jars, null).bom().getComponents() == null
-                    || scanner.scan(wrapper, "org.acme/wrap/1.0", List.of(), jars, null).bom().getComponents().isEmpty());
-            bom = scanner.scan(wrapper, "org.acme/wrap/1.0", List.of(), jars, index).bom();
+            assertTrue(bom(scanner.scan(wrapper, coords("org.acme/wrap/1.0"), List.of(), jars, null)).getComponents() == null
+                    || bom(scanner.scan(wrapper, coords("org.acme/wrap/1.0"), List.of(), jars, null)).getComponents().isEmpty());
+            bom = bom(scanner.scan(wrapper, coords("org.acme/wrap/1.0"), List.of(), jars, index));
             // the candidate methods kept by indexing: only the method calling MessageDigest, and the same CBOM
             assertEquals(List.of("org/acme/wrap/Digests.digest(Ljava/lang/String;)Ljava/security/MessageDigest;"),
                     candidates.methods().stream().map(Analyzer.MethodResult::method).toList());
-            final Bom fromCandidates = scanner.scan(wrapper, "org.acme/wrap/1.0", List.of(), jars, index, candidates).bom();
+            final Bom fromCandidates = bom(scanner.scan(wrapper, coords("org.acme/wrap/1.0"), List.of(), jars, index, candidates));
             assertEquals(names(bom), names(fromCandidates));
         }
         final Component digest = bom.getComponents().stream()
@@ -552,10 +567,10 @@ class BytecodeScannerTest {
             final Set<String> classes = new HashSet<>(jars.classNames(spi));
             classes.addAll(jars.classNames(client));
             final CallIndex index = new CallIndex(classes);
-            scanner.index(spi, "org.acme/spi/1.0", List.of(), jars, index, null, false);
-            scanner.index(client, "org.acme/client/1.0", List.of(), jars, index, null, false);
+            scanner.index(spi, coords("org.acme/spi/1.0"), List.of(), jars, index, null, false);
+            scanner.index(client, coords("org.acme/client/1.0"), List.of(), jars, index, null, false);
             index.finish();
-            bom = scanner.scan(spi, "org.acme/spi/1.0", List.of(), jars, index).bom();
+            bom = bom(scanner.scan(spi, coords("org.acme/spi/1.0"), List.of(), jars, index));
         }
         final Map<Integer, String> byLine = new TreeMap<>();
         for (Component c : bom.getComponents()) {
@@ -579,7 +594,7 @@ class BytecodeScannerTest {
             final Set<String> classes = new HashSet<>(jars.classNames(jar));
             final CallIndex index = new CallIndex(classes);
             final CallGraph graph = new CallGraph(classes, index.hierarchy());
-            scanner.index(jar, "org.acme/sample/1.0", List.of(), jars, index, graph, false);
+            scanner.index(jar, coords("org.acme/sample/1.0"), List.of(), jars, index, graph, false);
             index.finish();
             graph.finish();
             assertEquals(2, graph.methodCount()); // <init> and run
@@ -750,9 +765,9 @@ class BytecodeScannerTest {
         final BytecodeScanner scanner = new BytecodeScanner();
         try (JarCache jars = new JarCache()) {
             final CallIndex index = new CallIndex(new HashSet<>(jars.classNames(jar)));
-            scanner.index(jar, "org.acme/hash/1.0", List.of(), jars, index, null, false);
+            scanner.index(jar, coords("org.acme/hash/1.0"), List.of(), jars, index, null, false);
             index.finish();
-            return scanner.scan(jar, "org.acme/hash/1.0", List.of(), jars, index).bom();
+            return bom(scanner.scan(jar, coords("org.acme/hash/1.0"), List.of(), jars, index));
         }
     }
 
@@ -783,5 +798,20 @@ class BytecodeScannerTest {
             }
         }
         return jar;
+    }
+
+    /** Coordinates of a test JAR from its path, {@code g/a/v}. */
+    static ArtifactCoordinates coords(String path) {
+        final String[] p = path.split("/");
+        return ArtifactCoordinates.jar(p[0], p[1], p[2]);
+    }
+
+    /** An inventory's assets as a CycloneDX BOM, as the CBOM writes them. */
+    static Bom bom(CryptoInventory inventory) {
+        final CryptoAssetComponents.Written written = CryptoAssetComponents.write(inventory.assets());
+        final Bom bom = new Bom();
+        written.components().forEach(bom::addComponent);
+        written.dependencies().forEach(bom::addDependency);
+        return bom;
     }
 }

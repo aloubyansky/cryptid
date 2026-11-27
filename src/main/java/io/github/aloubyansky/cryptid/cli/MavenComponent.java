@@ -1,5 +1,6 @@
-package io.github.aloubyansky.cryptid;
+package io.github.aloubyansky.cryptid.cli;
 
+import io.github.aloubyansky.cryptid.ArtifactCoordinates;
 import java.nio.file.Path;
 import java.util.Set;
 import org.cyclonedx.model.Component;
@@ -115,14 +116,23 @@ public record MavenComponent(
     }
 
     /**
-     * Returns the file holding the CBOM produced by analyzing this component's binary artifact.
-     * Its existence means the artifact was analyzed successfully.
+     * Returns the coordinates of the binary artifact, which identify it in the analysis's results.
+     *
+     * @return the coordinates, with the artifact's classifier and extension
+     */
+    public ArtifactCoordinates coordinates() {
+        return new ArtifactCoordinates(groupId, artifactId, artifactClassifier(), extension(), version);
+    }
+
+    /**
+     * Returns the file holding the inventory produced by analyzing this component's binary
+     * artifact. Its existence means the artifact was analyzed successfully.
      *
      * @param resultsDir the directory of the run's per-artifact results, {@code cbom/<key>} in the
      *     work directory (see {@link CacheKey})
      * @return {@code resultsDir/}{@link #artifactPath()}{@code .json}
      */
-    public Path cbomFile(Path resultsDir) {
+    public Path resultFile(Path resultsDir) {
         return resultsDir.resolve(artifactPath() + ".json");
     }
 }

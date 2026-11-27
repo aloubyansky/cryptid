@@ -1,4 +1,4 @@
-package io.github.aloubyansky.cryptid;
+package io.github.aloubyansky.cryptid.cli;
 
 import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs;
 import java.io.IOException;

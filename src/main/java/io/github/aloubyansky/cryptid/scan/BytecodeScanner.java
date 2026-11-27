@@ -1,11 +1,16 @@
 package io.github.aloubyansky.cryptid.scan;
 
 import com.ibm.mapper.model.INode;
+import io.github.aloubyansky.cryptid.ArtifactAnalysis;
+import io.github.aloubyansky.cryptid.ArtifactCoordinates;
+import io.github.aloubyansky.cryptid.CodeLocation;
+import io.github.aloubyansky.cryptid.CryptoInventory;
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
 import io.github.aloubyansky.cryptid.bytecode.CallGraph;
 import io.github.aloubyansky.cryptid.bytecode.CallIndex;
 import io.github.aloubyansky.cryptid.bytecode.JarCache;
 import io.github.aloubyansky.cryptid.bytecode.Types;
+import io.github.aloubyansky.cryptid.detection.ArtifactPaths;
 import io.github.aloubyansky.cryptid.detection.CryptoEventDetector;
 import io.github.aloubyansky.cryptid.detection.Finding;
 import io.github.aloubyansky.cryptid.model.CryptoAssetModeler;
@@ -14,15 +19,14 @@ import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import org.cyclonedx.model.Bom;
-import org.cyclonedx.model.Component;
-import org.cyclonedx.model.component.evidence.Occurrence;
+import java.util.Map;
 
 /**
- * Detects cryptographic assets in a binary JAR by analyzing its bytecode with sonar-cryptography's
- * Java detection rules, and builds its CBOM with sonar-cryptography's translation and CycloneDX
- * output. No source code and no SonarSource analyzer is involved.
+ * Detects cryptographic assets in a binary JAR by analyzing its bytecode with the crypto API
+ * specs, models them with sonar-cryptography's translation, and returns them as the JAR's {@link
+ * CryptoInventory}. No source code and no SonarSource analyzer is involved.
  *
  * <p>Scanning is two-phase when values passed between methods are to be resolved: first {@link
  * #index} every JAR into a shared {@link CallIndex}, then {@link #scan} each JAR with it.
@@ -31,16 +35,6 @@ import org.cyclonedx.model.component.evidence.Occurrence;
  * pipeline, so several JARs can be indexed or scanned concurrently.
  */
 public final class BytecodeScanner {
-
-    /**
-     * The result of scanning a JAR.
-     *
-     * @param bom the CBOM of the JAR
-     * @param classes the number of classes analyzed
-     * @param findings the number of rule matches that produced crypto assets
-     * @param failedMethods the number of methods whose bytecode couldn't be interpreted
-     */
-    public record Result(Bom bom, int classes, int findings, int failedMethods) {}
 
     private final CryptoApiMatcher matcher;
     private final int apiCount;
@@ -78,30 +72,6 @@ public final class BytecodeScanner {
 
 
     /**
-     * Removes positions bytecode doesn't provide: the column offset always, and the line when the
-     * class has no line number table (0), e.g. Bouncy Castle's release JARs. Both are optional in
-     * CycloneDX, and a 0 would read as a real position.
-     *
-     * @param bom the CBOM to update in place
-     */
-    static void clearUnknownPositions(Bom bom) {
-        if (bom.getComponents() == null) {
-            return;
-        }
-        for (Component c : bom.getComponents()) {
-            if (c.getEvidence() == null || c.getEvidence().getOccurrences() == null) {
-                continue;
-            }
-            for (Occurrence o : c.getEvidence().getOccurrences()) {
-                o.setOffset(null);
-                if (o.getLine() != null && o.getLine() <= 0) {
-                    o.setLine(null);
-                }
-            }
-        }
-    }
-
-    /**
      * The methods of a JAR that may contain crypto events, kept by phase A for detection: those
      * calling a specified API, with their call sites from the final round of the
      * field fixpoint. Detecting on them gives the same findings as re-analyzing the JAR, without
@@ -119,7 +89,7 @@ public final class BytecodeScanner {
      * JAR's {@link CandidateMethods} for scanning it without analyzing it again.
      *
      * @param jar the JAR
-     * @param locationPrefix the artifact path, prepended to source files of call sites
+     * @param artifact the JAR's artifact
      * @param classpath JARs to resolve supertypes from, as for {@link #scan}
      * @param jarCache the shared JAR cache
      * @param callIndex the index to fill
@@ -128,8 +98,9 @@ public final class BytecodeScanner {
      *     scanned
      * @return the candidate methods, or {@code null} if not kept
      */
-    public CandidateMethods index(Path jar, String locationPrefix, List<Path> classpath, JarCache jarCache, CallIndex callIndex,
-            CallGraph callGraph, boolean keepCandidates) {
+    public CandidateMethods index(Path jar, ArtifactCoordinates artifact, List<Path> classpath, JarCache jarCache,
+            CallIndex callIndex, CallGraph callGraph, boolean keepCandidates) {
+        final String locationPrefix = ArtifactPaths.of(artifact);
         final Analyzer analyzer = new Analyzer();
         analyzer.addJar(jar, jarCache);
         callIndex.addClasses(locationPrefix, analyzer.classInfos());
@@ -137,11 +108,11 @@ public final class BytecodeScanner {
             callGraph.addMethods(locationPrefix, analyzer.graphFacts());
         }
         final List<Analyzer.MethodResult> methods = analyzer.analyze();
-        callIndex.addCalls(methods, locationPrefix);
+        callIndex.addCalls(methods, artifact, locationPrefix);
         if (!keepCandidates) {
             return null;
         }
-        final CryptoEventDetector screen = new CryptoEventDetector(matcher, types(jar, classpath, jarCache), locationPrefix, null);
+        final CryptoEventDetector screen = new CryptoEventDetector(matcher, types(jar, classpath, jarCache), artifact, null);
         return new CandidateMethods(methods.stream().filter(screen::mayDetect).toList(), analyzer.failedMethods);
     }
 
@@ -149,58 +120,59 @@ public final class BytecodeScanner {
      * Scans a JAR, analyzing its bytecode.
      *
      * @param jar the JAR to scan
-     * @param locationPrefix prepended to source file paths in occurrence locations, e.g. the
-     *     artifact path {@code g/a/v}
+     * @param artifact the JAR's artifact, which the occurrences in it are located in
      * @param classpath JARs to resolve the scanned classes' supertypes from, for matching rules
      *     against subtypes; JDK classes are always resolved
      * @param jarCache the shared JAR cache
      * @param callIndex resolves values passed in from callers, possibly in other JARs; {@code
      *     null} to resolve values within methods only. Values resolved at a caller are located at
-     *     the caller's call site, so the CBOM may hold occurrences in other artifacts.
-     * @return the CBOM of the JAR with statistics
+     *     the caller's call site, so the inventory may hold occurrences in other artifacts.
+     * @return the JAR's inventory: its analysis and the assets found
      */
-    public Result scan(Path jar, String locationPrefix, List<Path> classpath, JarCache jarCache, CallIndex callIndex) {
+    public CryptoInventory scan(Path jar, ArtifactCoordinates artifact, List<Path> classpath, JarCache jarCache,
+            CallIndex callIndex) {
         final Analyzer analyzer = new Analyzer();
         analyzer.addJar(jar, jarCache);
         final List<Analyzer.MethodResult> methods = analyzer.analyze();
-        return detect(jar, locationPrefix, classpath, jarCache, callIndex, methods, analyzer.failedMethods);
+        return detect(jar, artifact, classpath, jarCache, callIndex, methods, analyzer.failedMethods);
     }
 
     /**
      * Scans a JAR from the candidate methods {@link #index} kept for it, without analyzing it again.
      *
      * @param jar the JAR to scan
-     * @param locationPrefix prepended to source file paths in occurrence locations
+     * @param artifact the JAR's artifact
      * @param classpath JARs to resolve the scanned classes' supertypes from
      * @param jarCache the shared JAR cache
      * @param callIndex resolves values passed in from callers, or {@code null}
      * @param candidates the JAR's candidate methods from {@link #index}
-     * @return the CBOM of the JAR with statistics
-     * @see #scan(Path, String, List, JarCache, CallIndex)
+     * @return the JAR's inventory: its analysis and the assets found
+     * @see #scan(Path, ArtifactCoordinates, List, JarCache, CallIndex)
      */
-    public Result scan(Path jar, String locationPrefix, List<Path> classpath, JarCache jarCache, CallIndex callIndex,
-            CandidateMethods candidates) {
-        return detect(jar, locationPrefix, classpath, jarCache, callIndex, candidates.methods(), candidates.failedMethods());
+    public CryptoInventory scan(Path jar, ArtifactCoordinates artifact, List<Path> classpath, JarCache jarCache,
+            CallIndex callIndex, CandidateMethods candidates) {
+        return detect(jar, artifact, classpath, jarCache, callIndex, candidates.methods(), candidates.failedMethods());
     }
 
-    private Result detect(Path jar, String locationPrefix, List<Path> classpath, JarCache jarCache, CallIndex callIndex,
-            List<Analyzer.MethodResult> methods, int failedMethods) {
-        final CryptoEventDetector detector = new CryptoEventDetector(matcher, types(jar, classpath, jarCache), locationPrefix, callIndex);
+    private CryptoInventory detect(Path jar, ArtifactCoordinates artifact, List<Path> classpath, JarCache jarCache,
+            CallIndex callIndex, List<Analyzer.MethodResult> methods, int failedMethods) {
+        final CryptoEventDetector detector = new CryptoEventDetector(matcher, types(jar, classpath, jarCache), artifact, callIndex);
         final CryptoAssetModeler modeler = modelers.get();
-        final AssetCollector output = new AssetCollector();
+        final CryptoInventory.Builder inventory = CryptoInventory.builder();
+        final AssetCollector output = new AssetCollector(inventory);
         int findings = 0;
         // all methods at once, so that crypto objects are followed between them
         for (Finding f : detector.detect(methods)) {
-            final List<INode> nodes = modeler.process(f.event());
+            final Map<String, CodeLocation> locations = new HashMap<>();
+            final List<INode> nodes = modeler.process(f.event(), locations);
             // a variant whose value the API wouldn't take, e.g. a MAC name for a signature
             if (!nodes.isEmpty() && (!f.variant() || CryptoAssetModeler.fitsApi(f.event(), nodes))) {
-                output.add(nodes);
+                output.add(nodes, locations);
                 findings++;
             }
         }
-        final Bom bom = output.bom();
-        clearUnknownPositions(bom);
-        return new Result(bom, jarCache.classNames(jar).size(), findings, failedMethods);
+        inventory.artifact(new ArtifactAnalysis(artifact, jarCache.classNames(jar).size(), findings, failedMethods));
+        return inventory.build();
     }
 
     /**

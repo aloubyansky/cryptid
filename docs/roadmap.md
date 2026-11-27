@@ -25,20 +25,28 @@ These are small and independent. Each one makes the comparisons in later steps m
 
 ### 2. Foundation: result model and analysis API
 
-The [foundation review](foundation.md) found that the results lack a model of their own, the analysis lacks an API, and there are two class hierarchies. The steps below fix that before reachability is built on today's shapes. See its *Order of work*.
+The [foundation review](foundation.md) found that the results lack a model of their own, the analysis lacks an API, there are two class hierarchies, and phase A interprets the whole program to answer a few questions. The steps below fix that before reachability is built on today's shapes. See its *Order of work*.
 
-1. **Result model and in-memory assembly** (design review F5).
-   - `Site`, `Finding`, `Asset`, `Occurrence` and `Report`.
-   - Assets keyed by node content.
-   - CycloneDX written from the `Report`.
+1. ~~**Result model and in-memory assembly** (design review F5).~~ Done 2026-11-27; see [foundation.md](foundation.md#phase-1-api-decided-2026-11-26) for the API and the Keycloak figures.
+   - `CryptoInventory`, `CryptoAsset`, `AssetOccurrence`, `CodeLocation` and `MethodId`, with properties of our own.
+   - Assets merged by content across all artifacts.
+   - CycloneDX written from the inventory, with the enclosing method as each occurrence's `symbol`.
    - No per-artifact JSON round trip, and no UUID and prefix heuristics.
 
-   The Keycloak CBOM stays the same per occurrence.
-2. **Analysis API.** `Artifact`, `Options`, `Cryptid.analyze` and `Report`. `GenerateCbomCommand` becomes an adapter, and the API package is the only public surface.
+   The set of asset contents, locations and lines stays the same on Keycloak.
+2. **Analysis API.** `Artifact`, `Options`, `Cryptid.analyze` and its result. `GenerateCbomCommand` becomes an adapter, and the API package is the only public surface.
 3. **One program model.**
    - One class table for both spec matching and dispatch, with the `--classpath` modes as views on it.
-   - An interned `MethodId` used throughout.
+   - An interned method index used throughout, with `MethodId` at the API.
    - Each output difference reviewed.
+4. **Detection-driven analysis.** See *Detection-driven analysis* in [foundation.md](foundation.md#detection-driven-analysis).
+   - Read every JAR's instructions only: hierarchy, call graph, candidate methods, field writers.
+   - Detect per JAR, recording open questions where a spec argument comes from a parameter.
+   - Answer them by interpreting only the callers asked about, through the call graph's reverse edges.
+   - Replaces the 306,000-call `CallIndex` and phase A's interpretation of every method, about 15 of Keycloak's 17 seconds.
+   - Results are cached per JAR content.
+
+   Output identical per occurrence.
 
 ### 3. Reachability and endpoints
 
@@ -65,7 +73,7 @@ This continues [reachability-design.md](reachability-design.md), steps 2 and 3. 
    - For each occurrence, the set of entry points reaching it, propagated as bitsets over the resolved graph.
    - Endpoints written as CycloneDX `services` that `dependsOn` the assets they reach.
 4. **Review the open encoding questions** against real output: property names, services per method or per resource class, whether paths belong in the CBOM, and the `unknown` state.
-5. **Facts cache.** Per-artifact facts keyed by JAR content replace the per-artifact CBOM cache.
+5. **Facts cache.** The graph facts (edges, instantiations, matched annotations, services) are cached per JAR content too, as detection's results are since step 2.4.
 
 What this unlocks in the backlog:
 - *Dispatch precision*: the instantiated-class set can narrow `I.m` to the implementations that can actually run.
@@ -111,12 +119,13 @@ Pull from this list between steps, or when a coverage comparison points at an it
 | Fixture gaps (about 8) | Tracked by `FixtureConformanceTest` | backlog |
 | IVs as assets | 4 Keycloak occurrences; low priority | coverage gaps |
 | Shaded code attribution | Open question: the shading component or the original library | backlog |
+| Dependencies per occurrence | `dependsOn` is the union over an asset's occurrences, e.g. one generic `secret-key` depending on 192 algorithms. Recording it per occurrence makes it precise, and suits reachability | [foundation.md](foundation.md#phase-1-api-decided-2026-11-26) |
 
 ## Performance and operations
 
 - **Memory and archives.** A bound on open JARs (smallrye-common-archive) and a more compact call index. The current peak is 5.5 GB.
-- **Analysis on demand (redesign step 5).** Method summaries instead of interpreting every method up to 10 rounds. This is only worth taking up if reachability pushes past the time or memory target.
-- **Positions.** Column offsets, and lines for classes without line tables. The enclosing method and the bytecode offset come with the result model (step 2.1).
+- **Analysis on demand (redesign step 5)** moved into the foundation work as step 2.4, *Detection-driven analysis*.
+- **Positions.** Column offsets, and lines for classes without line tables. The enclosing method is in the result model since step 2.1, and in the CBOM as `symbol`; the bytecode offset isn't.
 
 ## Open decisions
 

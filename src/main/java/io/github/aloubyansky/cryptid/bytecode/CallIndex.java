@@ -1,5 +1,6 @@
 package io.github.aloubyansky.cryptid.bytecode;
 
+import io.github.aloubyansky.cryptid.ArtifactCoordinates;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.MethodTypeDesc;
 import java.util.ArrayList;
@@ -58,13 +59,15 @@ public final class CallIndex {
      * A call into an analyzed class.
      *
      * @param callerMethod the calling method, {@code owner.name+descriptor}
+     * @param artifact the caller's artifact, or {@code null} if not known
+     * @param sourceFile the caller's source file, without the artifact path
      * @param file the caller's source file, prefixed with its artifact path
      * @param line the call's line
      * @param signature the invoked method in sonar-java's format
      * @param name the invoked method's name
      * @param args per parameter position: the argument, or {@code null} if not tracked
      */
-    public record Site(String callerMethod, String file, int line, String signature, String name, Arg[] args) {}
+    public record Site(String callerMethod, ArtifactCoordinates artifact, String sourceFile, String file, int line, String signature, String name, Arg[] args) {}
 
     /**
      * A value resolved from a caller.
@@ -131,6 +134,18 @@ public final class CallIndex {
      * @param locationPrefix the artifact path, prepended to source files
      */
     public void addCalls(List<Analyzer.MethodResult> methods, String locationPrefix) {
+        addCalls(methods, null, locationPrefix);
+    }
+
+    /**
+     * Records the calls of an artifact's methods into analyzed classes whose {@code String} or
+     * {@code int} arguments carry constants or parameter provenance.
+     *
+     * @param methods the artifact's methods with their call sites
+     * @param artifact the artifact, or {@code null} if not known
+     * @param locationPrefix the artifact path, prepended to source files
+     */
+    public void addCalls(List<Analyzer.MethodResult> methods, ArtifactCoordinates artifact, String locationPrefix) {
         final String prefix = locationPrefix.isEmpty() ? "" : locationPrefix + "/";
         final Map<String, List<Site>> local = new HashMap<>();
         for (Analyzer.MethodResult m : methods) {
@@ -152,7 +167,7 @@ public final class CallIndex {
                 }
                 if (args != null) {
                     local.computeIfAbsent(cs.owner + "." + cs.name + cs.descriptor, k -> new ArrayList<>())
-                            .add(new Site(m.method(), prefix + m.sourceFile(), cs.line, cs.signature(), cs.name, args));
+                            .add(new Site(m.method(), artifact, m.sourceFile(), prefix + m.sourceFile(), cs.line, cs.signature(), cs.name, args));
                 }
             }
         }

@@ -1,4 +1,4 @@
-package io.github.aloubyansky.cryptid;
+package io.github.aloubyansky.cryptid.cli;
 
 import com.github.packageurl.MalformedPackageURLException;
 import com.github.packageurl.PackageURL;

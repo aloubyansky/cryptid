@@ -4,6 +4,7 @@ import com.ibm.engine.detection.ResolvedValue;
 import com.ibm.engine.model.IAction;
 import com.ibm.engine.model.factory.IActionFactory;
 import com.ibm.engine.model.factory.IValueFactory;
+import io.github.aloubyansky.cryptid.ArtifactCoordinates;
 import io.github.aloubyansky.cryptid.bytecode.AVal;
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
 import io.github.aloubyansky.cryptid.bytecode.CallIndex;
@@ -51,6 +52,7 @@ public final class CryptoEventDetector {
 
     private final CryptoApiMatcher matcher;
     private final Types types;
+    private final ArtifactCoordinates artifact;
     private final String locationPrefix;
     private final CallIndex callIndex;
 
@@ -69,14 +71,15 @@ public final class CryptoEventDetector {
      *
      * @param matcher the spec matcher
      * @param types the class hierarchy
-     * @param locationPrefix prepended to source file paths, e.g. the artifact path {@code g/a/v};
-     *     empty for none
+     * @param artifact the JAR's artifact, whose path is prepended to source file paths; {@code null}
+     *     for none, and for locations without code locations, e.g. in tests
      * @param callIndex resolves values passed in from callers; {@code null} for within methods only
      */
-    public CryptoEventDetector(CryptoApiMatcher matcher, Types types, String locationPrefix, CallIndex callIndex) {
+    public CryptoEventDetector(CryptoApiMatcher matcher, Types types, ArtifactCoordinates artifact, CallIndex callIndex) {
         this.matcher = matcher;
         this.types = types;
-        this.locationPrefix = locationPrefix.isEmpty() ? "" : locationPrefix + "/";
+        this.artifact = artifact;
+        this.locationPrefix = artifact == null ? "" : ArtifactPaths.of(artifact) + "/";
         this.callIndex = callIndex;
     }
 
@@ -121,7 +124,7 @@ public final class CryptoEventDetector {
         for (CryptoApiCall root : graph.roots()) {
             final List<CryptoEvent> events = variants(root, graph);
             for (CryptoEvent d : events) {
-                findings.add(new Finding(Loc.of(root.site()), root.site(), d, events.size() > 1));
+                findings.add(new Finding(Loc.of(root.site(), artifact), root.site(), d, events.size() > 1));
             }
             findings.addAll(resolved);
             resolved = new ArrayList<>();
@@ -190,7 +193,7 @@ public final class CryptoEventDetector {
         for (Reached reached : calls) {
             final CallSite cs = reached.call().site();
             final Path path = reached.path();
-            final Loc loc = Loc.of(cs);
+            final Loc loc = Loc.of(cs, artifact);
             if (spec.action() != null) {
                 final Object factory = ValueFactories.create(spec.action());
                 if (factory == null) {
@@ -347,7 +350,7 @@ public final class CryptoEventDetector {
             if (reportedAtCaller(site)) {
                 continue;
             }
-            final Loc at = new Loc(site.file(), site.line(), site.signature(), site.name());
+            final Loc at = new Loc(site.file(), site.line(), site.signature(), site.name(), CodeLocations.of(site));
             final Object c = matcher.name(arg.value(), hit.value());
             if (c == null) {
                 continue;

@@ -21,6 +21,7 @@ import com.ibm.mapper.model.Unknown;
 import com.ibm.mapper.reorganizer.IReorganizerRule;
 import com.ibm.mapper.reorganizer.Reorganizer;
 import com.ibm.mapper.utils.DetectionLocation;
+import io.github.aloubyansky.cryptid.CodeLocation;
 import io.github.aloubyansky.cryptid.detection.CryptoEvent;
 import io.github.aloubyansky.cryptid.detection.Loc;
 import java.util.HashMap;
@@ -47,6 +48,8 @@ public final class CryptoAssetModeler {
 
     private final Map<String, IContextTranslation<Loc>> translators = new HashMap<>();
     private final List<IReorganizerRule> reorganizerRules;
+    /** Code locations by {@link #locationKey}, while {@link #process} runs. */
+    private Map<String, CodeLocation> locations;
 
     /**
      * Loads sonar-cryptography's Java context translators and reorganizer rules. A modeler isn't
@@ -85,7 +88,38 @@ public final class CryptoAssetModeler {
      * @return its crypto model nodes
      */
     public List<INode> process(CryptoEvent root) {
-        return finish(new AssetAssembler(this::translate).build(root));
+        return process(root, new HashMap<>());
+    }
+
+    /**
+     * Models an event tree, and records the code location behind each detection location the
+     * nodes carry, so that the occurrences sonar-cryptography's output makes of them can be
+     * mapped back to the code.
+     *
+     * @param root the root event
+     * @param locations filled with code locations by {@link #locationKey}
+     * @return its crypto model nodes
+     */
+    public List<INode> process(CryptoEvent root, Map<String, CodeLocation> locations) {
+        this.locations = locations;
+        try {
+            return finish(new AssetAssembler(this::translate, this::locate).build(root));
+        } finally {
+            this.locations = null;
+        }
+    }
+
+    /**
+     * The key of a detection location, as sonar-cryptography's output renders it in an
+     * occurrence: its location, line and additional context, which is the called method.
+     *
+     * @param location the source file, prefixed with the artifact path
+     * @param line the line
+     * @param calledMethod the called method in sonar-java's signature format
+     * @return the key
+     */
+    public static String locationKey(String location, int line, String calledMethod) {
+        return location + "|" + line + "|" + calledMethod;
     }
 
     /**
@@ -177,7 +211,15 @@ public final class CryptoAssetModeler {
         if (t == null) {
             return Optional.empty();
         }
-        return t.translate(library, value, context, location(library, value.getLocation(), file));
+        return t.translate(library, value, context, locate(library, value.getLocation(), file));
+    }
+
+    /** A detection location, recording its code location. */
+    private DetectionLocation locate(IBundle library, Loc loc, String file) {
+        if (locations != null && loc.code() != null) {
+            locations.putIfAbsent(locationKey(file, loc.line(), loc.signature()), loc.code());
+        }
+        return location(library, loc, file);
     }
 
     /**

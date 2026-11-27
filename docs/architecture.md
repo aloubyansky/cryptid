@@ -28,15 +28,18 @@ No SonarSource analyzer under the Sonar Source-Available License (SSALv1) is on 
     "algorithmProperties": { "primitive": "ae", "parameterSetIdentifier": "128", "mode": "gcm" } } }
 ```
 
-Keycloak 26.8.2 (`src/test/resources/keycloak-26.8.2.zip.cdx.json`): 573 Maven components, 548 distinct JARs, giving 1,270 crypto assets with 3,920 occurrences in 77 components. The assets are algorithms (hash, block cipher, MAC, signature, public-key encryption, KDF, AEAD, stream cipher, XOF, KEM, key agreement), related crypto material (secret, public and private keys, salts, IVs, nonces) and protocols (TLS).
+Keycloak 26.8.2 (`src/test/resources/keycloak-26.8.2.zip.cdx.json`): 573 Maven components, 548 distinct JARs, giving 725 crypto assets with 4,320 occurrences in 77 components. The assets are algorithms (hash, block cipher, MAC, signature, public-key encryption, KDF, AEAD, stream cipher, XOF, KEM, key agreement), related crypto material (secret, public and private keys, salts, IVs, nonces) and protocols (TLS).
 
 ## Packages
 
 The code is in `io.github.aloubyansky.cryptid`, with dependencies going one way:
 
 ```text
-cryptid             CLI, SBOM reading, CBOM assembly (GenerateCbomCommand, SbomReader, CbomAssembler)
-cryptid.scan        BytecodeScanner: phases A and B for one JAR
+cryptid.cli         CLI, SBOM reading, CBOM assembly, the work directory (GenerateCbomCommand,
+                    SbomReader, CbomAssembler, InventoryJson, CacheKey)
+cryptid.cyclonedx   CryptoAssetComponents: the result model as CycloneDX components
+cryptid.scan        BytecodeScanner: phases A and B for one JAR; AssetCollector: sonar-cryptography's
+                    output to the result model
 cryptid.model       CryptoAssetModeler, AssetAssembler: event trees to asset trees
 cryptid.detection   CryptoEventDetector, CryptoEvent, CryptoObjectGraph, Finding, Loc,
                     ValueFactories, CryptoContexts, KnownClasses
@@ -44,8 +47,10 @@ cryptid.spec        CryptoApiSpecs, CryptoApiMatcher: the specs and matching cal
 cryptid.bytecode    Analyzer, AVal, CallSite, CallIndex, Types, JarCache: the analysis core;
                     CallGraph, Hierarchy, MethodFacts: the calls between all methods
 
-scan -> model -> detection -> spec -> bytecode
+cli -> cyclonedx, scan -> model -> detection -> spec -> bytecode
 ```
+
+The root package holds the API: the result model (`CryptoInventory`, `CryptoAsset`, `CryptoAssetProperties`, `AssetOccurrence`, `CodeLocation`, `MethodId`, `ArtifactCoordinates`, `ArtifactKey`, `ArtifactAnalysis`, `CipherSuite`), which the other packages use; see [foundation.md](foundation.md#phase-1-api-decided-2026-11-26).
 
 `bytecode` and `spec` use no sonar-cryptography types. `detection` and `model` use its value, context and node model, and its translators. The tests mirror the packages; the rule-based reference they compare with is in `cryptid.reference` (test sources only).
 
@@ -61,9 +66,9 @@ flowchart TB
     s4["4 Phase B: take the methods phase A kept<br/><code>BytecodeScanner.CandidateMethods</code>, <code>Types</code>"]
     s5["5 Detect from the API specs<br/><code>CryptoEventDetector</code>, <code>CryptoObjectGraph</code>, <code>CryptoApiMatcher</code>"]
     s6["6 Translate to crypto assets<br/><code>Translation</code>"]
-    s7["7 Write the artifact's CBOM<br/><code>BytecodeScanner</code>"]
+    s7["7 Collect the artifact's inventory<br/><code>AssetCollector</code>"]
   end
-  s8["8 Merge, de-duplicate, link<br/><code>CbomAssembler</code>"]
+  s8["8 Merge, write the CBOM<br/><code>CryptoInventory</code>, <code>CbomAssembler</code>"]
   cbom[/"cbom.json (CycloneDX 1.6)"/]
   sbom --> s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> cbom
 
@@ -99,8 +104,8 @@ Green: this project. Blue: sonar-cryptography modules (Apache-2.0). Beige: other
 | 4. Phase B | Takes the JAR's kept methods, with their call sites from the final round of phase A's field fixpoint; nothing is interpreted again. Detection finds nothing in the other methods, so the result is the same as analyzing the whole JAR. | per method: call sites with receiver, arguments and created object |
 | 5. Detection | `CryptoEventDetector` matches the kept methods' calls against the crypto API specs (`CryptoApiMatcher`), builds each method's `CryptoObjectGraph`, and turns every call to a root API into a tree of `CryptoEvent`s (see below). | findings: location, call site, event tree |
 | 6. Translation | `AssetAssembler` walks each event tree (attach and merge rules in its javadoc); the context translator for its type (cipher, digest, key, signature, MAC, …) turns each value into `INode`s with the string mappers of `com.ibm:mapper`, e.g. `JcaCipherMapper` for `"AES/GCM/NoPadding"`. Then the 19 Java reorganizer rules merge and move nodes, and the 17 enrichers add OIDs, default key sizes and functions. This is the order of sonar-cryptography's `JavaTranslationProcess`. | `INode` trees |
-| 7. Artifact CBOM | `CBOMOutputFile` turns each finding's nodes into CycloneDX components and dependencies, and `AssetCollector` merges them by content (`CBOMOutputFile` merges by name alone, losing the properties of a second asset of the same name); offsets and line 0 (no line table) are cleared; the result is written atomically to `work/cbom/<key>/<g>/<a>/<v>[/<classifier>].json`, which later runs reuse unless `--rescan`. The key (`CacheKey`) is a digest of everything a per-artifact CBOM depends on beyond its JAR: cryptid's version, build time and specs, the `--classpath` mode, and the coordinates, path, size and modification time of every resolved JAR of the SBOM, since callers in other JARs pass values in and other JARs resolve supertypes. A run with any of them changed analyzes everything again, in a directory of its own; nothing is deleted. | per-artifact CBOM files |
-| 8. Assembly | Reads the per-artifact CBOMs, sorted for a run-independent order. Keeps an occurrence once per asset content (name without UUIDs, crypto properties), location and line, and redirects links of dropped duplicates. Assigns each asset to the components whose artifact path prefixes its occurrence locations, so a value resolved at a caller is linked to the caller's component. Adds library components, links and metadata, and writes the CBOM atomically. | the CBOM |
+| 7. Artifact inventory | `CBOMOutputFile` turns each finding's nodes into CycloneDX components, and `AssetCollector` converts them into the result model: `CryptoAsset`s identified by name and properties (`CBOMOutputFile` merges by name alone, so each finding gets an output of its own), with each occurrence mapped back to its `CodeLocation` (artifact, source file, enclosing method, line, called method), which the modeler records for every detection location it creates. The conversion fails on a property the model doesn't carry. The JAR's `CryptoInventory` is written atomically to `work/cbom/<key>/<g>/<a>/<v>[/<classifier>].json` (`InventoryJson`), which later runs reuse unless `--rescan`. The key (`CacheKey`) is a digest of everything a per-artifact result depends on beyond its JAR: cryptid's version, build time and specs, the `--classpath` mode, and the coordinates, path, size and modification time of every resolved JAR of the SBOM, since callers in other JARs pass values in and other JARs resolve supertypes. A run with any of them changed analyzes everything again, in a directory of its own; nothing is deleted. | per-artifact inventories |
+| 8. Assembly | Merges the per-artifact inventories in artifact order into one `CryptoInventory`: one asset per content, with all its occurrences and the union of its dependencies. `CbomAssembler` writes it with `CryptoAssetComponents`: bom-refs derived from content, the same in every run; occurrences with `location` and `line`, the enclosing method as `symbol` and the called method as `additionalContext`. Each asset is linked from the components sharing an artifact its occurrences are in, so a value resolved at a caller is linked to the caller's component. Adds library components, links and metadata, and writes the CBOM atomically. | the CBOM |
 
 ### Bytecode interpretation
 
@@ -155,7 +160,7 @@ The tool uses sonar-cryptography's knowledge, not its engine. These are the clas
 | `CryptoEventDetector`, `ValueFactories` | `IValueFactory`, `IActionFactory`, `ResolvedValue`, `IValue`, `IAction`, the factory classes, `Mode` | turn argument constants into sonar-cryptography's values, exactly as its rules did; factories are created from the specs, with explicit class lists for tree-shaking |
 | `CryptoEvent`, `CryptoContexts` | `IDetectionContext` and its context classes, `IBundle` | the context and library translation takes, created from the specs |
 | `CryptoAssetModeler`, `AssetAssembler` | `IContextTranslation`, `INode`, `NodeOrigin`, `AbstractAssetCollection`, `DetectionLocation`, `Reorganizer`, `IReorganizerRule`, `Enricher` | the context translators (loaded reflectively: their signatures mention sonar-java types; class names are compile-time constants, which tree-shaking follows), node assembly, reorganizer and enricher |
-| `AssetCollector` | `CBOMOutputFile`, `INode` | each finding's nodes to CycloneDX, merged by content into a BOM per artifact |
+| `AssetCollector` | `CBOMOutputFile`, `INode` | each finding's nodes to CycloneDX, converted into the result model; the only class that sees sonar-cryptography's output |
 | `Loc`, and the marker `org.sonar.plugins.java.api.tree.Tree` | sonar-java's `Tree`, as an empty interface of our own | only for the tests that run sonar-cryptography's rules as a reference: two lambdas in the `JcaGCMParameterSpec` rules cast to `Tree` |
 | `Analyzer`, `AVal`, `CallSite`, `CallIndex`, `JarCache`, `Types`, `CryptoApiMatcher`, `CryptoObjectGraph` | none | the analysis core and spec matching |
 

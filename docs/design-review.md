@@ -8,7 +8,7 @@ Findings from reviewing the implementation against its [architecture](architectu
 | F2 | Wrong sonar-cryptography version in the CBOM metadata | defect | fixed |
 | F3 | Every method is interpreted twice | design | fixed |
 | F4 | The tool's own classpath leaks into the analysis | design | fixed |
-| F5 | Results round-trip through JSON and string heuristics | design | open |
+| F5 | Results round-trip through JSON and string heuristics | design | fixed |
 | F6 | Dead and unused weight | cleanup | partly done |
 | F7 | Object flow stops at method boundaries | limit | done |
 
@@ -47,9 +47,11 @@ Phase A now carries the pre-check; the remaining cost is its interpretation of e
 
 Fix (2026-11-26): scanning uses `Types.jdk`, which falls back to the runtime image through the `jrt:/` file system and nothing else; `TypesTest` checks that a Bouncy Castle class on the test classpath isn't resolved. Tests that match against Bouncy Castle from their own classpath still pass a class loader. Keycloak: the same CBOM per occurrence.
 
-## F5. Results round-trip through JSON and string heuristics
+## F5. Results round-trip through JSON and string heuristics (fixed)
 
 Per-artifact nodes become a CycloneDX `Bom`, are edited, written as JSON and parsed back for assembly. Identity is then rebuilt from strings: UUIDs stripped from names to de-duplicate, owners guessed from the `g/a/v` prefix of locations. An in-memory model with the artifact and call site attached would need neither; JSON can stay as the cache format.
+
+Fix (2026-11-27): the result model of [foundation.md](foundation.md#phase-1-api-decided-2026-11-26). Assets carry their `CodeLocation`s with the artifact and enclosing method, are merged by `equals` on name and properties, and the CBOM is written from the merged `CryptoInventory`. The UUIDs of sonar-cryptography's output are handled in `AssetCollector` alone, and the work directory keeps the model as JSON (`InventoryJson`).
 
 ## F6. Dead and unused weight
 

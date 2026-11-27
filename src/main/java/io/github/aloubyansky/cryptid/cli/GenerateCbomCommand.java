@@ -1,5 +1,7 @@
-package io.github.aloubyansky.cryptid;
+package io.github.aloubyansky.cryptid.cli;
 
+import io.github.aloubyansky.cryptid.ArtifactAnalysis;
+import io.github.aloubyansky.cryptid.CryptoInventory;
 import io.github.aloubyansky.cryptid.bytecode.CallGraph;
 import io.github.aloubyansky.cryptid.bytecode.CallIndex;
 import io.github.aloubyansky.cryptid.bytecode.JarCache;
@@ -185,10 +187,11 @@ public class GenerateCbomCommand implements Callable<Integer> {
         final AtomicInteger cached = new AtomicInteger();
         final AtomicInteger failed = new AtomicInteger();
         final AtomicInteger classes = new AtomicInteger();
+        final List<CryptoInventory> parts;
         try (JarCache jarCache = new JarCache()) {
             // phase A: index the calls between all artifacts, for resolving values passed in
             // from callers; skipped when every artifact was analyzed before
-            final boolean needed = rescan || resolved.stream().anyMatch(g -> !Files.exists(g.first().cbomFile(resultsDir)));
+            final boolean needed = rescan || resolved.stream().anyMatch(g -> !Files.exists(g.first().resultFile(resultsDir)));
             final CallIndex callIndex;
             final Map<String, BytecodeScanner.CandidateMethods> candidates = new ConcurrentHashMap<>();
             if (needed) {
@@ -201,8 +204,8 @@ public class GenerateCbomCommand implements Callable<Integer> {
                 parallel(threadCount, resolved, g -> {
                     try {
                         // artifacts to be scanned keep what detection needs, so they aren't analyzed twice
-                        final boolean scanned = rescan || !Files.exists(g.first().cbomFile(resultsDir));
-                        final BytecodeScanner.CandidateMethods f = scanner.index(g.jar(), g.first().artifactPath(),
+                        final boolean scanned = rescan || !Files.exists(g.first().resultFile(resultsDir));
+                        final BytecodeScanner.CandidateMethods f = scanner.index(g.jar(), g.first().coordinates(),
                                 classpath(g, jarsByRef, allJars, closure), jarCache, callIndex, callGraph, scanned);
                         if (f != null) {
                             candidates.put(g.first().artifactPath(), f);
@@ -223,31 +226,40 @@ public class GenerateCbomCommand implements Callable<Integer> {
                 callIndex = null;
             }
 
-            // phase B: detect, on the methods phase A kept
-            parallel(threadCount, resolved, g -> {
+            // phase B: detect, on the methods phase A kept; the result of an artifact analyzed
+            // before is read from the work directory
+            parts = parallel(threadCount, resolved, g -> {
                 final MavenComponent c = g.first();
-                final Path cbomFile = c.cbomFile(resultsDir);
-                if (!rescan && Files.exists(cbomFile)) {
-                    cached.incrementAndGet();
-                    return null;
+                final Path resultFile = c.resultFile(resultsDir);
+                if (!rescan && Files.exists(resultFile)) {
+                    try {
+                        final CryptoInventory part = InventoryJson.read(resultFile);
+                        cached.incrementAndGet();
+                        return part;
+                    } catch (IOException e) {
+                        log.warnf(e, "Analyzing %s again: its result in the work directory can't be read", c.artifactPath());
+                    }
                 }
                 try {
                     final List<Path> cp = classpath(g, jarsByRef, allJars, closure);
                     // released once scanned; an artifact that failed to index is analyzed here
                     final BytecodeScanner.CandidateMethods f = candidates.remove(c.artifactPath());
-                    final BytecodeScanner.Result r = f != null
-                            ? scanner.scan(g.jar(), c.artifactPath(), cp, jarCache, callIndex, f)
-                            : scanner.scan(g.jar(), c.artifactPath(), cp, jarCache, callIndex);
-                    CbomAssembler.write(r.bom(), cbomFile);
-                    classes.addAndGet(r.classes());
-                    if (r.failedMethods() > 0) {
-                        log.debugf("%s: %d methods couldn't be analyzed", c.artifactPath(), r.failedMethods());
+                    final CryptoInventory part = f != null
+                            ? scanner.scan(g.jar(), c.coordinates(), cp, jarCache, callIndex, f)
+                            : scanner.scan(g.jar(), c.coordinates(), cp, jarCache, callIndex);
+                    InventoryJson.write(part, resultFile);
+                    for (ArtifactAnalysis a : part.artifacts()) {
+                        classes.addAndGet(a.classes());
+                        if (a.failedMethods() > 0) {
+                            log.debugf("%s: %d methods couldn't be analyzed", c.artifactPath(), a.failedMethods());
+                        }
                     }
+                    return part;
                 } catch (Exception | LinkageError e) {
                     failed.incrementAndGet();
                     log.warnf(e, "Failed to analyze %s", c.artifactPath());
+                    return null;
                 }
-                return null;
             }, "Analyzed");
         }
         log.infof(
@@ -257,9 +269,11 @@ public class GenerateCbomCommand implements Callable<Integer> {
                 cached.get(),
                 failed.get());
 
-        // 3. merge
+        // 3. merge, in the order of the artifacts, so that the CBOM is the same in every run
+        final CryptoInventory.Builder merged = CryptoInventory.builder();
+        parts.stream().filter(Objects::nonNull).forEach(merged::add);
         final CbomAssembler.Result result =
-                assembler.assemble(sbom, resolved.stream().map(ArtifactGroup::members).toList(), resultsDir);
+                assembler.assemble(sbom, resolved.stream().map(ArtifactGroup::members).toList(), merged.build());
         CbomAssembler.write(result.bom(), output);
         log.infof(
                 "Wrote CBOM to %s: %d findings in %d components, total time %ds",

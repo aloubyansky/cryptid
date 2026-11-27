@@ -184,7 +184,7 @@ public class FixtureConformanceTest {
         final List<Analyzer.MethodResult> methods = analyzer.analyze();
         index.addCalls(methods, "");
         index.finish();
-        final CryptoEventDetector detector = new CryptoEventDetector(new CryptoApiMatcher(CryptoApiSpecs.load()), types, "", index);
+        final CryptoEventDetector detector = new CryptoEventDetector(new CryptoApiMatcher(CryptoApiSpecs.load()), types, null, index);
         // all methods of the unit at once, as the scanner does, so objects are followed between them
         for (Finding f : detector.detect(methods)) {
             final List<INode> nodes = modeler.process(f.event());

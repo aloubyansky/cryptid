@@ -57,7 +57,7 @@ class CryptoEventDetectorTest {
     void oneFindingPerPossibleObject() throws Exception {
         final List<Analyzer.MethodResult> methods = analyze("org/acme/Pss.java", ONE_OF_SEVERAL);
         final CryptoEventDetector detector = new CryptoEventDetector(new CryptoApiMatcher(CryptoApiSpecs.load()),
-                new Types(getClass().getClassLoader()), "", null);
+                new Types(getClass().getClassLoader()), null, null);
         final List<Finding> findings = detector.detect(methods).stream()
                 .filter(f -> f.call().owner().equals("java/security/Signature")).toList();
         assertEquals(3, findings.size(), findings.toString());

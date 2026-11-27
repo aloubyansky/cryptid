@@ -1,4 +1,4 @@
-package io.github.aloubyansky.cryptid;
+package io.github.aloubyansky.cryptid.cli;
 
 import io.quarkus.bootstrap.resolver.maven.BootstrapMavenException;
 import io.quarkus.bootstrap.resolver.maven.MavenArtifactResolver;

@@ -15,7 +15,7 @@ import com.ibm.engine.rule.DetectionRule;
 import com.ibm.engine.rule.IDetectionRule;
 import com.ibm.engine.rule.MethodDetectionRule;
 import com.ibm.engine.rule.Parameter;
-import io.github.aloubyansky.cryptid.BuildInfo;
+import io.github.aloubyansky.cryptid.cli.BuildInfo;
 import io.github.aloubyansky.cryptid.detection.Loc;
 import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs.ApiSpec;
 import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs.Arg;

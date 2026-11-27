@@ -1,6 +1,6 @@
-package io.github.aloubyansky.cryptid;
+package io.github.aloubyansky.cryptid.cli;
 
-import static io.github.aloubyansky.cryptid.Cli.cryptid;
+import static io.github.aloubyansky.cryptid.cli.Cli.cryptid;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 

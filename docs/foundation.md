@@ -98,6 +98,21 @@ The layer worth caching is per-artifact facts, keyed by each JAR's content:
 
 The reachability design proposes this for graph facts.
 
+### G7. Phase A interprets the whole program for a few questions
+
+On Keycloak, phase A takes about 15 of the run's 17 seconds (2026-11-27). It interprets all 737,718 methods, some JARs up to 10 rounds until their field values settle, and keeps 305,906 calls in `CallIndex`. Detection then runs on 2,535 candidate methods, and asks the index only about the methods whose parameters reach a spec argument.
+
+Not all of phase A depends on detection in the same way:
+
+| Job | Needs interpretation? | Needed for |
+| --- | --- | --- |
+| class hierarchy | no, read from class headers | matching and dispatch |
+| call graph | no, read from instructions (about 4 s with the hierarchy) | reachability, which needs the whole program |
+| candidate methods | no; the instructions show which methods call a specified API | detection |
+| value index | yes, every method | which constants reach a parameter |
+
+The cost is in the value index, and the value index is the part that can be driven by detection. See *Detection-driven analysis* below.
+
 ### G6. Smaller issues
 
 - Nearly everything is `public` because packages use each other, so nothing marks what the API is.
@@ -149,11 +164,11 @@ The first version may stop after pass 1, with one path per finding, as the reach
 
 ### In the CBOM
 
-CycloneDX has a place for endpoints: `services`. The cyclonedx-core-java model in use (13.3.0) has `Service` with:
+CycloneDX has a place for endpoints: `services`. The cyclonedx-core-java model in use (12.2.0, through sonar-cryptography's output module) has `Service` with:
 
 - `endpoints`, the URLs or path templates;
 - `authenticated`;
-- `trustZone`;
+- `trustZone` and `x-trust-boundary`;
 - data flows;
 - `properties`.
 
@@ -170,6 +185,46 @@ This states the endpoint-to-crypto relation in CycloneDX's own terms instead of 
 - Endpoints are found from code only. Routes registered in code (`router.post("/x").handler(...)`) need the "function passed to this API" form, which the reachability design leaves for later.
 - Nothing about whether an endpoint is reachable from the network: ports, proxies and configuration are deployment facts.
 - No data-flow tracking from request parameters to crypto arguments. "Which endpoint lets a caller choose the algorithm" is a later question. The model's sites and values leave room for it.
+
+## Detection-driven analysis
+
+Replaces the value index (G7) with questions detection asks, answered on demand. This is the "analysis on demand" of the [detection redesign](detection-redesign.md), step 5.
+
+### Stages
+
+1. **Read every JAR's instructions, without interpreting them.** This gives:
+   - the class hierarchy;
+   - the call graph;
+   - the candidate methods, those calling a specified API;
+   - the field writers, meaning which methods store into which fields.
+
+   Whole program, cheap.
+2. **Detect per JAR, on its candidate methods.** Interpret the candidates, the writers of the fields their values come from, and the methods whose returned constants they use.
+
+   Wherever a spec argument comes from a parameter of its method, or from a field stored from a parameter, detection records an **open question** instead of resolving it on the spot. The question holds the method, the parameter bits, and the spec argument with its context and value factory.
+
+   The result depends on the JAR and its classpath only.
+3. **Answer the open questions across JARs.**
+   - Find each method's callers through the call graph's edges in reverse.
+   - Interpret only those callers, each once, with the result remembered.
+   - Take their constants, and climb further where a caller passes its own parameter or a stored field on, as `CallIndex.resolve` does today, up to 6 calls away.
+   - Each answer is a finding located at the caller, as now. It is skipped when the caller's call is itself a finding of a root API.
+
+### What it buys
+
+- **Time and memory.** Only candidates, the callers they ask about, and the field writers and callees those depend on are interpreted. The 306,000-call index goes away.
+- **Results that can be cached per JAR.** Stage 2 depends on one JAR and its classpath alone, so its result can be kept by the JAR's content (G5). Only stage 3, a much smaller job, depends on the whole SBOM. Today any changed JAR invalidates every cached result.
+- **Detection without whole-program state.** Resolving at callers becomes a stage of its own instead of a side effect of `CryptoEventDetector`, which then works on one JAR.
+
+### Risks
+
+- **Field values.** Today each JAR runs a field fixpoint over all its methods. On demand, a field's value needs the methods writing it, found from their instructions. Their values may come from their own parameters, which raises more questions.
+- **Returned constants** (`Analyzer.returnedBy`) need summaries of the callees, computed on demand.
+- **Order.** Questions must be answered in an order independent of threads, so that results are the same in every run.
+
+### The check
+
+The output must be identical to today's, per occurrence, on the fixtures, Bouncy Castle and Keycloak. A difference is a bug, not a judgment call. Each stage can also be compared with the current pipeline on its own: the candidate methods, the open questions, and the answers against `CallIndex.resolve`.
 
 ## Target model
 
@@ -204,6 +259,49 @@ Two notes on the model:
 - **Asset content** is still `INode` until the sonar-cryptography step. Its key is computed from the nodes, not from their CycloneDX JSON: name, kind and properties, recursively, without the generated ids.
 - **Events** (G2) hold values of our own: the spec argument, the constant and the `Site`. `model` translates them into sonar-cryptography's `IValue` and contexts.
 
+## Phase 1 API (decided 2026-11-26)
+
+The result model replaces `Site`, `Asset`, `Occurrence` and `Report` of the sketch above with these names, all in the root package `io.github.aloubyansky.cryptid`. The CLI moves to `io.github.aloubyansky.cryptid.cli`.
+
+```java
+record ArtifactCoordinates(String groupId, String artifactId, String classifier, String type, String version) {
+    ArtifactKey key();               // GACT, without the version
+}
+record ArtifactKey(String groupId, String artifactId, String classifier, String type) {}
+record MethodId(String className, String name, String descriptor) {}   // binary class name
+record CodeLocation(ArtifactCoordinates artifact, String sourceFile, MethodId method,
+                    int line, MethodId invokedMethod) {}               // line 0: no line table
+record AssetOccurrence(CodeLocation location) {}
+final class CryptoAsset {            // identified by name and properties
+    String name(); CryptoAssetProperties properties();
+    List<AssetOccurrence> occurrences(); List<CryptoAsset> dependsOn();
+}
+sealed interface CryptoAssetProperties {    // Algorithm, RelatedMaterial, Protocol; own enums
+    String oid();
+}
+record CipherSuite(String name, List<CryptoAsset> algorithms, List<String> identifiers) {}
+record ArtifactAnalysis(ArtifactCoordinates artifact, int classes, int findings, int failedMethods) {}
+record CryptoInventory(List<ArtifactAnalysis> artifacts, List<CryptoAsset> assets) {}
+```
+
+The choices behind it:
+
+- **Properties are our own types, not CycloneDX's `CryptoProperties`.** Records give the content key as `equals`, without JSON and stripped UUIDs. Links are to objects, not bom-refs. The API doesn't follow cyclonedx-core-java's versions or the schema's changes from 1.6 to 1.7. Library users don't need cyclonedx-core-java to read results. The closed value sets are enums, mapped by name to CycloneDX's.
+- **`ArtifactCoordinates`, not `ArtifactCoords`.** Quarkus has its own `ArtifactCoords`, which the extension sees too.
+- **`MethodId`.** The internal interned int of phase 3 is then a *method index*.
+- **No instruction index in `CodeLocation` yet.** Reachability needs only the method, and the instruction index would change which occurrences count as one. It comes with the backlog's *Positions*.
+- **Assets are merged by content across all artifacts.** On Keycloak this makes 1,270 components 725, each linked from every artifact it occurs in. `dependsOn` is the union over an asset's occurrences, as within a JAR before, and grows a little (the generic `secret-key`: 160 → 192 algorithms). Dependencies per occurrence ("this secret key at `Foo.java:42` is for AES") are a later refinement.
+- **Bom-refs and the `@` suffix of names** are derived from the content, so they are the same in every run.
+- **`CryptoInventory.Builder`** creates assets and links them. After merging by content, assets can depend on each other in cycles, so an asset can't be complete when it is constructed. Per-artifact results and the merge over all artifacts both use it. Added during implementation, with the convenience factory `ArtifactCoordinates.jar(groupId, artifactId, version)`.
+- **An occurrence is identified by its whole `CodeLocation`**, including the enclosing method and the called method. Before, the same asset at the same file and line was one occurrence. The CBOM writes the enclosing method as the occurrence's `symbol`, as `class#name(descriptor)` like `additionalContext`, so that occurrences in different methods of a class without line numbers can be told apart.
+
+Measured on Keycloak 26.8.2, against the build before (2026-11-27):
+
+- Every occurrence of before is still there, and the set of (asset content, location, line) is the same: 3,920 on both sides.
+- 4,320 occurrences instead of 3,920. 182 are the same asset on the same line from another call, which was merged before. 218 are in other methods of the same file, 215 of them in bcprov, which has no line numbers.
+- 725 asset components instead of 1,270, still linked from the same 77 SBOM components; 1,847 dependency links instead of 2,209.
+- The same time and memory: 16.7 s, about 9 GB RSS.
+
 ## Analysis API
 
 The input and the result are the library's API. Everything else is internal:
@@ -223,16 +321,16 @@ Report report = Cryptid.analyze(artifacts, Options.defaults()
 
 Each step keeps the per-occurrence Keycloak CBOM unchanged, except where a step says it changes output.
 
-1. **Result model and in-memory assembly** (G1, G6). `Site` with artifact, method and offset; `Finding`, `Asset`, `Occurrence` and `Report`; assets keyed by node content; CycloneDX written from the `Report`. The per-artifact JSON round trip and the UUID and prefix heuristics go away. The cache keeps per-artifact CBOMs for now, written from the model.
-2. **Analysis API** (G3). `Artifact`, `Options`, `Cryptid.analyze` and `Report`; `GenerateCbomCommand` becomes an adapter; the API package is the only public surface.
-3. **One program model** (G4). One class table serving both matching and dispatch, with the `--classpath` modes expressed as a view on it, and an interned `MethodId` used throughout. This changes output if the hierarchies disagreed somewhere, and each difference is reviewed.
-4. **Entry points and endpoints**: the reachability design's step 2, with exposure, addresses and authentication in the specs and in `EntryPoint`.
-5. **Reachability**: the reachability design's step 3, pass 1, on the model above.
-6. **Endpoint sets and services**: pass 2 and the CycloneDX services.
-7. **Facts cache** (G5): per-artifact facts keyed by JAR content, replacing the per-artifact CBOM cache.
+1. ~~**Result model and in-memory assembly** (G1, G6).~~ Done 2026-11-27, as decided in *Phase 1 API*.
+2. **Analysis API** (G3). `Artifact`, `Options`, `Cryptid.analyze` and the result; `GenerateCbomCommand` becomes an adapter; the API package is the only public surface.
+3. **One program model** (G4). One class table serving both matching and dispatch, with the `--classpath` modes expressed as a view on it, and an interned method index used throughout. This changes output if the hierarchies disagreed somewhere, and each difference is reviewed.
+4. **Detection-driven analysis** (G7, G5). The three stages above. Stage 2's results are cached by JAR content, replacing the per-artifact cache keyed by the whole SBOM. Output identical.
+5. **Entry points and endpoints**: the reachability design's step 2, with exposure, addresses and authentication in the specs and in `EntryPoint`.
+6. **Reachability**: the reachability design's step 3, pass 1, on the model above.
+7. **Endpoint sets and services**: pass 2 and the CycloneDX services.
 8. **Events in our own values** (G2): the first part of the sonar-cryptography step.
 
-Steps 1 and 2 can be done in either order; 1 first gives 2 its result type. Step 7 is independent once 3 is done. Step 8 is independent of 4 to 7.
+Step 4 needs step 3: it uses the method index and the call graph's reverse edges. Steps 5 to 7 build on what steps 3 and 4 leave of phase A: the instruction-level hierarchy and call graph. Step 8 is independent of 4 to 7.
 
 ## Open questions
 

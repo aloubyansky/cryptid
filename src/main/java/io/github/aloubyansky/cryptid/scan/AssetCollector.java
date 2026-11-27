@@ -1,15 +1,16 @@
 package io.github.aloubyansky.cryptid.scan;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.MapperFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.ibm.mapper.model.INode;
 import com.ibm.output.cyclondx.CBOMOutputFile;
+import io.github.aloubyansky.cryptid.CipherSuite;
+import io.github.aloubyansky.cryptid.CodeLocation;
+import io.github.aloubyansky.cryptid.CryptoAsset;
+import io.github.aloubyansky.cryptid.CryptoAssetProperties;
+import io.github.aloubyansky.cryptid.CryptoInventory;
+import io.github.aloubyansky.cryptid.model.CryptoAssetModeler;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -17,131 +18,187 @@ import java.util.regex.Pattern;
 import org.cyclonedx.model.Bom;
 import org.cyclonedx.model.Component;
 import org.cyclonedx.model.Dependency;
-import org.cyclonedx.model.Evidence;
+import org.cyclonedx.model.component.crypto.AlgorithmProperties;
+import org.cyclonedx.model.component.crypto.CryptoProperties;
+import org.cyclonedx.model.component.crypto.ProtocolProperties;
+import org.cyclonedx.model.component.crypto.RelatedCryptoMaterialProperties;
+import org.cyclonedx.model.component.crypto.enums.CryptoFunction;
 import org.cyclonedx.model.component.evidence.Occurrence;
 
 /**
- * Collects the crypto assets of a JAR's findings into one CBOM, merging assets with the same
- * content: name and crypto properties.
+ * Collects the crypto assets of findings into an inventory: renders each finding's model nodes
+ * with sonar-cryptography's {@link CBOMOutputFile}, and converts the components into {@link
+ * CryptoAsset}s, with their occurrences mapped back to the code.
  *
- * <p>sonar-cryptography's {@link CBOMOutputFile} identifies assets by name alone: a second asset
- * of the same name only adds its occurrences to the first, and its own properties are lost, e.g.
- * the {@code AES-128} key of a {@code SecretKeySpec} would take the functions of an {@code AES-128}
- * found in a signature elsewhere in the JAR. So each finding goes through an output of its own, and
- * the assets are merged here by {@link #contentKey}.
+ * <p>This is the only place that sees sonar-cryptography's output, and its random bom-refs and
+ * the UUIDs it puts into names. Each finding goes through an output of its own, because {@link
+ * CBOMOutputFile} identifies assets by name alone: a second asset of the same name would only add
+ * its occurrences to the first and lose its properties.
+ *
+ * <p>The conversion is checked to be lossless: a component with a property the model doesn't
+ * carry fails it, rather than lose the property.
  */
 public final class AssetCollector {
 
-    private static final ObjectMapper CONTENT_JSON = new ObjectMapper()
-            .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true)
-            .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
-
-    private static final Pattern ANY_UUID =
-            Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
-
-    /** Random UUIDs some asset names embed, e.g. {@code key@<uuid>}. */
+    /** The random UUID sonar-cryptography's output appends to names of related material, e.g. {@code key@<uuid>}. */
     private static final Pattern NAME_UUID =
-            Pattern.compile("@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+            Pattern.compile("@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
 
-    /** content key -> the asset kept for it, in the order first added */
-    private final Map<String, Component> assets = new LinkedHashMap<>();
-    /** occurrences already on the kept assets, by content key, location, line and offset */
-    private final Set<String> occurrences = new HashSet<>();
-    /** bom-ref of a depending asset -> its dependencies */
-    private final Map<String, Dependency> dependencies = new LinkedHashMap<>();
+    private final CryptoInventory.Builder inventory;
 
     /**
-     * Returns what identifies an asset apart from where it occurs: its name and crypto properties,
-     * without the random UUIDs in names and references. Two assets are the same only if this is
-     * equal, e.g. not keys of different sizes.
+     * Creates a collector adding to an inventory.
      *
-     * @param asset the crypto asset
-     * @return the content key
+     * @param inventory the inventory to add the assets to
      */
-    public static String contentKey(Component asset) {
-        String props;
-        try {
-            props = asset.getCryptoProperties() == null ? "" : CONTENT_JSON.writeValueAsString(asset.getCryptoProperties());
-        } catch (JsonProcessingException e) {
-            props = String.valueOf(asset.getCryptoProperties());
-        }
-        final String name = asset.getName() == null ? "" : asset.getName();
-        return NAME_UUID.matcher(name).replaceAll("") + "|" + ANY_UUID.matcher(props).replaceAll("");
-    }
-
-    /**
-     * Returns the key identifying an occurrence of an asset.
-     *
-     * @param contentKey the asset's {@link #contentKey}
-     * @param o one of its occurrences
-     * @return the content key with location, line and offset
-     */
-    public static String occurrenceKey(String contentKey, Occurrence o) {
-        return contentKey + "|" + o.getLocation() + "|" + o.getLine() + "|" + o.getOffset();
+    public AssetCollector(CryptoInventory.Builder inventory) {
+        this.inventory = inventory;
     }
 
     /**
      * Adds the assets of one finding.
      *
      * @param nodes the finding's model nodes
+     * @param locations the code locations of the nodes' detection locations, by {@link
+     *     CryptoAssetModeler#locationKey}
+     * @throws IllegalStateException if the output has a property the model doesn't carry, or an
+     *     occurrence without a code location
      */
-    public void add(List<INode> nodes) {
+    public void add(List<INode> nodes, Map<String, CodeLocation> locations) {
         final CBOMOutputFile output = new CBOMOutputFile();
         output.add(nodes);
         final Bom part = output.getBom();
-        // this part's bom-refs -> the bom-refs of the assets kept for them
-        final Map<String, String> refs = new HashMap<>();
-        for (Component asset : part.getComponents() == null ? List.<Component>of() : part.getComponents()) {
-            final String key = contentKey(asset);
-            final Component kept = assets.putIfAbsent(key, asset);
-            final List<Occurrence> found = asset.getEvidence() == null || asset.getEvidence().getOccurrences() == null
-                    ? List.of() : asset.getEvidence().getOccurrences();
-            if (kept == null) {
-                refs.put(asset.getBomRef(), asset.getBomRef());
-                found.forEach(o -> occurrences.add(occurrenceKey(key, o)));
-                continue;
-            }
-            refs.put(asset.getBomRef(), kept.getBomRef());
-            for (Occurrence o : found) {
-                if (occurrences.add(occurrenceKey(key, o))) {
-                    if (kept.getEvidence() == null) {
-                        kept.setEvidence(new Evidence());
+        final Map<String, Component> byRef = new HashMap<>();
+        final List<Component> components = part.getComponents() == null ? List.of() : part.getComponents();
+        components.forEach(c -> byRef.put(c.getBomRef(), c));
+        final Map<String, CryptoAsset> assets = new HashMap<>();
+        for (Component c : components) {
+            final CryptoAsset asset = asset(c, byRef, assets);
+            if (c.getEvidence() != null && c.getEvidence().getOccurrences() != null) {
+                for (Occurrence o : c.getEvidence().getOccurrences()) {
+                    final String key = CryptoAssetModeler.locationKey(
+                            o.getLocation(), o.getLine() == null ? 0 : o.getLine(), o.getAdditionalContext());
+                    final CodeLocation location = locations.get(key);
+                    if (location == null) {
+                        throw new IllegalStateException("No code location for occurrence " + key + " of " + asset);
                     }
-                    final List<Occurrence> merged = kept.getEvidence().getOccurrences() == null
-                            ? new ArrayList<>() : new ArrayList<>(kept.getEvidence().getOccurrences());
-                    merged.add(o);
-                    kept.getEvidence().setOccurrences(merged);
+                    inventory.occurrence(asset, location);
                 }
             }
         }
         for (Dependency d : part.getDependencies() == null ? List.<Dependency>of() : part.getDependencies()) {
-            final String from = refs.get(d.getRef());
+            final CryptoAsset from = assets.get(d.getRef());
             if (from == null || d.getDependencies() == null) {
                 continue;
             }
             for (Dependency to : d.getDependencies()) {
-                final String target = refs.get(to.getRef());
-                if (target == null || target.equals(from)) {
-                    continue;
-                }
-                final Dependency link = dependencies.computeIfAbsent(from, Dependency::new);
-                if (link.getDependencies() == null || link.getDependencies().stream().noneMatch(x -> x.getRef().equals(target))) {
-                    link.addDependency(new Dependency(target));
+                final CryptoAsset target = assets.get(to.getRef());
+                if (target != null) {
+                    inventory.dependency(from, target);
                 }
             }
         }
     }
 
-    /**
-     * Returns the collected CBOM.
-     *
-     * @return the assets and their dependencies, with the metadata sonar-cryptography's output
-     *     gives a CBOM
-     */
-    public Bom bom() {
-        final Bom bom = new CBOMOutputFile().getBom();
-        assets.values().forEach(bom::addComponent);
-        dependencies.values().forEach(bom::addDependency);
-        return bom;
+    /** The asset of a component, converting it on first use. */
+    private CryptoAsset asset(Component c, Map<String, Component> byRef, Map<String, CryptoAsset> assets) {
+        final CryptoAsset done = assets.get(c.getBomRef());
+        if (done != null) {
+            return done;
+        }
+        final String name = NAME_UUID.matcher(c.getName() == null ? "" : c.getName()).replaceAll("");
+        final CryptoAsset asset = inventory.asset(name, properties(c, byRef, assets));
+        assets.put(c.getBomRef(), asset);
+        return asset;
+    }
+
+    private CryptoAssetProperties properties(Component c, Map<String, Component> byRef, Map<String, CryptoAsset> assets) {
+        final CryptoProperties p = c.getCryptoProperties();
+        if (p == null || p.getAssetType() == null) {
+            throw new IllegalStateException("No crypto properties: " + c.getName());
+        }
+        unsupported(c, "certificateProperties", p.getCertificateProperties());
+        switch (p.getAssetType()) {
+            case ALGORITHM -> {
+                final AlgorithmProperties a = p.getAlgorithmProperties();
+                if (a == null) {
+                    return new CryptoAssetProperties.Algorithm(null, null, null, null, null, null, p.getOid());
+                }
+                unsupported(c, "executionEnvironment", a.getExecutionEnvironment());
+                unsupported(c, "implementationPlatform", a.getImplementationPlatform());
+                unsupported(c, "certificationLevel", a.getCertificationLevel());
+                unsupported(c, "classicalSecurityLevel", a.getClassicalSecurityLevel());
+                unsupported(c, "nistQuantumSecurityLevel", a.getNistQuantumSecurityLevel());
+                final Set<CryptoAssetProperties.CryptoFunction> functions = new LinkedHashSet<>();
+                if (a.getCryptoFunctions() != null) {
+                    for (CryptoFunction f : a.getCryptoFunctions()) {
+                        functions.add(CryptoAssetProperties.CryptoFunction.valueOf(f.name()));
+                    }
+                }
+                return new CryptoAssetProperties.Algorithm(
+                        a.getPrimitive() == null ? null : CryptoAssetProperties.Primitive.valueOf(a.getPrimitive().name()),
+                        a.getParameterSetIdentifier(),
+                        a.getCurve(),
+                        a.getMode() == null ? null : CryptoAssetProperties.Mode.valueOf(a.getMode().name()),
+                        a.getPadding() == null ? null : CryptoAssetProperties.Padding.valueOf(a.getPadding().name()),
+                        functions,
+                        p.getOid());
+            }
+            case RELATED_CRYPTO_MATERIAL -> {
+                final RelatedCryptoMaterialProperties m = p.getRelatedCryptoMaterialProperties();
+                if (m == null) {
+                    return new CryptoAssetProperties.RelatedMaterial(null, null, p.getOid());
+                }
+                unsupported(c, "id", m.getId());
+                unsupported(c, "state", m.getState());
+                unsupported(c, "algorithmRef", m.getAlgorithmRef());
+                unsupported(c, "creationDate", m.getCreationDate());
+                unsupported(c, "activationDate", m.getActivationDate());
+                unsupported(c, "updateDate", m.getUpdateDate());
+                unsupported(c, "expirationDate", m.getExpirationDate());
+                unsupported(c, "value", m.getValue());
+                unsupported(c, "format", m.getFormat());
+                unsupported(c, "securedBy", m.getSecuredBy());
+                return new CryptoAssetProperties.RelatedMaterial(
+                        m.getType() == null ? null : CryptoAssetProperties.MaterialType.valueOf(m.getType().name()),
+                        m.getSize(),
+                        p.getOid());
+            }
+            case PROTOCOL -> {
+                final ProtocolProperties pr = p.getProtocolProperties();
+                if (pr == null) {
+                    return new CryptoAssetProperties.Protocol(null, null, null, p.getOid());
+                }
+                unsupported(c, "ikev2TransformTypes", pr.getIkev2TransformTypes());
+                unsupported(c, "cryptoRefArray", pr.getCryptoRefArray());
+                final List<CipherSuite> suites = new ArrayList<>();
+                if (pr.getCipherSuites() != null) {
+                    for (org.cyclonedx.model.component.crypto.CipherSuite s : pr.getCipherSuites()) {
+                        final List<CryptoAsset> algorithms = new ArrayList<>();
+                        for (String ref : s.getAlgorithms() == null ? List.<String>of() : s.getAlgorithms()) {
+                            final Component algorithm = byRef.get(ref);
+                            if (algorithm == null) {
+                                throw new IllegalStateException("Cipher suite " + s.getName() + " refers to a missing asset " + ref);
+                            }
+                            algorithms.add(asset(algorithm, byRef, assets));
+                        }
+                        suites.add(new CipherSuite(s.getName(), algorithms, s.getIdentifiers()));
+                    }
+                }
+                return new CryptoAssetProperties.Protocol(
+                        pr.getType() == null ? null : CryptoAssetProperties.ProtocolType.valueOf(pr.getType().name()),
+                        pr.getVersion(),
+                        suites,
+                        p.getOid());
+            }
+            default -> throw new IllegalStateException("Unsupported asset type " + p.getAssetType() + ": " + c.getName());
+        }
+    }
+
+    /** Fails on a property the model doesn't carry. */
+    private static void unsupported(Component c, String property, Object value) {
+        if (value != null && !(value instanceof List<?> l && l.isEmpty())) {
+            throw new IllegalStateException("Unsupported property " + property + " of " + c.getName() + ": " + value);
+        }
     }
 }

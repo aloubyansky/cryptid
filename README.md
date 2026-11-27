@@ -9,7 +9,7 @@ cryptid generates a CBOM (Cryptography Bill of Materials) from an SBOM. Give it 
 - Follows values through a method (constants, fields, string concatenation) and from callers to the crypto call, across JARs and through interfaces, and reports a value where it's chosen.
 - Links each asset to the SBOM component it's found in.
 
-A Keycloak distribution's SBOM (548 JARs, 88,000 classes) takes about 35 seconds and gives 1,270 crypto assets with 3,920 occurrences in 77 components.
+A Keycloak distribution's SBOM (548 JARs, 88,000 classes) takes about 35 seconds and gives 725 crypto assets with 4,320 occurrences in 77 components.
 
 ## Building
 

@@ -131,7 +131,7 @@ class PipelineEquivalenceTest {
     private static void compare(List<Analyzer.MethodResult> methods, List<IDetectionRule<Loc>> rules, CryptoApiMatcher matcher,
             Types types, CryptoAssetModeler modeler, Map<String, List<INode>> before, Map<String, List<INode>> after) {
         final RuleDetector rulesDetector = new RuleDetector(rules, types, "", null);
-        final CryptoEventDetector specDetector = new CryptoEventDetector(matcher, types, "", null);
+        final CryptoEventDetector specDetector = new CryptoEventDetector(matcher, types, null, null);
         final RuleAssetModeler ruleModeler = new RuleAssetModeler(modeler);
         for (Analyzer.MethodResult m : methods) {
             for (RuleDetector.RuleFinding f : rulesDetector.detect(m)) {
