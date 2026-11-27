@@ -2,6 +2,7 @@ package io.github.aloubyansky.cryptid.analysis;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import io.github.aloubyansky.cryptid.AnalysisInput;
 import io.github.aloubyansky.cryptid.AnalysisOptions;
 import io.github.aloubyansky.cryptid.ArtifactCoordinates;
 import io.github.aloubyansky.cryptid.InputArtifact;
@@ -17,7 +18,7 @@ class AnalysisRunTest {
     }
 
     private static InputArtifact in(String a, List<ArtifactCoordinates> deps) {
-        return new InputArtifact(c(a), Path.of(a + ".jar"), deps);
+        return InputArtifact.builder(c(a), Path.of(a + ".jar")).dependencies(deps).build();
     }
 
     private static final List<InputArtifact> ARTIFACTS = List.of(
@@ -27,7 +28,8 @@ class AnalysisRunTest {
             in("d", List.of()),
             in("unknown", null));
 
-    private static final AnalysisRun RUN = new AnalysisRun(new BytecodeScanner(), null, AnalysisOptions.defaults(), ARTIFACTS);
+    private static final AnalysisRun RUN = new AnalysisRun(new BytecodeScanner(), null, AnalysisOptions.defaults(),
+            AnalysisInput.builder().artifacts(ARTIFACTS).build());
 
     private static List<String> preference(String artifact) {
         return RUN.preference(ARTIFACTS.stream().filter(a -> a.coordinates().equals(c(artifact))).findFirst().orElseThrow());

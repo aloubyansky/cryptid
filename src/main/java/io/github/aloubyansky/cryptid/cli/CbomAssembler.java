@@ -4,48 +4,32 @@ import io.github.aloubyansky.cryptid.ArtifactCoordinates;
 import io.github.aloubyansky.cryptid.AssetOccurrence;
 import io.github.aloubyansky.cryptid.CryptoAsset;
 import io.github.aloubyansky.cryptid.CryptoInventory;
-import io.github.aloubyansky.cryptid.analysis.BuildInfo;
-import io.github.aloubyansky.cryptid.cyclonedx.CryptoAssetComponents;
+import io.github.aloubyansky.cryptid.cyclonedx.CbomWriter;
 import jakarta.enterprise.context.ApplicationScoped;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.cyclonedx.Version;
-import org.cyclonedx.exception.GeneratorException;
-import org.cyclonedx.generators.BomGeneratorFactory;
 import org.cyclonedx.model.Bom;
 import org.cyclonedx.model.Component;
-import org.cyclonedx.model.Dependency;
-import org.cyclonedx.model.Metadata;
-import org.cyclonedx.model.metadata.ToolInformation;
 import org.jboss.logging.Logger;
 
 /**
- * Writes the crypto inventory of an SBOM's artifacts as a CBOM, adding the analyzed Maven
- * components and linking each of them to the crypto assets in its artifact using CycloneDX
- * dependencies.
+ * Writes the crypto inventory of an SBOM's artifacts as a CBOM with {@link CbomWriter}, linking
+ * the SBOM's Maven components to the crypto assets in their artifacts and carrying the SBOM's
+ * metadata component.
  */
 @ApplicationScoped
 public class CbomAssembler {
 
     private static final Logger log = Logger.getLogger(CbomAssembler.class);
 
-    /** CycloneDX version of the produced CBOMs; cryptographic assets require 1.6. */
-    static final Version CYCLONEDX_VERSION = Version.VERSION_16;
-
     /**
-     * The merged CBOM and some statistics about it.
+     * The CBOM and some statistics about it.
      *
-     * @param bom the merged CBOM
+     * @param bom the CBOM
      * @param componentsWithAssets the number of SBOM components linked to at least one crypto
      *     asset
      * @param findings the total number of crypto asset occurrences
@@ -53,10 +37,8 @@ public class CbomAssembler {
     public record Result(Bom bom, int componentsWithAssets, long findings) {}
 
     /**
-     * Writes an inventory as a CBOM. The CBOM's metadata names this tool and carries the SBOM's
-     * metadata component. Every crypto asset is a component, linked from each SBOM component
-     * sharing an artifact its occurrences are in: values resolved at a caller are located in the
-     * caller's artifact. SBOM components are added once linked, except the metadata component.
+     * Writes an inventory as a CBOM. Every SBOM component sharing an artifact that a crypto asset
+     * occurs in is linked to the asset, and added to the CBOM, except the metadata component.
      *
      * @param inputSbom the input SBOM
      * @param groups the analyzed components, grouped by the binary artifact they share
@@ -64,117 +46,34 @@ public class CbomAssembler {
      * @return the CBOM with statistics
      */
     public Result assemble(Bom inputSbom, List<List<MavenComponent>> groups, CryptoInventory inventory) {
-        final Bom bom = new Bom();
-        bom.setMetadata(metadata());
-        String rootRef = null;
-        if (inputSbom.getMetadata() != null && inputSbom.getMetadata().getComponent() != null) {
-            final Component root = shallowCopy(inputSbom.getMetadata().getComponent());
-            bom.getMetadata().setComponent(root);
-            rootRef = root.getBomRef();
-        }
-        final Map<ArtifactCoordinates, List<MavenComponent>> byArtifact = new HashMap<>();
-        groups.forEach(g -> byArtifact.put(g.get(0).coordinates(), g));
-
-        final CryptoAssetComponents.Written written = CryptoAssetComponents.write(inventory.assets());
-        // component bom-ref -> its link to crypto assets; one entry per component
-        final Map<String, Dependency> links = new LinkedHashMap<>();
-        long findings = 0;
-        for (int i = 0; i < inventory.assets().size(); i++) {
-            final CryptoAsset asset = inventory.assets().get(i);
-            final Component component = written.components().get(i);
-            bom.addComponent(component);
-            final Set<ArtifactCoordinates> owners = new LinkedHashSet<>();
-            for (AssetOccurrence o : asset.occurrences()) {
-                findings++;
-                owners.add(o.location().artifact());
-            }
-            for (ArtifactCoordinates owner : owners) {
-                for (MavenComponent c : byArtifact.getOrDefault(owner, List.of())) {
-                    link(links, bom, c, rootRef, component);
+        final Component root = inputSbom.getMetadata() == null || inputSbom.getMetadata().getComponent() == null
+                ? null : shallowCopy(inputSbom.getMetadata().getComponent());
+        // the copies of the components sharing each artifact, made once
+        final Map<ArtifactCoordinates, List<Component>> byArtifact = new HashMap<>();
+        for (List<MavenComponent> g : groups) {
+            final List<Component> copies = new ArrayList<>(g.size());
+            for (MavenComponent c : g) {
+                if (c.bomRef() != null) {
+                    copies.add(shallowCopy(c.sbomComponent()));
                 }
             }
+            byArtifact.put(g.get(0).coordinates(), copies);
         }
-        written.dependencies().forEach(bom::addDependency);
-        links.values().forEach(bom::addDependency);
+        final Bom bom = CbomWriter.toBom(inventory, a -> byArtifact.getOrDefault(a, List.of()), root);
+
+        long findings = 0;
+        final Set<String> linked = new HashSet<>();
+        for (CryptoAsset asset : inventory.assets()) {
+            for (AssetOccurrence o : asset.occurrences()) {
+                findings++;
+                byArtifact.getOrDefault(o.location().artifact(), List.of()).forEach(c -> linked.add(c.getBomRef()));
+            }
+        }
         log.infof(
                 "%d of %d analyzed components contain cryptographic assets",
-                links.size(),
+                linked.size(),
                 groups.stream().mapToInt(List::size).sum());
-        return new Result(bom, links.size(), findings);
-    }
-
-    /**
-     * Links a component to a crypto asset. The first link of a component also adds the
-     * component itself to the CBOM, unless it is the root.
-     *
-     * @param links the links created so far, by component bom-ref; updated
-     * @param bom the CBOM being assembled
-     * @param c the component
-     * @param rootRef the bom-ref of the root (metadata) component, or {@code null}
-     * @param asset the crypto asset; ignored if it has no bom-ref
-     */
-    private static void link(Map<String, Dependency> links, Bom bom, MavenComponent c, String rootRef, Component asset) {
-        if (c.bomRef() == null || asset.getBomRef() == null) {
-            return;
-        }
-        final Dependency link = links.computeIfAbsent(c.bomRef(), ref -> {
-            if (!ref.equals(rootRef)) {
-                bom.addComponent(shallowCopy(c.sbomComponent()));
-            }
-            return new Dependency(ref);
-        });
-        if (link.getDependencies() == null
-                || link.getDependencies().stream().noneMatch(d -> d.getRef().equals(asset.getBomRef()))) {
-            link.addDependency(new Dependency(asset.getBomRef()));
-        }
-    }
-
-    /**
-     * Writes a CBOM as CycloneDX JSON, atomically: to a temporary file first, then moved into
-     * place, so an existing file always holds a complete CBOM.
-     *
-     * @param bom the CBOM
-     * @param file the target file
-     * @throws IOException if the file can't be written
-     */
-    public static void write(Bom bom, Path file) throws IOException {
-        final String json;
-        try {
-            json = BomGeneratorFactory.createJson(CYCLONEDX_VERSION, bom).toJsonString();
-        } catch (GeneratorException e) {
-            throw new IOException("Failed to serialize CBOM " + file, e);
-        }
-        final Path dir = file.toAbsolutePath().getParent();
-        Files.createDirectories(dir);
-        final Path tmp = Files.createTempFile(dir, file.getFileName().toString(), ".tmp");
-        Files.writeString(tmp, json);
-        Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-    }
-
-    /**
-     * Creates the CBOM metadata: a timestamp and this tool, with the sonar-cryptography version
-     * whose Java rules the crypto API specs are derived from, and whose CBOM model it uses.
-     *
-     * @return the metadata
-     */
-    private static Metadata metadata() {
-        final Metadata metadata = new Metadata();
-        metadata.setTimestamp(new Date());
-        final Component tool = new Component();
-        tool.setType(Component.Type.APPLICATION);
-        tool.setGroup("io.github.aloubyansky");
-        tool.setName("cryptid");
-        tool.setVersion(BuildInfo.VERSION);
-        tool.setDescription("Bytecode analysis with crypto API specs derived from sonar-cryptography's Java rules");
-        final Component rules = new Component();
-        rules.setType(Component.Type.LIBRARY);
-        rules.setGroup("com.ibm");
-        rules.setName("sonar-cryptography");
-        rules.setVersion(BuildInfo.SONAR_CRYPTOGRAPHY_VERSION);
-        final ToolInformation tools = new ToolInformation();
-        tools.setComponents(new ArrayList<>(List.of(tool, rules)));
-        metadata.setToolChoice(tools);
-        return metadata;
+        return new Result(bom, linked.size(), findings);
     }
 
     /**

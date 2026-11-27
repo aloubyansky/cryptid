@@ -34,35 +34,41 @@ The [foundation review](foundation.md) found that the results lack a model of th
    - No per-artifact JSON round trip, and no UUID and prefix heuristics.
 
    The set of asset contents, locations and lines stays the same on Keycloak.
-2. ~~**Analysis API.**~~ Done 2026-11-27: `Cryptid`, `InputArtifact`, `AnalysisOptions` and `ClasspathScope`, with `CryptoInventory` as the result; `GenerateCbomCommand` is an adapter. See [foundation.md](foundation.md#phase-2-api-decided-2026-11-27).
+2. ~~**Analysis API.**~~ Done 2026-11-27: `Cryptid`, `InputArtifact` and `AnalysisOptions`, with `CryptoInventory` as the result; the library owns the cache; `GenerateCbomCommand` is an adapter. See [foundation.md](foundation.md#phase-2-api-decided-2026-11-27).
 3. ~~**One program model.**~~ Done 2026-11-27: one class table for spec matching and dispatch, every class visible to every artifact, and `ClasspathScope` and `--classpath` removed. The interned method index moved into step 4. See [foundation.md](foundation.md#phase-3-one-class-table-decided-2026-11-27).
 4. **Detection-driven analysis.** See *Detection-driven analysis* in [foundation.md](foundation.md#detection-driven-analysis).
-   - Read every JAR's instructions only: hierarchy, call graph, candidate methods, field writers.
-   - Detect per JAR, recording open questions where a spec argument comes from a parameter.
-   - Answer them by interpreting only the callers asked about, through the call graph's reverse edges.
-   - Replaces the 306,000-call `CallIndex` and phase A's interpretation of every method. Done 2026-11-27 but for the cache: Keycloak takes about 12 s instead of 20, with the same CBOM; see [foundation.md](foundation.md#design-2026-11-27).
-   - The questions use the call graph's method ids, the interned method index left from step 3.
-   - Results are cached per JAR content.
+   - ~~Closures: interpret a set of methods with the values interpreting the whole JAR gives.~~ Done 2026-11-27.
+   - ~~Answers about callers through the call graph (`DemandCallIndex`), compared with `CallIndex`.~~ Done 2026-11-27.
+   - ~~The pipeline switched: phase A only reads, phase B interprets each JAR's candidates' closure, `CallIndex` is in the tests.~~ Done 2026-11-27: Keycloak takes about 12 s instead of 20, with the same CBOM; see [foundation.md](foundation.md#design-2026-11-27).
+   - **Per-JAR cache by validation.** Detection records its open questions instead of asking them during the scan, so that a JAR's own result can be kept without the answers, which depend on the whole SBOM. The result is kept with the classes it looked up outside its JAR, and reused while they resolve the same way. Changing one JAR then re-detects that JAR and those that looked up its classes. The questions can use the call graph's method ids, the interned method index left from step 3.
 
    Output identical per occurrence.
 5. **Closures across JARs.** Field values, and constants returned by exact methods, followed into other JARs: today they stop at the JAR boundary, and only arguments passed into parameters cross it. With step 4's closures only the methods involved are interpreted. Output changes, each difference reviewed. See *Closures across JARs* in [foundation.md](foundation.md#design-2026-11-27).
+
+### 2b. Before reachability
+
+1. ~~**API for reachability.**~~ Done 2026-11-27: `AnalysisInput`, `InputArtifact` with `application`, `EntryPoint`, `CryptoInventory.entryPoints`, `AssetOccurrence` with reachability, and `CbomWriter` in the library. See [foundation.md](foundation.md#phase-4-api-for-reachability-decided-2026-11-27).
+2. **A call-graph node per copy** of a class in several artifacts, so that a shaded copy isn't reached because the original is. Keycloak has 4,393 such classes.
+3. **Integer dispatch in the call graph**: type ids, each type's supertypes and declared methods as ids, precomputed in `finish()`. The walk dispatches every virtual call against every instantiated subtype; today each dispatch builds strings and walks the class table.
 
 ### 3. Reachability and endpoints
 
 This continues [reachability-design.md](reachability-design.md), steps 2 and 3. It is extended by *Endpoints as origins of crypto use* in [foundation.md](foundation.md): crypto use traced from the endpoints external users interact with.
 
 1. **Entry points and instantiated classes.**
+   - Phase A reads annotations (class, method, parameter), `META-INF/services` and the manifest's `Main-Class`.
+   - A spec loader taking several sources, for the crypto API, entry-point and bean specs.
    - Entry-point specs as data: annotation, parameter annotation, override and signature forms.
    - Each spec has a kind and an exposure, external or internal.
    - Endpoints carry the protocol, address and authentication where the code states them.
    - Bean specs and `META-INF/services`.
-   - Top-level artifacts named by the user, with a default.
-   - `--entry-points` for entry points supplied as data.
+   - Application artifacts (`InputArtifact.application`) named by the user in the CLI, with a default.
+   - `--entry-points` for entry points supplied as data, into `AnalysisInput.entryPoints`.
 
    Measure: the entry points found in `org.keycloak:*`, by kind and exposure, against Keycloak's known REST endpoints.
 2. **Reachability walk and CBOM marking.**
    - The forward walk to a fixpoint over instantiated classes.
-   - Each occurrence marked on its `Site`, or as `unknown` when nothing was searched.
+   - Each occurrence marked through its `CodeLocation`'s method, or as `unknown` when nothing was searched.
    - Metadata on the search.
    - `--paths` for the paths.
    - Reached and not-reached counts in the summary.
@@ -76,20 +82,20 @@ This continues [reachability-design.md](reachability-design.md), steps 2 and 3. 
 
 What this unlocks in the backlog:
 - *Dispatch precision*: the instantiated-class set can narrow `I.m` to the implementations that can actually run.
-- *Provided and used algorithms*: `provides` against `dependsOn`, now with reachability as evidence. `Finding` has a role for it from step 2.1.
+- *Provided and used algorithms*: `provides` against `dependsOn`, now with reachability as evidence. It needs a role on `AssetOccurrence`, which phase 1 left room for but didn't add.
 
 ### 4. Library and CLI split
 
-This is reachability step 4. With the API of step 2.2 in place, it moves packages into modules without changing the API.
+This is reachability step 4. With the API of step 2.2 in place, it moves packages into modules without changing the API. It also moves writing the CBOM into the library, in a shape the Quarkus extension can use, and takes `public` off what isn't API.
 
-- A library module whose input is `Artifact`s and optional entry points.
+- A library module whose input is `InputArtifact`s and optional entry points.
 - The CLI on top of it: SBOM reading, Maven resolution and the CycloneDX file.
 
 ### 5. Independence from sonar-cryptography
 
 This is reachability step 5. It can be done at any point before publishing.
 
-1. Events hold values of our own: the spec argument, the constant and the `Site`. Translation into sonar-cryptography's types then happens in `model` only (foundation G2).
+1. Events hold values of our own: the spec argument, the constant and the `CodeLocation`. Translation into sonar-cryptography's types then happens in `model` only (foundation G2).
 2. Replace `java` and `engine` with our own code: records for the roughly 70 value and context classes, and our own dispatch in place of the 11 context translators. This removes the reflection in `CryptoAssetModeler`, the `Tree` stand-in and the exclusions in `pom.xml`.
 3. Copy the sources of `mapper`, `enricher` and `output` into a module, with a NOTICE and a POM of its own. First check that they build on their own.
 4. Ask upstream to publish those three modules to Central. This is worth doing whatever the outcome of 3.
@@ -100,7 +106,7 @@ Measure: the fixture baseline and the Keycloak CBOM are unchanged, and the build
 
 ### 6. Quarkus extension
 
-This needs a separate design once steps 2 to 5 hold up. It supplies `Artifact`s from the application model, and entry points with full HTTP paths from the build.
+This needs a separate design once steps 2 to 5 hold up. It supplies `InputArtifact`s from the application model, and entry points with full HTTP paths from the build.
 
 ## Detection backlog
 

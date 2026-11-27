@@ -1,5 +1,6 @@
 package io.github.aloubyansky.cryptid.analysis;
 
+import io.github.aloubyansky.cryptid.AnalysisInput;
 import io.github.aloubyansky.cryptid.AnalysisOptions;
 import io.github.aloubyansky.cryptid.ArtifactAnalysis;
 import io.github.aloubyansky.cryptid.ArtifactCoordinates;
@@ -48,6 +49,7 @@ public final class AnalysisRun {
     private final BytecodeScanner scanner;
     private final Path cacheDir;
     private final AnalysisOptions options;
+    private final AnalysisInput input;
     private final List<InputArtifact> artifacts;
     private final Map<ArtifactCoordinates, InputArtifact> byCoordinates = new HashMap<>();
     private final List<Path> allJars;
@@ -59,14 +61,16 @@ public final class AnalysisRun {
      * @param scanner the scanner, with the specs loaded
      * @param cacheDir the directory to keep scans in, or {@code null} for none
      * @param options the options
-     * @param artifacts the artifacts, with distinct coordinates
+     * @param input the artifacts, with distinct coordinates, and what the caller knows of the
+     *     application
      * @throws IllegalArgumentException if two artifacts have the same coordinates
      */
-    public AnalysisRun(BytecodeScanner scanner, Path cacheDir, AnalysisOptions options, List<InputArtifact> artifacts) {
+    public AnalysisRun(BytecodeScanner scanner, Path cacheDir, AnalysisOptions options, AnalysisInput input) {
         this.scanner = scanner;
         this.cacheDir = cacheDir;
         this.options = options;
-        this.artifacts = List.copyOf(artifacts);
+        this.input = input;
+        this.artifacts = input.artifacts();
         for (InputArtifact a : this.artifacts) {
             if (byCoordinates.putIfAbsent(a.coordinates(), a) != null) {
                 throw new IllegalArgumentException("Artifact given twice: " + a.coordinates());
@@ -140,6 +144,7 @@ public final class AnalysisRun {
 
         // merge, in the order of the artifacts, so that the inventory is the same in every run
         final CryptoInventory.Builder inventory = CryptoInventory.builder();
+        input.entryPoints().forEach(inventory::entryPoint);
         for (ArtifactScan s : scans) {
             inventory.artifact(s.analysis());
             inventory.addAssets(s.assets());
@@ -202,18 +207,18 @@ public final class AnalysisRun {
     List<String> preference(InputArtifact a) {
         final Set<ArtifactCoordinates> visited = new LinkedHashSet<>();
         visited.add(a.coordinates());
-        if (a.dependencies() != null) {
-            final Deque<ArtifactCoordinates> todo = new ArrayDeque<>(a.dependencies());
+        a.dependencies().ifPresent(direct -> {
+            final Deque<ArtifactCoordinates> todo = new ArrayDeque<>(direct);
             while (!todo.isEmpty()) {
                 final ArtifactCoordinates next = todo.pop();
                 if (visited.add(next)) {
                     final InputArtifact dep = byCoordinates.get(next);
-                    if (dep != null && dep.dependencies() != null) {
-                        todo.addAll(dep.dependencies());
+                    if (dep != null) {
+                        dep.dependencies().ifPresent(todo::addAll);
                     }
                 }
             }
-        }
+        });
         return visited.stream().filter(byCoordinates::containsKey).map(ArtifactPaths::of).toList();
     }
 
@@ -226,7 +231,7 @@ public final class AnalysisRun {
         final List<String> ids = new ArrayList<>(artifacts.size());
         for (InputArtifact a : artifacts) {
             ids.add(a.coordinates() + " " + a.jar() + " " + Files.size(a.jar()) + " " + Files.getLastModifiedTime(a.jar()).toMillis()
-                    + " " + (a.dependencies() == null ? "?" : a.dependencies()));
+                    + " " + a.dependencies().map(Object::toString).orElse("?"));
         }
         return Files.createDirectories(cacheDir).toRealPath().resolve(CacheKey.of(CacheKey.build(), ids));
     }

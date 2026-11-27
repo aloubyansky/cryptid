@@ -6,9 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.aloubyansky.cryptid.ArtifactCoordinates;
 import io.github.aloubyansky.cryptid.CodeLocation;
+import io.github.aloubyansky.cryptid.CryptoInventory;
 import io.github.aloubyansky.cryptid.MethodId;
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
-import io.github.aloubyansky.cryptid.cyclonedx.CryptoAssetComponents;
+import io.github.aloubyansky.cryptid.cyclonedx.CbomWriter;
 import io.github.aloubyansky.cryptid.bytecode.CallGraph;
 import io.github.aloubyansky.cryptid.bytecode.DemandCallIndex;
 import io.github.aloubyansky.cryptid.bytecode.Hierarchy;
@@ -830,10 +831,6 @@ class BytecodeScannerTest {
 
     /** A scan's assets as a CycloneDX BOM, as the CBOM writes them. */
     static Bom bom(ArtifactScan scan) {
-        final CryptoAssetComponents.Written written = CryptoAssetComponents.write(scan.assets());
-        final Bom bom = new Bom();
-        written.components().forEach(bom::addComponent);
-        written.dependencies().forEach(bom::addDependency);
-        return bom;
+        return CbomWriter.toBom(CryptoInventory.builder().addAssets(scan.assets()).build(), c -> List.of(), null);
     }
 }

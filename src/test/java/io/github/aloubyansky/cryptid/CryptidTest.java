@@ -1,6 +1,7 @@
 package io.github.aloubyansky.cryptid;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -48,8 +49,13 @@ class CryptidTest {
         cryptid = Cryptid.builder().build();
     }
 
-    private static List<InputArtifact> inputs() {
-        return List.of(new InputArtifact(LIB, lib, List.of()), new InputArtifact(APP, app, List.of(LIB)));
+    private static AnalysisInput input(InputArtifact... artifacts) {
+        return AnalysisInput.builder().artifacts(List.of(artifacts)).build();
+    }
+
+    private static AnalysisInput inputs() {
+        return input(InputArtifact.builder(LIB, lib).dependencies(List.of()).build(),
+                InputArtifact.builder(APP, app).dependencies(List.of(LIB)).build());
     }
 
     @Test
@@ -79,7 +85,8 @@ class CryptidTest {
         assertTrue(third.artifacts().stream().allMatch(a -> a.outcome() == Outcome.ANALYZED), third.artifacts().toString());
         // other dependencies don't reuse them
         final CryptoInventory fourth = cached.analyze(
-                List.of(new InputArtifact(LIB, lib, List.of()), new InputArtifact(APP, app, null)), AnalysisOptions.defaults());
+                input(InputArtifact.builder(LIB, lib).dependencies(List.of()).build(), InputArtifact.builder(APP, app).build()),
+                AnalysisOptions.defaults());
         assertTrue(fourth.artifacts().stream().allMatch(a -> a.outcome() == Outcome.ANALYZED), fourth.artifacts().toString());
     }
 
@@ -88,7 +95,7 @@ class CryptidTest {
         final Path broken = Files.writeString(dir.resolve("broken.jar"), "not a JAR");
         final ArtifactCoordinates coords = ArtifactCoordinates.jar("org.acme", "broken", "1.0");
         final CryptoInventory inventory = cryptid.analyze(
-                List.of(new InputArtifact(coords, broken, List.of()), new InputArtifact(LIB, lib, List.of())),
+                input(InputArtifact.builder(coords, broken).build(), InputArtifact.builder(LIB, lib).build()),
                 AnalysisOptions.defaults());
         final ArtifactAnalysis failed = inventory.artifacts().get(0);
         assertEquals(Outcome.FAILED, failed.outcome());
@@ -99,6 +106,38 @@ class CryptidTest {
     @Test
     void rejectsDuplicateCoordinates() {
         assertThrows(IllegalArgumentException.class, () -> cryptid.analyze(
-                List.of(new InputArtifact(LIB, lib, null), new InputArtifact(LIB, app, null)), AnalysisOptions.defaults()));
+                input(InputArtifact.builder(LIB, lib).build(), InputArtifact.builder(LIB, app).build()), AnalysisOptions.defaults()));
+    }
+
+    @Test
+    void keepsSuppliedEntryPointsAndLeavesReachabilityUnknown() {
+        final EntryPoint run = EntryPoint.builder(new MethodId("org.acme.app.App", "run", "()V"), EntryPoint.HTTP)
+                .address("GET /run")
+                .build();
+        final CryptoInventory inventory = cryptid.analyze(AnalysisInput.builder()
+                        .artifacts(inputs().artifacts())
+                        .entryPoint(run)
+                        .instantiatedClass("org.acme.app.App")
+                        .build(),
+                AnalysisOptions.defaults());
+        assertEquals(List.of(run), inventory.entryPoints());
+        assertEquals(EntryPoint.Source.SUPPLIED, run.source());
+        assertEquals(EntryPoint.Exposure.EXTERNAL, run.exposure());
+        assertTrue(run.authenticated().isEmpty());
+        for (CryptoAsset a : inventory.assets()) {
+            for (AssetOccurrence o : a.occurrences()) {
+                assertEquals(AssetOccurrence.Reachability.UNKNOWN, o.reachability());
+                assertEquals(List.of(), o.reachedBy());
+            }
+        }
+    }
+
+    @Test
+    void inputArtifactsDefaultToUnknownDependenciesOutsideTheApplication() {
+        final InputArtifact a = InputArtifact.builder(LIB, lib).build();
+        assertTrue(a.dependencies().isEmpty());
+        assertFalse(a.application());
+        assertEquals(List.of(), InputArtifact.builder(LIB, lib).dependencies(List.of()).build().dependencies().orElseThrow());
+        assertTrue(InputArtifact.builder(APP, app).application(true).build().application());
     }
 }

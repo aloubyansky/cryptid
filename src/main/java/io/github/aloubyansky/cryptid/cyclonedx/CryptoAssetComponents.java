@@ -39,7 +39,7 @@ import org.cyclonedx.model.component.evidence.Occurrence;
  * and unique among assets of distinct content. Related material is named with the bom-ref
  * appended, e.g. {@code key@<bom-ref>}, as sonar-cryptography's output names it.
  */
-public final class CryptoAssetComponents {
+final class CryptoAssetComponents {
 
     /**
      * Assets written as components.
@@ -48,7 +48,7 @@ public final class CryptoAssetComponents {
      * @param dependencies the assets' dependencies on other assets, one entry per asset that has any
      * @param refs the bom-ref of each asset's component
      */
-    public record Written(List<Component> components, List<Dependency> dependencies, Map<CryptoAsset, String> refs) {}
+    record Written(List<Component> components, List<Dependency> dependencies, Map<CryptoAsset, String> refs) {}
 
     private CryptoAssetComponents() {}
 
@@ -59,7 +59,7 @@ public final class CryptoAssetComponents {
      *     suites name must be among them
      * @return the components, their dependencies and their bom-refs
      */
-    public static Written write(List<CryptoAsset> assets) {
+    static Written write(List<CryptoAsset> assets) {
         final Map<CryptoAsset, String> refs = new IdentityHashMap<>();
         for (CryptoAsset a : assets) {
             refs.put(a, bomRef(a));
@@ -86,7 +86,7 @@ public final class CryptoAssetComponents {
      * @param location the code location
      * @return e.g. {@code org.bouncycastle/bcprov-jdk18on/1.78.1/org/bouncycastle/crypto/engines/AESEngine.java}
      */
-    public static String location(CodeLocation location) {
+    static String location(CodeLocation location) {
         return location.artifact() == null ? location.sourceFile()
                 : ArtifactPaths.of(location.artifact()) + "/" + location.sourceFile();
     }

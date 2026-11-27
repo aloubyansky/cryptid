@@ -5,7 +5,6 @@ import io.github.aloubyansky.cryptid.scan.BytecodeScanner;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
-import java.util.List;
 import org.jboss.logging.Logger;
 
 /**
@@ -44,18 +43,18 @@ public final class Cryptid {
     /**
      * Analyzes artifacts.
      *
-     * @param artifacts the artifacts, with distinct coordinates; the order determines the order of
-     *     the inventory's artifacts and assets
+     * @param input the artifacts, with distinct coordinates, whose order is that of the
+     *     inventory's artifacts and assets, and what the caller knows of the application
      * @param options how to analyze
-     * @return the inventory: an analysis for every artifact, and the assets found in them, merged
-     *     by content; an artifact whose analysis failed has a {@link ArtifactAnalysis.Outcome#FAILED}
-     *     analysis and contributes no assets
+     * @return the inventory: an analysis for every artifact, the assets found in them, merged by
+     *     content, and the application's entry points; an artifact whose analysis failed has a
+     *     {@link ArtifactAnalysis.Outcome#FAILED} analysis and contributes no assets
      * @throws IllegalArgumentException if two artifacts have the same coordinates
      * @throws UncheckedIOException if the cache directory can't be used
      */
-    public CryptoInventory analyze(List<InputArtifact> artifacts, AnalysisOptions options) {
+    public CryptoInventory analyze(AnalysisInput input, AnalysisOptions options) {
         try {
-            return new AnalysisRun(scanner, cacheDirectory, options, artifacts).run();
+            return new AnalysisRun(scanner, cacheDirectory, options, input).run();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

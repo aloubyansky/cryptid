@@ -6,17 +6,46 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The crypto assets found in a set of artifacts, which a CBOM is written from.
- *
- * @param artifacts what analyzing each artifact amounted to
- * @param assets the assets, one per content, each with its occurrences in all artifacts
+ * The crypto assets found in a set of artifacts, which a CBOM is written from, with the entry
+ * points of the application they belong to.
  */
-public record CryptoInventory(List<ArtifactAnalysis> artifacts, List<CryptoAsset> assets) {
+public final class CryptoInventory {
 
-    /** Copies the lists. */
-    public CryptoInventory {
-        artifacts = List.copyOf(artifacts);
-        assets = List.copyOf(assets);
+    private final List<ArtifactAnalysis> artifacts;
+    private final List<CryptoAsset> assets;
+    private final List<EntryPoint> entryPoints;
+
+    private CryptoInventory(List<ArtifactAnalysis> artifacts, List<CryptoAsset> assets, List<EntryPoint> entryPoints) {
+        this.artifacts = List.copyOf(artifacts);
+        this.assets = List.copyOf(assets);
+        this.entryPoints = List.copyOf(entryPoints);
+    }
+
+    /**
+     * What analyzing each artifact amounted to.
+     *
+     * @return one analysis per artifact, in the order of the input
+     */
+    public List<ArtifactAnalysis> artifacts() {
+        return artifacts;
+    }
+
+    /**
+     * The assets found.
+     *
+     * @return the assets, one per content, each with its occurrences in all artifacts
+     */
+    public List<CryptoAsset> assets() {
+        return assets;
+    }
+
+    /**
+     * The application's entry points: those supplied with the input, and those detected.
+     *
+     * @return the entry points; empty if none were supplied or detected
+     */
+    public List<EntryPoint> entryPoints() {
+        return entryPoints;
     }
 
     /**
@@ -30,11 +59,14 @@ public record CryptoInventory(List<ArtifactAnalysis> artifacts, List<CryptoAsset
 
     /**
      * Builds an inventory: creates assets, merging those of equal content, and records their
-     * occurrences and dependencies. Not thread-safe; a builder is used once.
+     * occurrences and dependencies, and the entry points. It is for producers of inventories, such
+     * as the analysis itself; users of an inventory don't need it. Not thread-safe; a builder is
+     * used once.
      */
     public static final class Builder {
 
         private final List<ArtifactAnalysis> artifacts = new ArrayList<>();
+        private final List<EntryPoint> entryPoints = new ArrayList<>();
         private final Map<CryptoAsset, CryptoAsset> assets = new LinkedHashMap<>();
         private boolean built;
 
@@ -93,7 +125,19 @@ public record CryptoInventory(List<ArtifactAnalysis> artifacts, List<CryptoAsset
         }
 
         /**
-         * Adds another inventory: its artifacts, and its assets merged into those of equal content,
+         * Records an entry point of the application.
+         *
+         * @param entryPoint the entry point
+         * @return this builder
+         */
+        public Builder entryPoint(EntryPoint entryPoint) {
+            check();
+            entryPoints.add(entryPoint);
+            return this;
+        }
+
+        /**
+         * Adds another inventory: its artifacts and entry points, and its assets merged into those of equal content,
          * with their occurrences and dependencies.
          *
          * @param other the inventory
@@ -102,6 +146,7 @@ public record CryptoInventory(List<ArtifactAnalysis> artifacts, List<CryptoAsset
         public Builder add(CryptoInventory other) {
             check();
             artifacts.addAll(other.artifacts());
+            entryPoints.addAll(other.entryPoints());
             return addAssets(other.assets());
         }
 
@@ -156,7 +201,7 @@ public record CryptoInventory(List<ArtifactAnalysis> artifacts, List<CryptoAsset
         public CryptoInventory build() {
             check();
             built = true;
-            return new CryptoInventory(artifacts, new ArrayList<>(assets.values()));
+            return new CryptoInventory(artifacts, new ArrayList<>(assets.values()), entryPoints);
         }
 
         private CryptoAsset own(CryptoAsset asset) {

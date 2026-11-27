@@ -96,4 +96,15 @@ class CryptoInventoryTest {
         assertThrows(IllegalStateException.class, () -> b.asset("MD5", SHA256));
         assertThrows(IllegalStateException.class, b::build);
     }
+
+    @Test
+    void occurrencesAreIdentifiedByLocation() {
+        final CryptoInventory.Builder b = CryptoInventory.builder();
+        final CryptoAsset sha = b.asset("SHA-256", SHA256);
+        b.occurrence(sha, at(LIB, 1)).occurrence(sha, at(LIB, 1));
+        final AssetOccurrence o = b.build().assets().get(0).occurrences().get(0);
+        assertEquals(1, sha.occurrences().size());
+        assertEquals(at(LIB, 1), o.location());
+        assertEquals(AssetOccurrence.Reachability.UNKNOWN, o.reachability());
+    }
 }

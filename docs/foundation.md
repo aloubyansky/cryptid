@@ -431,6 +431,50 @@ The choices behind it:
 
 Measured on Keycloak 26.8.2 (2026-11-27): the CBOM is identical to phase 1's, every occurrence with its bom-ref and `symbol` and every dependency, despite the new classpath order. A second run with the same `--work-dir` reuses all 548 results and takes under a second.
 
+## Phase 4: API for reachability (decided 2026-11-27)
+
+Reviewed before reachability, so that it adds values without changing shapes. Nothing new is computed yet: reachability reads `UNKNOWN`, and the inventory's entry points are those supplied.
+
+```java
+final class AnalysisInput {                  // builder(): artifact(s), entryPoint, instantiatedClass
+    List<InputArtifact> artifacts(); List<EntryPoint> entryPoints(); Set<String> instantiatedClasses();
+}
+final class InputArtifact {                  // builder(coordinates, jar): dependencies, application
+    ArtifactCoordinates coordinates(); Path jar();
+    Optional<List<ArtifactCoordinates>> dependencies();   // empty: not known
+    boolean application();                               // the application's own, searched for entry points
+}
+final class EntryPoint {                     // builder(method, kind): exposure, address, authenticated, source
+    MethodId method(); String kind();        // constants HTTP, GRPC, ..., MAIN
+    Exposure exposure(); Optional<String> address(); Optional<Boolean> authenticated(); Source source();
+}
+final class CryptoInventory {                // builder() is public, for producers
+    List<ArtifactAnalysis> artifacts(); List<CryptoAsset> assets(); List<EntryPoint> entryPoints();
+}
+final class AssetOccurrence {                // identified by its location
+    CodeLocation location(); Reachability reachability(); List<EntryPoint> reachedBy();
+}
+// Cryptid: CryptoInventory analyze(AnalysisInput input, AnalysisOptions options)
+// io.github.aloubyansky.cryptid.cyclonedx.CbomWriter: toBom(inventory, linkTo, metadataComponent), write(bom, file)
+```
+
+The choices behind it:
+
+- **One input type.** The artifacts, which are the application's own, and the entry points and instantiated classes a caller knows, as a Quarkus build does, are what to analyze; options stay how. `InputArtifact.application()` says what the top-level artifacts of the reachability design are: the application's own code.
+- **Classes for what will grow.** `InputArtifact`, `CryptoInventory` and `AssetOccurrence` were records; reachability adds to each, which would change their constructors. The complete value types stay records.
+- **An occurrence's identity is its location.** What is attached to it, reachability now and a uses/provides role later, isn't part of it.
+- **Entry-point kinds are names**, with constants for those that ship, since entry-point specs are data and can add kinds.
+- **`CryptoInventory.Builder` stays public**, documented as being for producers. Read-only API types over internal implementations would hide it, at the cost of a layer of interfaces; that can come with the library and CLI split.
+- **Writing the CBOM is in the library**, in `cyclonedx`, an API package of its own, so the root package has no CycloneDX types. The caller gives the components to link per artifact; the CLI's `CbomAssembler` only copies the SBOM's components. Reachability's properties and the endpoints' services will be added to this writer.
+
+Decided with it, for the implementation:
+
+- **A call-graph node per copy** for classes in several artifacts, so that a shaded copy isn't reached because the original is. Before reachability's walk.
+- **Integer dispatch in the call graph**: type ids, supertypes and declared methods per type, precomputed, since the walk dispatches every virtual call against every instantiated subtype.
+- **Annotations, `META-INF/services` and the manifest's `Main-Class`** read in phase A, with reachability step 1, and a spec loader taking several sources (G6).
+
+Measured on Keycloak 26.8.2 (2026-11-27): the CBOM is byte-identical to before, but for its timestamp.
+
 ## Phase 3: one class table (decided 2026-11-27)
 
 Measured first, on Keycloak's 534 JARs: 83,839 classes, 4,393 of them in more than one JAR, and 12 with copies whose bytes differ (mostly plexus-utils against plexus-xml). Of those, 6 differ in what the class table holds, supertypes and declared methods. So the two hierarchies of G4 hardly ever disagree on which copy applies. They disagreed more on visibility: spec matching saw an artifact's dependencies only, so an incomplete SBOM graph could hide a supertype.

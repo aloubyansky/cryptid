@@ -35,12 +35,12 @@ Keycloak 26.8.2 (`src/test/resources/keycloak-26.8.2.zip.cdx.json`): 573 Maven c
 The code is in `io.github.aloubyansky.cryptid`, with dependencies going one way:
 
 ```text
-cryptid             the API: Cryptid, InputArtifact, AnalysisOptions, and the
-                    result model (CryptoInventory, CryptoAsset, CodeLocation, ...)
+cryptid             the API: Cryptid, AnalysisInput, InputArtifact, AnalysisOptions, EntryPoint,
+                    and the result model (CryptoInventory, CryptoAsset, AssetOccurrence, ...)
 cryptid.cli         CLI, SBOM reading, CBOM assembly (GenerateCbomCommand, SbomReader, CbomAssembler)
 cryptid.analysis    AnalysisRun: phases A and B over all artifacts, the merge, the cache
                     (CacheKey, InventoryJson), BuildInfo
-cryptid.cyclonedx   CryptoAssetComponents: the result model as CycloneDX components
+cryptid.cyclonedx   API too: CbomWriter, writing an inventory as a CycloneDX CBOM
 cryptid.scan        BytecodeScanner: phases A and B for one JAR; AssetCollector: sonar-cryptography's
                     output to the result model; ArtifactScan, the result of one JAR
 cryptid.model       CryptoAssetModeler, AssetAssembler: event trees to asset trees
@@ -52,7 +52,7 @@ cryptid.bytecode    Analyzer, AVal, CallSite, JarCache: the analysis core; Deman
                     Hierarchy: the class table; Types: an artifact's view of it, and the JDK;
                     CallGraph, MethodFacts: the calls between all methods
 
-cli -> cryptid (API) -> analysis -> scan -> model -> detection -> spec -> bytecode
+cli -> cryptid (API), cryptid.cyclonedx (API) -> analysis -> scan -> model -> detection -> spec -> bytecode
 cli -> cyclonedx
 ```
 

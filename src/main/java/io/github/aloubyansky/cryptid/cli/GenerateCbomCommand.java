@@ -1,11 +1,13 @@
 package io.github.aloubyansky.cryptid.cli;
 
+import io.github.aloubyansky.cryptid.AnalysisInput;
 import io.github.aloubyansky.cryptid.AnalysisOptions;
 import io.github.aloubyansky.cryptid.ArtifactAnalysis;
 import io.github.aloubyansky.cryptid.ArtifactCoordinates;
 import io.github.aloubyansky.cryptid.Cryptid;
 import io.github.aloubyansky.cryptid.CryptoInventory;
 import io.github.aloubyansky.cryptid.InputArtifact;
+import io.github.aloubyansky.cryptid.cyclonedx.CbomWriter;
 import io.quarkus.picocli.runtime.annotations.TopCommand;
 import jakarta.inject.Inject;
 import java.nio.file.Path;
@@ -146,7 +148,7 @@ public class GenerateCbomCommand implements Callable<Integer> {
             log.infof("Work directory: %s", workDir);
             cryptid.cacheDirectory(workDir);
         }
-        final CryptoInventory inventory = cryptid.build().analyze(inputs(sbom, resolved), AnalysisOptions.builder()
+        final CryptoInventory inventory = cryptid.build().analyze(AnalysisInput.builder().artifacts(inputs(sbom, resolved)).build(), AnalysisOptions.builder()
                 .threads(threadCount)
                 .rescan(rescan)
                 .build());
@@ -170,7 +172,7 @@ public class GenerateCbomCommand implements Callable<Integer> {
         // 3. write the CBOM
         final CbomAssembler.Result result =
                 assembler.assemble(sbom, resolved.stream().map(ArtifactGroup::members).toList(), inventory);
-        CbomAssembler.write(result.bom(), output);
+        CbomWriter.write(result.bom(), output);
         log.infof(
                 "Wrote CBOM to %s: %d findings in %d components, total time %ds",
                 output,
@@ -221,7 +223,9 @@ public class GenerateCbomCommand implements Callable<Integer> {
                     }
                 }
             }
-            inputs.add(new InputArtifact(g.first().coordinates(), g.jar(), deps == null ? null : List.copyOf(deps)));
+            inputs.add(InputArtifact.builder(g.first().coordinates(), g.jar())
+                    .dependencies(deps == null ? null : List.copyOf(deps))
+                    .build());
         }
         return inputs;
     }
