@@ -34,7 +34,7 @@ The [foundation review](foundation.md) found that the results lack a model of th
    - No per-artifact JSON round trip, and no UUID and prefix heuristics.
 
    The set of asset contents, locations and lines stays the same on Keycloak.
-2. **Analysis API.** `Artifact`, `Options`, `Cryptid.analyze` and its result. `GenerateCbomCommand` becomes an adapter, and the API package is the only public surface.
+2. ~~**Analysis API.**~~ Done 2026-11-27: `Cryptid`, `InputArtifact`, `AnalysisOptions` and `ClasspathScope`, with `CryptoInventory` as the result; `GenerateCbomCommand` is an adapter. See [foundation.md](foundation.md#phase-2-api-decided-2026-11-27).
 3. **One program model.**
    - One class table for both spec matching and dispatch, with the `--classpath` modes as views on it.
    - An interned method index used throughout, with `MethodId` at the API.

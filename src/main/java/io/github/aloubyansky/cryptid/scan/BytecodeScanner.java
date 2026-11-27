@@ -25,8 +25,8 @@ import java.util.Map;
 
 /**
  * Detects cryptographic assets in a binary JAR by analyzing its bytecode with the crypto API
- * specs, models them with sonar-cryptography's translation, and returns them as the JAR's {@link
- * CryptoInventory}. No source code and no SonarSource analyzer is involved.
+ * specs, models them with sonar-cryptography's translation, and returns them as an {@link
+ * ArtifactScan}. No source code and no SonarSource analyzer is involved.
  *
  * <p>Scanning is two-phase when values passed between methods are to be resolved: first {@link
  * #index} every JAR into a shared {@link CallIndex}, then {@link #scan} each JAR with it.
@@ -127,9 +127,9 @@ public final class BytecodeScanner {
      * @param callIndex resolves values passed in from callers, possibly in other JARs; {@code
      *     null} to resolve values within methods only. Values resolved at a caller are located at
      *     the caller's call site, so the inventory may hold occurrences in other artifacts.
-     * @return the JAR's inventory: its analysis and the assets found
+     * @return what scanning the JAR amounted to, and the assets found
      */
-    public CryptoInventory scan(Path jar, ArtifactCoordinates artifact, List<Path> classpath, JarCache jarCache,
+    public ArtifactScan scan(Path jar, ArtifactCoordinates artifact, List<Path> classpath, JarCache jarCache,
             CallIndex callIndex) {
         final Analyzer analyzer = new Analyzer();
         analyzer.addJar(jar, jarCache);
@@ -146,15 +146,15 @@ public final class BytecodeScanner {
      * @param jarCache the shared JAR cache
      * @param callIndex resolves values passed in from callers, or {@code null}
      * @param candidates the JAR's candidate methods from {@link #index}
-     * @return the JAR's inventory: its analysis and the assets found
+     * @return what scanning the JAR amounted to, and the assets found
      * @see #scan(Path, ArtifactCoordinates, List, JarCache, CallIndex)
      */
-    public CryptoInventory scan(Path jar, ArtifactCoordinates artifact, List<Path> classpath, JarCache jarCache,
+    public ArtifactScan scan(Path jar, ArtifactCoordinates artifact, List<Path> classpath, JarCache jarCache,
             CallIndex callIndex, CandidateMethods candidates) {
         return detect(jar, artifact, classpath, jarCache, callIndex, candidates.methods(), candidates.failedMethods());
     }
 
-    private CryptoInventory detect(Path jar, ArtifactCoordinates artifact, List<Path> classpath, JarCache jarCache,
+    private ArtifactScan detect(Path jar, ArtifactCoordinates artifact, List<Path> classpath, JarCache jarCache,
             CallIndex callIndex, List<Analyzer.MethodResult> methods, int failedMethods) {
         final CryptoEventDetector detector = new CryptoEventDetector(matcher, types(jar, classpath, jarCache), artifact, callIndex);
         final CryptoAssetModeler modeler = modelers.get();
@@ -171,8 +171,8 @@ public final class BytecodeScanner {
                 findings++;
             }
         }
-        inventory.artifact(new ArtifactAnalysis(artifact, jarCache.classNames(jar).size(), findings, failedMethods));
-        return inventory.build();
+        return new ArtifactScan(new ArtifactAnalysis(artifact, ArtifactAnalysis.Outcome.ANALYZED,
+                jarCache.classNames(jar).size(), findings, failedMethods, null), inventory.build().assets());
     }
 
     /**

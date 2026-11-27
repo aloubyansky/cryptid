@@ -67,13 +67,13 @@ class CryptoInventoryTest {
         final CryptoAsset libKey = lib.asset("secret-key", KEY);
         final CryptoAsset libSha = lib.asset("SHA-256", SHA256);
         lib.occurrence(libKey, at(LIB, 1)).occurrence(libSha, at(LIB, 2)).dependency(libKey, libSha);
-        lib.artifact(new ArtifactAnalysis(LIB, 3, 2, 0));
+        lib.artifact(new ArtifactAnalysis(LIB, ArtifactAnalysis.Outcome.ANALYZED, 3, 2, 0, null));
         final CryptoInventory.Builder app = CryptoInventory.builder();
         final CryptoAsset appSha = app.asset("SHA-256", SHA256);
         final CryptoAsset tls = app.asset("TLS", new Protocol(ProtocolType.TLS, "1.3",
                 List.of(new CipherSuite("TLS_AES_128_GCM_SHA256", List.of(appSha), List.of("0x13", "0x01"))), null));
         app.occurrence(appSha, at(APP, 5)).occurrence(tls, at(APP, 6));
-        app.artifact(new ArtifactAnalysis(APP, 1, 2, 0));
+        app.artifact(new ArtifactAnalysis(APP, ArtifactAnalysis.Outcome.ANALYZED, 1, 2, 0, null));
 
         final CryptoInventory merged = CryptoInventory.builder().add(lib.build()).add(app.build()).build();
         assertEquals(List.of("secret-key", "SHA-256", "TLS"), merged.assets().stream().map(CryptoAsset::name).toList());

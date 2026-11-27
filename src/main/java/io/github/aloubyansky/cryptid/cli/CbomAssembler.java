@@ -4,6 +4,7 @@ import io.github.aloubyansky.cryptid.ArtifactCoordinates;
 import io.github.aloubyansky.cryptid.AssetOccurrence;
 import io.github.aloubyansky.cryptid.CryptoAsset;
 import io.github.aloubyansky.cryptid.CryptoInventory;
+import io.github.aloubyansky.cryptid.analysis.BuildInfo;
 import io.github.aloubyansky.cryptid.cyclonedx.CryptoAssetComponents;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.io.IOException;

@@ -70,6 +70,31 @@ public class SbomReader {
     }
 
     /**
+     * Returns the direct dependencies of every component in an SBOM's dependency graph.
+     *
+     * @param bom the SBOM
+     * @return for each bom-ref with an entry in the SBOM's {@code dependencies}, the bom-refs of
+     *     its direct dependencies in the order listed, which may be empty; bom-refs missing from
+     *     the graph have no key in the map, so callers can tell "no dependencies" from "unknown"
+     */
+    public Map<String, List<String>> directDependencies(Bom bom) {
+        final Map<String, List<String>> direct = new LinkedHashMap<>();
+        if (bom.getDependencies() != null) {
+            for (Dependency d : bom.getDependencies()) {
+                final List<String> deps = direct.computeIfAbsent(d.getRef(), k -> new ArrayList<>());
+                if (d.getDependencies() != null) {
+                    d.getDependencies().forEach(child -> {
+                        if (!deps.contains(child.getRef())) {
+                            deps.add(child.getRef());
+                        }
+                    });
+                }
+            }
+        }
+        return direct;
+    }
+
+    /**
      * Computes the transitive dependency closure of every component in an SBOM's dependency
      * graph. Cycles in the graph are tolerated.
      *

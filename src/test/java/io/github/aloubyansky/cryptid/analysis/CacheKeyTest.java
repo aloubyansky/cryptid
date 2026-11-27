@@ -1,4 +1,4 @@
-package io.github.aloubyansky.cryptid.cli;
+package io.github.aloubyansky.cryptid.analysis;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;

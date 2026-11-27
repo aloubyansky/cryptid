@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.aloubyansky.cryptid.ArtifactCoordinates;
 import io.github.aloubyansky.cryptid.CodeLocation;
-import io.github.aloubyansky.cryptid.CryptoInventory;
 import io.github.aloubyansky.cryptid.MethodId;
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
 import io.github.aloubyansky.cryptid.cyclonedx.CryptoAssetComponents;
@@ -65,7 +64,7 @@ class BytecodeScannerTest {
     @Test
     void detectsCryptoAssetsInBytecode() throws Exception {
         final Path jar = compile("org/acme/sample/Sample.java", SOURCE);
-        final CryptoInventory result;
+        final ArtifactScan result;
         try (JarCache jars = new JarCache()) {
             result = new BytecodeScanner().scan(jar, coords("org.acme/sample/1.0"), List.of(), jars, null);
         }
@@ -85,7 +84,7 @@ class BytecodeScannerTest {
         assertTrue(digest.getSymbol().startsWith("org.acme.sample.Sample#"), digest.getSymbol());
         assertTrue(digest.getAdditionalContext().startsWith("java.security.MessageDigest#getInstance"),
                 digest.getAdditionalContext());
-        assertEquals(1, result.artifacts().get(0).classes());
+        assertEquals(1, result.analysis().classes());
         // the result model locates the occurrence in its method and artifact
         final CodeLocation location = result.assets().stream()
                 .filter(a -> a.name().equals("SHA256") || a.name().equals("SHA-256"))
@@ -806,9 +805,9 @@ class BytecodeScannerTest {
         return ArtifactCoordinates.jar(p[0], p[1], p[2]);
     }
 
-    /** An inventory's assets as a CycloneDX BOM, as the CBOM writes them. */
-    static Bom bom(CryptoInventory inventory) {
-        final CryptoAssetComponents.Written written = CryptoAssetComponents.write(inventory.assets());
+    /** A scan's assets as a CycloneDX BOM, as the CBOM writes them. */
+    static Bom bom(ArtifactScan scan) {
+        final CryptoAssetComponents.Written written = CryptoAssetComponents.write(scan.assets());
         final Bom bom = new Bom();
         written.components().forEach(bom::addComponent);
         written.dependencies().forEach(bom::addDependency);

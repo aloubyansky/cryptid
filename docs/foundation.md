@@ -302,27 +302,46 @@ Measured on Keycloak 26.8.2, against the build before (2026-11-27):
 - 725 asset components instead of 1,270, still linked from the same 77 SBOM components; 1,847 dependency links instead of 2,209.
 - The same time and memory: 16.7 s, about 9 GB RSS.
 
-## Analysis API
+## Phase 2 API (decided 2026-11-27)
 
-The input and the result are the library's API. Everything else is internal:
+The analysis API, in the root package:
 
 ```java
-Report report = Cryptid.analyze(artifacts, Options.defaults()
-        .entryPoints(supplied)          // optional; added to or replacing detection
-        .cache(cacheDir));              // optional
+final class Cryptid {
+    static Builder builder();                  // cacheDirectory(Path), build(): loads the specs
+    CryptoInventory analyze(List<InputArtifact> artifacts, AnalysisOptions options);
+}
+record InputArtifact(ArtifactCoordinates coordinates, Path jar,
+                     List<ArtifactCoordinates> dependencies)   // direct; null = not known
+final class AnalysisOptions {                  // builder(), defaults()
+    ClasspathScope classpath(); int threads(); boolean rescan();
+}
+enum ClasspathScope { DEPENDENCIES, ALL, NONE }
+record ArtifactAnalysis(ArtifactCoordinates artifact, Outcome outcome, int classes, int findings,
+                        int failedMethods, String failure)    // Outcome: ANALYZED, CACHED, FAILED
 ```
 
-- The CLI turns an SBOM into `Artifact`s, resolves the JARs, calls `analyze` and writes the CycloneDX output.
-- The Quarkus extension builds `Artifact`s from the application model and `EntryPointInput`s from the build, and calls the same method.
-- The phase protocol of G3 (index, finish, candidate methods, scan) moves behind `analyze`.
-- Within the single module, the API lives in its own package, and the internal packages lose `public` where they can. The module split (roadmap) then moves packages without changing the API.
+The choices behind it:
+
+- **`CryptoInventory` is the result of a whole analysis only.** A JAR's result is the internal `ArtifactScan`: its assets can have occurrences in other artifacts, so it isn't an inventory of anything, and after detection-driven analysis it becomes the JAR's findings and open questions.
+- **The cache belongs to the library, not to the options.** Options are how to analyze and change per analysis. The cache outlives analyses, and whether an entry is still valid depends on what only the library knows: its build and specs, the JARs, their dependencies, the classpath scope. So `Cryptid` is an instance holding the specs and the cache directory, and the cache's keys and format are internal. `rescan` is an option: it skips reading earlier results, and still keeps the new ones.
+- **`InputArtifact.dependencies` are direct.** The library computes the closure, breadth first in the order listed. The CLI looks through components that aren't analyzed, such as POMs, to the analyzed artifacts behind them. `null` means not known, and resolves supertypes from all JARs.
+- **`ArtifactAnalysis` has an outcome.** A failed artifact is in the inventory with its failure and no assets, instead of only in a log. An unreadable JAR now fails only itself: before, it failed the whole run.
+- **Left for later:** writing the CBOM (stays in the CLI until the library and CLI split), choosing specs, `topLevel` on `InputArtifact` (with entry points), and a cache other than a directory.
+- **Also added:** `CryptoInventory.Builder.addAssets(List<CryptoAsset>)`, which merges the assets of a JAR's scan.
+
+Measured on Keycloak 26.8.2 (2026-11-27): the CBOM is identical to phase 1's, every occurrence with its bom-ref and `symbol` and every dependency, despite the new classpath order. A second run with the same `--work-dir` reuses all 548 results and takes under a second.
+
+## Analysis API (first sketch)
+
+Superseded by *Phase 2 API* above. The sketch had the cache in the options and the entry points among them; the cache now belongs to the `Cryptid` instance, and supplied entry points come with reachability.
 
 ## Order of work
 
 Each step keeps the per-occurrence Keycloak CBOM unchanged, except where a step says it changes output.
 
 1. ~~**Result model and in-memory assembly** (G1, G6).~~ Done 2026-11-27, as decided in *Phase 1 API*.
-2. **Analysis API** (G3). `Artifact`, `Options`, `Cryptid.analyze` and the result; `GenerateCbomCommand` becomes an adapter; the API package is the only public surface.
+2. ~~**Analysis API** (G3).~~ Done 2026-11-27, as decided in *Phase 2 API*. The internal packages still have more `public` than they need; that waits for the library and CLI split.
 3. **One program model** (G4). One class table serving both matching and dispatch, with the `--classpath` modes expressed as a view on it, and an interned method index used throughout. This changes output if the hierarchies disagreed somewhere, and each difference is reviewed.
 4. **Detection-driven analysis** (G7, G5). The three stages above. Stage 2's results are cached by JAR content, replacing the per-artifact cache keyed by the whole SBOM. Output identical.
 5. **Entry points and endpoints**: the reachability design's step 2, with exposure, addresses and authentication in the specs and in `EntryPoint`.

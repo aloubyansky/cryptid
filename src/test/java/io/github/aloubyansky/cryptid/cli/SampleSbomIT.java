@@ -4,6 +4,7 @@ import static io.github.aloubyansky.cryptid.cli.Cli.cryptid;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.aloubyansky.cryptid.analysis.BuildInfo;
 import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs;
 import java.nio.file.Files;
 import java.nio.file.Path;

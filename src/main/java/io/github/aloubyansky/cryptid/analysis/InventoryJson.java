@@ -1,4 +1,4 @@
-package io.github.aloubyansky.cryptid.cli;
+package io.github.aloubyansky.cryptid.analysis;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -10,6 +10,7 @@ import io.github.aloubyansky.cryptid.CodeLocation;
 import io.github.aloubyansky.cryptid.CryptoAsset;
 import io.github.aloubyansky.cryptid.CryptoAssetProperties;
 import io.github.aloubyansky.cryptid.CryptoInventory;
+import io.github.aloubyansky.cryptid.scan.ArtifactScan;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,21 +23,21 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Reads and writes a crypto inventory as JSON, the format of the per-artifact results kept in the
- * work directory. Assets refer to the assets they depend on, and cipher suites to their
- * algorithms, by their index in the file.
+ * Reads and writes an artifact's scan as JSON, the format of the results kept in the cache
+ * directory. Assets refer to the assets they depend on, and cipher suites to their algorithms, by
+ * their index in the file.
  */
 final class InventoryJson {
 
     /** The format version; files of another version aren't read. */
-    static final int FORMAT = 1;
+    static final int FORMAT = 2;
 
     private static final ObjectMapper JSON = new ObjectMapper()
             .setSerializationInclusion(JsonInclude.Include.NON_NULL)
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true);
 
     /** The file's content. */
-    record Doc(int format, List<ArtifactAnalysis> artifacts, List<Asset> assets) {}
+    record Doc(int format, ArtifactAnalysis analysis, List<Asset> assets) {}
 
     /** An asset, with references by index. */
     record Asset(String name, Properties properties, List<CodeLocation> occurrences, List<Integer> dependsOn) {}
@@ -52,20 +53,20 @@ final class InventoryJson {
     private InventoryJson() {}
 
     /**
-     * Writes an inventory, atomically: to a temporary file first, then moved into place, so an
-     * existing file always holds a complete inventory.
+     * Writes a scan, atomically: to a temporary file first, then moved into place, so an existing
+     * file always holds a complete scan.
      *
-     * @param inventory the inventory
+     * @param scan the scan
      * @param file the target file
      * @throws IOException if the file can't be written
      */
-    static void write(CryptoInventory inventory, Path file) throws IOException {
+    static void write(ArtifactScan scan, Path file) throws IOException {
         final Map<CryptoAsset, Integer> index = new IdentityHashMap<>();
-        for (CryptoAsset a : inventory.assets()) {
+        for (CryptoAsset a : scan.assets()) {
             index.put(a, index.size());
         }
-        final List<Asset> assets = new ArrayList<>(inventory.assets().size());
-        for (CryptoAsset a : inventory.assets()) {
+        final List<Asset> assets = new ArrayList<>(scan.assets().size());
+        for (CryptoAsset a : scan.assets()) {
             assets.add(new Asset(a.name(), properties(a.properties(), index),
                     a.occurrences().stream().map(AssetOccurrence::location).toList(),
                     a.dependsOn().stream().map(index::get).toList()));
@@ -73,24 +74,23 @@ final class InventoryJson {
         final Path dir = file.toAbsolutePath().getParent();
         Files.createDirectories(dir);
         final Path tmp = Files.createTempFile(dir, file.getFileName().toString(), ".tmp");
-        JSON.writeValue(tmp.toFile(), new Doc(FORMAT, inventory.artifacts(), assets));
+        JSON.writeValue(tmp.toFile(), new Doc(FORMAT, scan.analysis(), assets));
         Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
     }
 
     /**
-     * Reads an inventory.
+     * Reads a scan.
      *
      * @param file the file
-     * @return the inventory
+     * @return the scan
      * @throws IOException if the file can't be read, or isn't of this format
      */
-    static CryptoInventory read(Path file) throws IOException {
+    static ArtifactScan read(Path file) throws IOException {
         final Doc doc = JSON.readValue(file.toFile(), Doc.class);
         if (doc.format() != FORMAT) {
             throw new IOException(file + " has format " + doc.format() + ", expected " + FORMAT);
         }
         final CryptoInventory.Builder builder = CryptoInventory.builder();
-        doc.artifacts().forEach(builder::artifact);
         final CryptoAsset[] assets = new CryptoAsset[doc.assets().size()];
         for (int i = 0; i < assets.length; i++) {
             asset(i, doc.assets(), assets, builder);
@@ -104,7 +104,7 @@ final class InventoryJson {
                 builder.dependency(assets[i], assets[d]);
             }
         }
-        return builder.build();
+        return new ArtifactScan(doc.analysis(), builder.build().assets());
     }
 
     /** The asset at an index, created on first use, after the algorithms of its cipher suites. */

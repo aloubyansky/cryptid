@@ -1,4 +1,4 @@
-package io.github.aloubyansky.cryptid.cli;
+package io.github.aloubyansky.cryptid.analysis;
 
 /**
  * Versions known at build time, filled in by the templating-maven-plugin from the pom, since the

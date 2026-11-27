@@ -1,7 +1,6 @@
 package io.github.aloubyansky.cryptid.cli;
 
 import io.github.aloubyansky.cryptid.ArtifactCoordinates;
-import java.nio.file.Path;
 import java.util.Set;
 import org.cyclonedx.model.Component;
 import org.eclipse.aether.artifact.Artifact;
@@ -122,17 +121,5 @@ public record MavenComponent(
      */
     public ArtifactCoordinates coordinates() {
         return new ArtifactCoordinates(groupId, artifactId, artifactClassifier(), extension(), version);
-    }
-
-    /**
-     * Returns the file holding the inventory produced by analyzing this component's binary
-     * artifact. Its existence means the artifact was analyzed successfully.
-     *
-     * @param resultsDir the directory of the run's per-artifact results, {@code cbom/<key>} in the
-     *     work directory (see {@link CacheKey})
-     * @return {@code resultsDir/}{@link #artifactPath()}{@code .json}
-     */
-    public Path resultFile(Path resultsDir) {
-        return resultsDir.resolve(artifactPath() + ".json");
     }
 }

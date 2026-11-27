@@ -1,27 +1,26 @@
 package io.github.aloubyansky.cryptid.cli;
 
+import io.github.aloubyansky.cryptid.AnalysisOptions;
 import io.github.aloubyansky.cryptid.ArtifactAnalysis;
+import io.github.aloubyansky.cryptid.ArtifactCoordinates;
+import io.github.aloubyansky.cryptid.ClasspathScope;
+import io.github.aloubyansky.cryptid.Cryptid;
 import io.github.aloubyansky.cryptid.CryptoInventory;
-import io.github.aloubyansky.cryptid.bytecode.CallGraph;
-import io.github.aloubyansky.cryptid.bytecode.CallIndex;
-import io.github.aloubyansky.cryptid.bytecode.JarCache;
-import io.github.aloubyansky.cryptid.scan.BytecodeScanner;
+import io.github.aloubyansky.cryptid.InputArtifact;
 import io.quarkus.picocli.runtime.annotations.TopCommand;
 import jakarta.inject.Inject;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -53,11 +52,17 @@ public class GenerateCbomCommand implements Callable<Integer> {
     /** Which JARs a component's classes' supertypes are resolved from, for specs matching subtypes. */
     enum ClasspathMode {
         /** the component's JAR and its transitive dependencies from the SBOM graph */
-        deps,
+        deps(ClasspathScope.DEPENDENCIES),
         /** all JARs of the SBOM */
-        all,
+        all(ClasspathScope.ALL),
         /** the component's JAR only */
-        none
+        none(ClasspathScope.NONE);
+
+        private final ClasspathScope scope;
+
+        ClasspathMode(ClasspathScope scope) {
+            this.scope = scope;
+        }
     }
 
     /** The input SBOM. */
@@ -71,12 +76,12 @@ public class GenerateCbomCommand implements Callable<Integer> {
             description = "Output CBOM file (default: ${DEFAULT-VALUE})")
     Path output;
 
-    /** The directory for per-artifact CBOMs, or {@code null} for a temporary one. */
+    /** The directory to keep each artifact's result in, or {@code null} for none. */
     @Option(
             names = "--work-dir",
             description =
-                    "Directory for the per-artifact CBOMs. Reusing it skips artifacts analyzed"
-                            + " before (default: a temporary directory)")
+                    "Directory to keep each artifact's result in. Reusing it skips artifacts analyzed"
+                            + " before by the same build, with the same JARs (default: none)")
     Path workDir;
 
     /** Which JARs supertypes are resolved from. */
@@ -125,8 +130,8 @@ public class GenerateCbomCommand implements Callable<Integer> {
 
     /**
      * Generates the CBOM: reads the SBOM, resolves the binary artifacts of its Maven components,
-     * analyzes their bytecode and merges the results into the output file. Artifacts analyzed in an
-     * earlier run in the same work directory are reused, unless {@code --rescan} is given.
+     * analyzes them with {@link Cryptid} and writes the CBOM. Results kept in the work directory
+     * by an earlier run are reused, unless {@code --rescan} is given.
      *
      * @return {@code 0}; artifacts that can't be resolved or analyzed are logged and skipped
      * @throws Exception if the SBOM can't be read, or the work directory or CBOM can't be written
@@ -137,12 +142,6 @@ public class GenerateCbomCommand implements Callable<Integer> {
         final Bom sbom = sbomReader.read(sbomFile);
         final List<MavenComponent> mavenComponents = sbomReader.mavenComponents(sbom);
         log.infof("Found %d Maven components in %s", mavenComponents.size(), sbomFile);
-
-        final Path baseDir = (workDir != null
-                        ? Files.createDirectories(workDir)
-                        : Files.createTempDirectory("cryptid"))
-                .toRealPath();
-        log.infof("Work directory: %s", baseDir);
         final int threadCount = threads != null ? Math.max(1, threads) : Runtime.getRuntime().availableProcessors();
 
         // components with equal coordinates share their binary artifact
@@ -168,112 +167,37 @@ public class GenerateCbomCommand implements Callable<Integer> {
         final List<ArtifactGroup> resolved = groups.stream().filter(g -> g.jar() != null).toList();
         log.infof("Resolved %d of %d artifacts", resolved.size(), groups.size());
 
-        final Path resultsDir = resultsDir(baseDir, resolved);
-        log.infof("Per-artifact results: %s", resultsDir);
-
-        // 2. analyze their bytecode
-        final Map<String, Path> jarsByRef = new HashMap<>();
-        resolved.forEach(g -> g.members().forEach(c -> {
-            if (c.bomRef() != null) {
-                jarsByRef.put(c.bomRef(), g.jar());
-            }
-        }));
-        final List<Path> allJars = resolved.stream().map(ArtifactGroup::jar).distinct().toList();
-        final Map<String, Set<String>> closure =
-                classpathMode == ClasspathMode.deps ? sbomReader.dependencyClosure(sbom) : Map.of();
-
-        final BytecodeScanner scanner = new BytecodeScanner();
-        log.infof("Loaded %s", scanner.detection());
-        final AtomicInteger cached = new AtomicInteger();
-        final AtomicInteger failed = new AtomicInteger();
-        final AtomicInteger classes = new AtomicInteger();
-        final List<CryptoInventory> parts;
-        try (JarCache jarCache = new JarCache()) {
-            // phase A: index the calls between all artifacts, for resolving values passed in
-            // from callers; skipped when every artifact was analyzed before
-            final boolean needed = rescan || resolved.stream().anyMatch(g -> !Files.exists(g.first().resultFile(resultsDir)));
-            final CallIndex callIndex;
-            final Map<String, BytecodeScanner.CandidateMethods> candidates = new ConcurrentHashMap<>();
-            if (needed) {
-                final long t0 = System.currentTimeMillis();
-                final Set<String> allClasses = new HashSet<>();
-                allJars.forEach(j -> allClasses.addAll(jarCache.classNames(j)));
-                callIndex = new CallIndex(allClasses);
-                // nothing uses the call graph yet: see docs/reachability-design.md
-                final CallGraph callGraph = new CallGraph(allClasses, callIndex.hierarchy());
-                parallel(threadCount, resolved, g -> {
-                    try {
-                        // artifacts to be scanned keep what detection needs, so they aren't analyzed twice
-                        final boolean scanned = rescan || !Files.exists(g.first().resultFile(resultsDir));
-                        final BytecodeScanner.CandidateMethods f = scanner.index(g.jar(), g.first().coordinates(),
-                                classpath(g, jarsByRef, allJars, closure), jarCache, callIndex, callGraph, scanned);
-                        if (f != null) {
-                            candidates.put(g.first().artifactPath(), f);
-                        }
-                    } catch (Exception | LinkageError e) {
-                        log.warnf(e, "Failed to index %s", g.first().artifactPath());
-                    }
-                    return null;
-                }, "Indexed");
-                callIndex.finish();
-                log.infof("Indexed %d calls between %d classes in %d ms; %d methods may contain crypto events",
-                        callIndex.size(), allClasses.size(), System.currentTimeMillis() - t0,
-                        candidates.values().stream().mapToInt(f -> f.methods().size()).sum());
-                callGraph.finish();
-                log.infof("Call graph: %d methods, %d calls (%d through method handles), %d instantiations",
-                        callGraph.methodCount(), callGraph.edgeCount(), callGraph.handleEdgeCount(), callGraph.instantiationCount());
-            } else {
-                callIndex = null;
-            }
-
-            // phase B: detect, on the methods phase A kept; the result of an artifact analyzed
-            // before is read from the work directory
-            parts = parallel(threadCount, resolved, g -> {
-                final MavenComponent c = g.first();
-                final Path resultFile = c.resultFile(resultsDir);
-                if (!rescan && Files.exists(resultFile)) {
-                    try {
-                        final CryptoInventory part = InventoryJson.read(resultFile);
-                        cached.incrementAndGet();
-                        return part;
-                    } catch (IOException e) {
-                        log.warnf(e, "Analyzing %s again: its result in the work directory can't be read", c.artifactPath());
-                    }
-                }
-                try {
-                    final List<Path> cp = classpath(g, jarsByRef, allJars, closure);
-                    // released once scanned; an artifact that failed to index is analyzed here
-                    final BytecodeScanner.CandidateMethods f = candidates.remove(c.artifactPath());
-                    final CryptoInventory part = f != null
-                            ? scanner.scan(g.jar(), c.coordinates(), cp, jarCache, callIndex, f)
-                            : scanner.scan(g.jar(), c.coordinates(), cp, jarCache, callIndex);
-                    InventoryJson.write(part, resultFile);
-                    for (ArtifactAnalysis a : part.artifacts()) {
-                        classes.addAndGet(a.classes());
-                        if (a.failedMethods() > 0) {
-                            log.debugf("%s: %d methods couldn't be analyzed", c.artifactPath(), a.failedMethods());
-                        }
-                    }
-                    return part;
-                } catch (Exception | LinkageError e) {
-                    failed.incrementAndGet();
-                    log.warnf(e, "Failed to analyze %s", c.artifactPath());
-                    return null;
-                }
-            }, "Analyzed");
+        // 2. analyze them
+        final Cryptid.Builder cryptid = Cryptid.builder();
+        if (workDir != null) {
+            log.infof("Work directory: %s", workDir);
+            cryptid.cacheDirectory(workDir);
         }
-        log.infof(
-                "Analyzed %d artifacts (%d classes), %d reused from the work directory, %d failed",
-                resolved.size() - cached.get() - failed.get(),
-                classes.get(),
-                cached.get(),
-                failed.get());
+        final CryptoInventory inventory = cryptid.build().analyze(inputs(sbom, resolved), AnalysisOptions.builder()
+                .classpath(classpathMode.scope)
+                .threads(threadCount)
+                .rescan(rescan)
+                .build());
+        int analyzed = 0;
+        int cached = 0;
+        int failed = 0;
+        long classes = 0;
+        for (ArtifactAnalysis a : inventory.artifacts()) {
+            switch (a.outcome()) {
+                case ANALYZED -> {
+                    analyzed++;
+                    classes += a.classes();
+                }
+                case CACHED -> cached++;
+                case FAILED -> failed++;
+            }
+        }
+        log.infof("Analyzed %d artifacts (%d classes), %d reused from the work directory, %d failed",
+                analyzed, classes, cached, failed);
 
-        // 3. merge, in the order of the artifacts, so that the CBOM is the same in every run
-        final CryptoInventory.Builder merged = CryptoInventory.builder();
-        parts.stream().filter(Objects::nonNull).forEach(merged::add);
+        // 3. write the CBOM
         final CbomAssembler.Result result =
-                assembler.assemble(sbom, resolved.stream().map(ArtifactGroup::members).toList(), merged.build());
+                assembler.assemble(sbom, resolved.stream().map(ArtifactGroup::members).toList(), inventory);
         CbomAssembler.write(result.bom(), output);
         log.infof(
                 "Wrote CBOM to %s: %d findings in %d components, total time %ds",
@@ -285,53 +209,49 @@ public class GenerateCbomCommand implements Callable<Integer> {
     }
 
     /**
-     * Returns the directory of this run's per-artifact results. Results are reused only by a run
-     * with the same build of the tool, the same resolved JARs and the same classpath mode, see
-     * {@link CacheKey}.
+     * Turns the resolved artifacts into the analysis's input, with their dependencies from the
+     * SBOM's graph. A dependency that isn't analyzed, e.g. a POM, is looked through to the
+     * analyzed artifacts it depends on; an artifact one of whose components is missing from the
+     * graph has unknown dependencies.
      *
-     * @param baseDir the work directory
+     * @param sbom the SBOM
      * @param resolved the resolved artifacts
-     * @return {@code baseDir/cbom/<key>}
-     * @throws IOException if a JAR's size or modification time can't be read
+     * @return one input per artifact, in the same order
      */
-    private Path resultsDir(Path baseDir, List<ArtifactGroup> resolved) throws IOException {
-        final List<String> artifactIds = new ArrayList<>(resolved.size());
+    private static List<InputArtifact> inputs(Bom sbom, List<ArtifactGroup> resolved) {
+        final Map<String, List<String>> direct = new SbomReader().directDependencies(sbom);
+        final Map<String, ArtifactCoordinates> analyzed = new HashMap<>();
+        resolved.forEach(g -> g.members().forEach(c -> {
+            if (c.bomRef() != null) {
+                analyzed.put(c.bomRef(), g.first().coordinates());
+            }
+        }));
+        final List<InputArtifact> inputs = new ArrayList<>(resolved.size());
         for (ArtifactGroup g : resolved) {
-            artifactIds.add(g.first().artifactKey() + " " + g.jar() + " " + Files.size(g.jar()) + " "
-                    + Files.getLastModifiedTime(g.jar()).toMillis());
-        }
-        return baseDir.resolve("cbom").resolve(CacheKey.of(CacheKey.build(), classpathMode.name(), artifactIds));
-    }
-
-    /**
-     * Returns the JARs to resolve an artifact's supertypes from, as selected by {@code
-     * --classpath}. The scanner always searches the artifact's own JAR first.
-     *
-     * @param g the artifact group
-     * @param jarsByRef resolved JARs by component bom-ref
-     * @param allJars all resolved JARs
-     * @param closure the SBOM's dependency closure by bom-ref
-     * @return the JARs, in lookup order
-     */
-    private List<Path> classpath(
-            ArtifactGroup g, Map<String, Path> jarsByRef, List<Path> allJars, Map<String, Set<String>> closure) {
-        switch (classpathMode) {
-            case none:
-                return List.of();
-            case all:
-                return allJars;
-            default:
-                final Set<Path> jars = new LinkedHashSet<>();
-                for (MavenComponent c : g.members()) {
-                    final Set<String> refs = closure.get(c.bomRef());
-                    if (refs == null) {
-                        return allJars;
-                    }
-                    refs.stream().map(jarsByRef::get).filter(Objects::nonNull).forEach(jars::add);
+            Set<ArtifactCoordinates> deps = new LinkedHashSet<>();
+            for (MavenComponent c : g.members()) {
+                if (!direct.containsKey(c.bomRef())) {
+                    deps = null;
+                    break;
                 }
-                jars.remove(g.jar());
-                return List.copyOf(jars);
+                final Set<String> visited = new HashSet<>();
+                final Deque<String> todo = new ArrayDeque<>(direct.get(c.bomRef()));
+                while (!todo.isEmpty()) {
+                    final String ref = todo.pop();
+                    if (!visited.add(ref)) {
+                        continue;
+                    }
+                    final ArtifactCoordinates dep = analyzed.get(ref);
+                    if (dep != null) {
+                        deps.add(dep);
+                    } else {
+                        todo.addAll(direct.getOrDefault(ref, List.of()));
+                    }
+                }
+            }
+            inputs.add(new InputArtifact(g.first().coordinates(), g.jar(), deps == null ? null : List.copyOf(deps)));
         }
+        return inputs;
     }
 
     /** A task applied to each input element. */

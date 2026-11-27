@@ -102,12 +102,25 @@ public record CryptoInventory(List<ArtifactAnalysis> artifacts, List<CryptoAsset
         public Builder add(CryptoInventory other) {
             check();
             artifacts.addAll(other.artifacts());
+            return addAssets(other.assets());
+        }
+
+        /**
+         * Adds assets made by another builder, merged into those of equal content, with their
+         * occurrences and dependencies.
+         *
+         * @param assets the assets; those they depend on or that their cipher suites name should
+         *     be among them, or added before
+         * @return this builder
+         */
+        public Builder addAssets(List<CryptoAsset> assets) {
+            check();
             final Map<CryptoAsset, CryptoAsset> mapped = new LinkedHashMap<>();
-            for (CryptoAsset a : other.assets()) {
+            for (CryptoAsset a : assets) {
                 final CryptoAsset mine = map(a, mapped);
                 a.occurrences().forEach(mine::addOccurrence);
             }
-            for (CryptoAsset a : other.assets()) {
+            for (CryptoAsset a : assets) {
                 for (CryptoAsset d : a.dependsOn()) {
                     map(a, mapped).addDependency(map(d, mapped));
                 }
