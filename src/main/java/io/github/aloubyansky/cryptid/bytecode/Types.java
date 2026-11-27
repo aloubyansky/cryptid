@@ -118,6 +118,19 @@ public final class Types {
     }
 
     /**
+     * Whether an artifact has a class, as far as this hierarchy knows: through the class table it
+     * views, if any.
+     *
+     * @param artifact the artifact path
+     * @param internalName the class's internal name
+     * @return {@code true} if the class table says the artifact contains the class; {@code false}
+     *     if it doesn't, or there is no class table
+     */
+    public boolean inArtifact(String artifact, String internalName) {
+        return view != null && view.inArtifact(artifact, internalName);
+    }
+
+    /**
      * Makes the classes under a directory known to the hierarchy, e.g. compiled test fixtures.
      *
      * @param dir the root of a class file tree

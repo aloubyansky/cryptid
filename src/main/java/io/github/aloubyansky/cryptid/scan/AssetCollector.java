@@ -2,6 +2,7 @@ package io.github.aloubyansky.cryptid.scan;
 
 import com.ibm.mapper.model.INode;
 import com.ibm.output.cyclondx.CBOMOutputFile;
+import io.github.aloubyansky.cryptid.AssetOccurrence;
 import io.github.aloubyansky.cryptid.CipherSuite;
 import io.github.aloubyansky.cryptid.CodeLocation;
 import io.github.aloubyansky.cryptid.CryptoAsset;
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 import org.cyclonedx.model.Bom;
 import org.cyclonedx.model.Component;
@@ -67,6 +69,20 @@ public final class AssetCollector {
      *     occurrence without a code location
      */
     public void add(List<INode> nodes, Map<String, CodeLocation> locations) {
+        add(nodes, locations, l -> AssetOccurrence.Role.USE);
+    }
+
+    /**
+     * Adds the assets of one finding, with each occurrence's role.
+     *
+     * @param nodes the finding's model nodes
+     * @param locations the code locations of the nodes' detection locations, by {@link
+     *     CryptoAssetModeler#locationKey}
+     * @param roles what the code at a location does with the asset
+     * @throws IllegalStateException if the output has a property the model doesn't carry, or an
+     *     occurrence without a code location
+     */
+    public void add(List<INode> nodes, Map<String, CodeLocation> locations, Function<CodeLocation, AssetOccurrence.Role> roles) {
         final CBOMOutputFile output = new CBOMOutputFile();
         output.add(nodes);
         final Bom part = output.getBom();
@@ -88,7 +104,7 @@ public final class AssetCollector {
                     if (location == null) {
                         throw new IllegalStateException("No code location for occurrence " + key + " of " + asset);
                     }
-                    inventory.occurrence(asset, location);
+                    inventory.occurrence(asset, location, roles.apply(location));
                 }
             }
         }

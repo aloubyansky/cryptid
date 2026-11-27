@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -139,5 +140,38 @@ class CryptidTest {
         assertFalse(a.application());
         assertEquals(List.of(), InputArtifact.builder(LIB, lib).dependencies(List.of()).build().dependencies().orElseThrow());
         assertTrue(InputArtifact.builder(APP, app).application(true).build().application());
+    }
+
+    @Test
+    void classifiesUsesAndProvisions(@TempDir Path dir) throws Exception {
+        // a stand-in for Bouncy Castle: its engine, a factory composing it, and a JCA SPI
+        final Path bc = TestJars.compile(dir, "bc", Map.of(
+                "org/bouncycastle/crypto/engines/AESEngine.java", "package org.bouncycastle.crypto.engines; public class AESEngine {}",
+                "org/bouncycastle/crypto/util/Factory.java", """
+                        package org.bouncycastle.crypto.util;
+                        public class Factory { public static Object aes() { return new org.bouncycastle.crypto.engines.AESEngine(); } }
+                        """,
+                "org/bouncycastle/jcajce/provider/Spi.java", """
+                        package org.bouncycastle.jcajce.provider;
+                        import java.security.*;
+                        public abstract class Spi extends MessageDigestSpi {
+                            Object digest() throws Exception { return MessageDigest.getInstance("SHA-256"); }
+                        }
+                        """), null);
+        final Path user = TestJars.compile(dir, "user", Map.of("org/acme/user/User.java", """
+                package org.acme.user;
+                public class User { Object aes() { return new org.bouncycastle.crypto.engines.AESEngine(); } }
+                """), bc);
+        final ArtifactCoordinates bcCoords = ArtifactCoordinates.jar("org.bouncycastle", "bc", "1");
+        final ArtifactCoordinates userCoords = ArtifactCoordinates.jar("org.acme", "user", "1");
+        final CryptoInventory inventory = cryptid.analyze(input(InputArtifact.builder(bcCoords, bc).dependencies(List.of()).build(),
+                InputArtifact.builder(userCoords, user).dependencies(List.of(bcCoords)).build()), AnalysisOptions.defaults());
+        final Map<String, AssetOccurrence.Role> roles = new TreeMap<>();
+        inventory.assets().forEach(a -> a.occurrences().forEach(o -> roles.put(o.location().method().className(), o.role())));
+        // a library composing its own primitive, and a JCA SPI implementation, provide
+        assertEquals(AssetOccurrence.Role.PROVISION, roles.get("org.bouncycastle.crypto.util.Factory"), roles.toString());
+        assertEquals(AssetOccurrence.Role.PROVISION, roles.get("org.bouncycastle.jcajce.provider.Spi"), roles.toString());
+        // another artifact calling the library uses
+        assertEquals(AssetOccurrence.Role.USE, roles.get("org.acme.user.User"), roles.toString());
     }
 }

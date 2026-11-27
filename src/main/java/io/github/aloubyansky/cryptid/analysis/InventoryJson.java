@@ -30,7 +30,7 @@ import java.util.Set;
 final class InventoryJson {
 
     /** The format version; files of another version aren't read. */
-    static final int FORMAT = 2;
+    static final int FORMAT = 3;
 
     private static final ObjectMapper JSON = new ObjectMapper()
             .setSerializationInclusion(JsonInclude.Include.NON_NULL)
@@ -40,7 +40,10 @@ final class InventoryJson {
     record Doc(int format, ArtifactAnalysis analysis, List<Asset> assets) {}
 
     /** An asset, with references by index. */
-    record Asset(String name, Properties properties, List<CodeLocation> occurrences, List<Integer> dependsOn) {}
+    record Asset(String name, Properties properties, List<Occurrence> occurrences, List<Integer> dependsOn) {}
+
+    /** An occurrence: its location and role. */
+    record Occurrence(CodeLocation location, AssetOccurrence.Role role) {}
 
     /** An asset's properties, of one of the three asset types. */
     record Properties(String assetType, String primitive, String parameterSet, String curve, String mode, String padding,
@@ -68,7 +71,7 @@ final class InventoryJson {
         final List<Asset> assets = new ArrayList<>(scan.assets().size());
         for (CryptoAsset a : scan.assets()) {
             assets.add(new Asset(a.name(), properties(a.properties(), index),
-                    a.occurrences().stream().map(AssetOccurrence::location).toList(),
+                    a.occurrences().stream().map(o -> new Occurrence(o.location(), o.role())).toList(),
                     a.dependsOn().stream().map(index::get).toList()));
         }
         final Path dir = file.toAbsolutePath().getParent();
@@ -97,8 +100,8 @@ final class InventoryJson {
         }
         for (int i = 0; i < assets.length; i++) {
             final Asset a = doc.assets().get(i);
-            for (CodeLocation l : a.occurrences()) {
-                builder.occurrence(assets[i], l);
+            for (Occurrence o : a.occurrences()) {
+                builder.occurrence(assets[i], o.location(), o.role());
             }
             for (int d : a.dependsOn()) {
                 builder.dependency(assets[i], assets[d]);

@@ -33,8 +33,9 @@ import org.cyclonedx.model.metadata.ToolInformation;
  * with the artifact's path, as {@code location}, its line, the method containing the call as
  * {@code symbol}, and the called method as {@code additionalContext}. Its bom-ref is derived from
  * its content, so it is the same in every run. Dependencies between assets are dependencies between
- * their components. The components the caller links to an artifact depend on the assets occurring
- * in it, so a value chosen by a caller in another artifact is linked to the caller's components.
+ * their components. The components the caller links to an artifact depend on the assets its code
+ * uses, and provide those it implements ({@link AssetOccurrence#role()}); a value chosen by a
+ * caller in another artifact is linked to the caller's components.
  */
 public final class CbomWriter {
 
@@ -68,15 +69,16 @@ public final class CbomWriter {
             final CryptoAsset asset = inventory.assets().get(i);
             final Component component = written.components().get(i);
             bom.addComponent(component);
-            final Set<ArtifactCoordinates> owners = new LinkedHashSet<>();
+            // the artifacts using the asset depend on it; those implementing it provide it
+            final Map<ArtifactCoordinates, Set<AssetOccurrence.Role>> owners = new LinkedHashMap<>();
             for (AssetOccurrence o : asset.occurrences()) {
-                owners.add(o.location().artifact());
+                owners.computeIfAbsent(o.location().artifact(), k -> new LinkedHashSet<>()).add(o.role());
             }
-            for (ArtifactCoordinates owner : owners) {
+            owners.forEach((owner, roles) -> {
                 for (Component c : linkTo.apply(owner)) {
-                    link(links, bom, c, rootRef, component);
+                    link(links, bom, c, rootRef, component, roles);
                 }
-            }
+            });
         }
         written.dependencies().forEach(bom::addDependency);
         links.values().forEach(bom::addDependency);
@@ -109,7 +111,8 @@ public final class CbomWriter {
      * Links a component to a crypto asset. The first link of a component also adds the component
      * itself to the CBOM, unless it is the metadata component.
      */
-    private static void link(Map<String, Dependency> links, Bom bom, Component c, String rootRef, Component asset) {
+    private static void link(Map<String, Dependency> links, Bom bom, Component c, String rootRef, Component asset,
+            Set<AssetOccurrence.Role> roles) {
         if (c.getBomRef() == null || asset.getBomRef() == null) {
             return;
         }
@@ -119,9 +122,13 @@ public final class CbomWriter {
             }
             return new Dependency(ref);
         });
-        if (link.getDependencies() == null
-                || link.getDependencies().stream().noneMatch(d -> d.getRef().equals(asset.getBomRef()))) {
+        if (roles.contains(AssetOccurrence.Role.USE) && (link.getDependencies() == null
+                || link.getDependencies().stream().noneMatch(d -> d.getRef().equals(asset.getBomRef())))) {
             link.addDependency(new Dependency(asset.getBomRef()));
+        }
+        if (roles.contains(AssetOccurrence.Role.PROVISION) && (link.getProvides() == null
+                || link.getProvides().stream().noneMatch(d -> d.getRef().equals(asset.getBomRef())))) {
+            link.addProvides(new Dependency(asset.getBomRef()));
         }
     }
 

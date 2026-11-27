@@ -188,6 +188,17 @@ public final class Hierarchy {
         }
 
         /**
+         * Whether an artifact has a copy of a class.
+         *
+         * @param artifact the artifact path
+         * @param internalName the class's internal name
+         * @return {@code true} if the artifact contains the class
+         */
+        public boolean inArtifact(String artifact, String internalName) {
+            return Hierarchy.this.get(artifact, internalName) != null;
+        }
+
+        /**
          * Returns the artifact whose copy of a class this view sees: the first artifact listed
          * that has a copy, else the hierarchy's first.
          *

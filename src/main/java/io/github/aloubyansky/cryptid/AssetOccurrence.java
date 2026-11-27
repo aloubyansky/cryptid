@@ -20,16 +20,34 @@ public final class AssetOccurrence {
         UNKNOWN
     }
 
+    /** What the code at an occurrence does with the asset. */
+    public enum Role {
+        /**
+         * The code uses the asset through an API: obtains an algorithm, key or protocol and
+         * performs or sets up an operation with it. Code that only names an algorithm, e.g. in a
+         * table of supported ones, counts as a use too.
+         */
+        USE,
+        /**
+         * The code implements the asset, or makes it available to others: it is in a class
+         * implementing crypto, e.g. a JCA provider's, or it calls an API of its own artifact,
+         * e.g. a library composing its own primitives.
+         */
+        PROVISION
+    }
+
     private final CodeLocation location;
+    private final Role role;
     private final Reachability reachability;
     private final List<EntryPoint> reachedBy;
 
-    AssetOccurrence(CodeLocation location) {
-        this(location, Reachability.UNKNOWN, List.of());
+    AssetOccurrence(CodeLocation location, Role role) {
+        this(location, role, Reachability.UNKNOWN, List.of());
     }
 
-    AssetOccurrence(CodeLocation location, Reachability reachability, List<EntryPoint> reachedBy) {
+    AssetOccurrence(CodeLocation location, Role role, Reachability reachability, List<EntryPoint> reachedBy) {
         this.location = Objects.requireNonNull(location, "location");
+        this.role = Objects.requireNonNull(role, "role");
         this.reachability = Objects.requireNonNull(reachability, "reachability");
         this.reachedBy = List.copyOf(reachedBy);
     }
@@ -41,6 +59,15 @@ public final class AssetOccurrence {
      */
     public CodeLocation location() {
         return location;
+    }
+
+    /**
+     * What the code at the occurrence does with the asset.
+     *
+     * @return a use or a provision
+     */
+    public Role role() {
+        return role;
     }
 
     /**
@@ -79,6 +106,6 @@ public final class AssetOccurrence {
 
     @Override
     public String toString() {
-        return "AssetOccurrence[location=" + location + ", reachability=" + reachability + "]";
+        return "AssetOccurrence[location=" + location + ", role=" + role + ", reachability=" + reachability + "]";
     }
 }

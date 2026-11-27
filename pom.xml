@@ -34,6 +34,7 @@
         <license-plugin.version>2.7.1</license-plugin.version>
         <!-- maven.build.timestamp isn't resolved by the templating plugin directly -->
         <cryptid.build.time>${maven.build.timestamp}</cryptid.build.time>
+        <cyclonedx.version>13.5.0</cyclonedx.version>
 
         <quarkus.package.add-runner-suffix>false</quarkus.package.add-runner-suffix>
         <skipOriginalJarRename>true</skipOriginalJarRename>
@@ -42,6 +43,12 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- 13 writes dependencies' provides, which sonar-cryptography's 12.2.0 can't -->
+            <dependency>
+                <groupId>org.cyclonedx</groupId>
+                <artifactId>cyclonedx-core-java</artifactId>
+                <version>${cyclonedx.version}</version>
+            </dependency>
             <dependency>
                 <groupId>${quarkus.platform.group-id}</groupId>
                 <artifactId>${quarkus.platform.artifact-id}</artifactId>

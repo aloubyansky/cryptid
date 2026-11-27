@@ -66,7 +66,7 @@ Analyzing large SBOMs needs a few GB of heap; Keycloak's completes in 2 GB, not 
 
 ### The CBOM
 
-The CBOM's `metadata.component` is the SBOM's root component. `components` lists every SBOM component with crypto assets, and the assets themselves. `dependencies` links each component to its assets, and assets to the assets they use, such as an algorithm to its key. An asset looks like this:
+The CBOM's `metadata.component` is the SBOM's root component. `components` lists every SBOM component with crypto assets, and the assets themselves. `dependencies` links each component to its assets, and assets to the assets they use, such as an algorithm to its key. A component `dependsOn` the assets its code uses, through an API, and `provides` those it implements, such as Bouncy Castle's engines and JCA provider classes. An asset looks like this:
 
 ```json
 {

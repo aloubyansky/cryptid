@@ -1,0 +1,47 @@
+# Types that cryptography is implemented through, as opposed to used. A crypto asset occurrence is
+# a provision when the method it's in belongs to a subtype of one of these, in the artifact's view
+# of the classes and the JDK, and a use otherwise. See docs/roadmap.md, Uses and provisions.
+# Hand-maintained; keep sorted.
+specVersion: 1
+implementationTypes:
+  # the JCA's service provider interfaces and providers
+  - java.security.AlgorithmParameterGeneratorSpi
+  - java.security.AlgorithmParametersSpi
+  - java.security.KeyFactorySpi
+  - java.security.KeyPairGeneratorSpi
+  - java.security.KeyStoreSpi
+  - java.security.MessageDigestSpi
+  - java.security.Provider
+  - java.security.SecureRandomSpi
+  - java.security.SignatureSpi
+  - javax.crypto.CipherSpi
+  - javax.crypto.ExemptionMechanismSpi
+  - javax.crypto.KEMSpi
+  - javax.crypto.KeyAgreementSpi
+  - javax.crypto.KeyGeneratorSpi
+  - javax.crypto.MacSpi
+  - javax.crypto.SecretKeyFactorySpi
+  - javax.net.ssl.KeyManagerFactorySpi
+  - javax.net.ssl.SSLContextSpi
+  - javax.net.ssl.TrustManagerFactorySpi
+  # Bouncy Castle's primitives, composed of each other, and its provider's registrations
+  - org.bouncycastle.crypto.AsymmetricBlockCipher
+  - org.bouncycastle.crypto.AsymmetricCipherKeyPairGenerator
+  - org.bouncycastle.crypto.BasicAgreement
+  - org.bouncycastle.crypto.BlockCipher
+  - org.bouncycastle.crypto.CipherKeyGenerator
+  - org.bouncycastle.crypto.DSA
+  - org.bouncycastle.crypto.DerivationFunction
+  - org.bouncycastle.crypto.Digest
+  - org.bouncycastle.crypto.EncapsulatedSecretExtractor
+  - org.bouncycastle.crypto.EncapsulatedSecretGenerator
+  - org.bouncycastle.crypto.Mac
+  - org.bouncycastle.crypto.PBEParametersGenerator
+  - org.bouncycastle.crypto.RawAgreement
+  - org.bouncycastle.crypto.Signer
+  - org.bouncycastle.crypto.StreamCipher
+  - org.bouncycastle.crypto.Wrapper
+  - org.bouncycastle.crypto.Xof
+  - org.bouncycastle.crypto.modes.AEADCipher
+  - org.bouncycastle.jcajce.provider.config.ConfigurableProvider
+  - org.bouncycastle.jcajce.provider.util.AlgorithmProvider

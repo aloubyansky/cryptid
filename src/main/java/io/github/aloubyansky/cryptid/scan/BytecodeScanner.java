@@ -3,12 +3,15 @@ package io.github.aloubyansky.cryptid.scan;
 import com.ibm.mapper.model.INode;
 import io.github.aloubyansky.cryptid.ArtifactAnalysis;
 import io.github.aloubyansky.cryptid.ArtifactCoordinates;
+import io.github.aloubyansky.cryptid.AssetOccurrence;
 import io.github.aloubyansky.cryptid.CodeLocation;
 import io.github.aloubyansky.cryptid.CryptoInventory;
+import io.github.aloubyansky.cryptid.MethodId;
 import io.github.aloubyansky.cryptid.bytecode.Analyzer;
 import io.github.aloubyansky.cryptid.bytecode.ArtifactDeclarations;
 import io.github.aloubyansky.cryptid.bytecode.CallGraph;
 import io.github.aloubyansky.cryptid.bytecode.CallResolver;
+import io.github.aloubyansky.cryptid.bytecode.CallSite;
 import io.github.aloubyansky.cryptid.bytecode.Hierarchy;
 import io.github.aloubyansky.cryptid.bytecode.JarCache;
 import io.github.aloubyansky.cryptid.bytecode.Types;
@@ -18,13 +21,16 @@ import io.github.aloubyansky.cryptid.detection.Finding;
 import io.github.aloubyansky.cryptid.model.CryptoAssetModeler;
 import io.github.aloubyansky.cryptid.spec.CryptoApiMatcher;
 import io.github.aloubyansky.cryptid.spec.CryptoApiSpecs;
+import io.github.aloubyansky.cryptid.spec.CryptoImplementationSpecs;
 import java.io.IOException;
+import java.lang.constant.MethodTypeDesc;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 /**
  * Detects cryptographic assets in a binary JAR by analyzing its bytecode with the crypto API
@@ -41,6 +47,8 @@ import java.util.Set;
 public final class BytecodeScanner {
 
     private final CryptoApiMatcher matcher;
+    /** Binary names of the types crypto is implemented through: occurrences in their subtypes are provisions. */
+    private final Set<String> implementationTypes;
     private final int apiCount;
     private final ThreadLocal<CryptoAssetModeler> modelers = ThreadLocal.withInitial(() -> {
         try {
@@ -59,6 +67,7 @@ public final class BytecodeScanner {
         try {
             final CryptoApiSpecs specs = CryptoApiSpecs.load();
             this.matcher = new CryptoApiMatcher(specs);
+            this.implementationTypes = Set.copyOf(CryptoImplementationSpecs.load().implementationTypes());
             this.apiCount = specs.apis().size();
         } catch (IOException e) {
             throw new IllegalStateException("Failed to load the crypto API specs", e);
@@ -220,6 +229,18 @@ public final class BytecodeScanner {
         final CryptoAssetModeler modeler = modelers.get();
         final CryptoInventory.Builder inventory = CryptoInventory.builder();
         final AssetCollector output = new AssetCollector(inventory);
+        // a provision where the occurrence's class implements crypto, as the JAR sees the classes,
+        // or where it calls a crypto API of its own artifact, e.g. a library composing its own
+        // primitives; a use otherwise, also where a caller passes a value to a method of its own
+        // artifact that calls the API
+        final Map<String, Boolean> implementing = new HashMap<>();
+        final Set<String> ownClasses = jarCache.classNames(jar);
+        final Function<CodeLocation, AssetOccurrence.Role> roles = l -> {
+            final boolean implementsCrypto = implementing.computeIfAbsent(l.method().className(),
+                    c -> types.supertypeNames(c.replace('.', '/')).stream().anyMatch(implementationTypes::contains));
+            return implementsCrypto || ownCryptoApi(l, artifact, ownClasses, types)
+                    ? AssetOccurrence.Role.PROVISION : AssetOccurrence.Role.USE;
+        };
         int findings = 0;
         // all methods at once, so that crypto objects are followed between them
         for (Finding f : detector.detect(methods)) {
@@ -227,12 +248,27 @@ public final class BytecodeScanner {
             final List<INode> nodes = modeler.process(f.event(), locations);
             // a variant whose value the API wouldn't take, e.g. a MAC name for a signature
             if (!nodes.isEmpty() && (!f.variant() || CryptoAssetModeler.fitsApi(f.event(), nodes))) {
-                output.add(nodes, locations);
+                output.add(nodes, locations, roles);
                 findings++;
             }
         }
         return new ArtifactScan(new ArtifactAnalysis(artifact, ArtifactAnalysis.Outcome.ANALYZED,
                 jarCache.classNames(jar).size(), findings, failedMethods, null), inventory.build().assets());
+    }
+
+    /** Whether the call at a location is to a specified crypto API declared in the location's own artifact. */
+    private boolean ownCryptoApi(CodeLocation l, ArtifactCoordinates scanned, Set<String> scannedClasses, Types types) {
+        final MethodId m = l.invokedMethod();
+        final String invoked = m.className().replace('.', '/');
+        final boolean own = l.artifact() == null || l.artifact().equals(scanned)
+                ? scannedClasses.contains(invoked)
+                : types.inArtifact(ArtifactPaths.of(l.artifact()), invoked);
+        if (!own) {
+            return false;
+        }
+        final CallSite call = new CallSite(-1, "", "", invoked, m.name(), m.descriptor(), false, 0,
+                MethodTypeDesc.ofDescriptor(m.descriptor()).parameterCount());
+        return !matcher.match(call, types).isEmpty();
     }
 
     /**

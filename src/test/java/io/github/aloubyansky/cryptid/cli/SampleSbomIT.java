@@ -2,6 +2,7 @@ package io.github.aloubyansky.cryptid.cli;
 
 import static io.github.aloubyansky.cryptid.cli.Cli.cryptid;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.aloubyansky.cryptid.analysis.BuildInfo;
@@ -61,12 +62,16 @@ class SampleSbomIT {
         // an algorithm chosen by a constructor, in a JAR without line tables: no line
         final Component aes = cbom.find("AES", "org.bouncycastle/bcprov-jdk18on/1.78.1/org/bouncycastle/crypto/engines/AESEngine.java")
                 .orElseThrow(() -> new AssertionError("AES at AESEngine not found"));
-        assertTrue(cbom.linked(BCPROV, aes), "AES at AESEngine isn't linked to bcprov");
+        // AESEngine implements AES: bcprov provides it rather than depending on it
+        assertTrue(cbom.provides(BCPROV, aes), "bcprov doesn't provide AES at AESEngine");
+        assertFalse(cbom.uses(BCPROV, aes), "bcprov depends on AES at AESEngine, which it implements");
 
         // a JCA name passed as a constant to MessageDigest.getInstance, with its line
         final Component sha256 = cbom.find("SHA-256", "commons-codec/commons-codec/1.17.1/org/apache/commons/codec/digest/Sha2Crypt.java")
                 .orElseThrow(() -> new AssertionError("SHA-256 at Sha2Crypt not found"));
-        assertTrue(cbom.linked(CODEC, sha256), "SHA-256 at Sha2Crypt isn't linked to commons-codec");
+        // commons-codec uses the JCA's SHA-256
+        assertTrue(cbom.uses(CODEC, sha256), "commons-codec doesn't depend on SHA-256 at Sha2Crypt");
+        assertFalse(cbom.provides(CODEC, sha256), "commons-codec provides SHA-256 at Sha2Crypt, which it uses");
         assertTrue(Cli.Cbom.occurrences(sha256).stream().anyMatch(o -> Integer.valueOf(114).equals(o.getLine())),
                 "SHA-256 at Sha2Crypt.java:114 not found");
     }

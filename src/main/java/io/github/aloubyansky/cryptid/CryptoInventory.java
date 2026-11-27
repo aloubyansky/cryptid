@@ -88,14 +88,27 @@ public final class CryptoInventory {
         }
 
         /**
-         * Records an occurrence of an asset; one already recorded is ignored.
+         * Records an occurrence of an asset, as a use; one already recorded is ignored.
          *
          * @param asset an asset of this builder
          * @param location where it occurs
          * @return this builder
          */
         public Builder occurrence(CryptoAsset asset, CodeLocation location) {
-            own(asset).addOccurrence(new AssetOccurrence(location));
+            return occurrence(asset, location, AssetOccurrence.Role.USE);
+        }
+
+        /**
+         * Records an occurrence of an asset with its role; one already recorded at the location is
+         * ignored.
+         *
+         * @param asset an asset of this builder
+         * @param location where it occurs
+         * @param role what the code there does with it
+         * @return this builder
+         */
+        public Builder occurrence(CryptoAsset asset, CodeLocation location, AssetOccurrence.Role role) {
+            own(asset).addOccurrence(new AssetOccurrence(location, role));
             return this;
         }
 

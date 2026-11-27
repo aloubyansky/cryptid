@@ -63,7 +63,13 @@ This continues [reachability-design.md](reachability-design.md), steps 2 and 3. 
    - CLI: `--application`, by default the artifacts with the SBOM metadata component's `groupId`, and `--entry-points`.
 
    Keycloak (38 `org.keycloak` artifacts): 638 entry points, 625 of them HTTP, 467 with a path and 158 with a partial address (sub-resources, mounted by locators). Of the 415 operations Keycloak's admin REST API documents (`openapi.json`), 361 match a detected entry point by method and path suffix; the other 54 are collection roots, served by verb-only sub-resource methods, of which there are more than enough, and spot checks match. No authentication is known: Keycloak checks permissions in code, not with annotations. The CBOM is unchanged: entry points come into it with step 3.
-2. **Reachability walk and CBOM marking.**
+2. **Uses and provisions, and exercised entry points**, before the walk (decided 2026-11-27):
+   1. ~~cyclonedx-core-java 13, which can write `provides`; the CBOM byte-identical.~~ Done 2026-11-27: 13.5.0, pinned over sonar-cryptography's 12.2.0; Keycloak's CBOM byte-identical.
+   2. ~~`AssetOccurrence.role()`: uses and provisions.~~ Done 2026-11-27: a provision when the occurrence's class implements a type of `crypto-implementation-specs.yaml` (the JCA SPIs and providers, Bouncy Castle's primitive interfaces and provider registrations), or when the occurrence calls a specified crypto API of its own artifact, as a library composing its own primitives does; a use otherwise, also where a caller passes a value to a wrapper of its own. Components `dependsOn` the assets of their uses and `provides` those of their provisions. Code that only names an algorithm (xmlsec's `JCEMapper`) counts as a use until a third role is needed.
+
+      Keycloak: 2,449 provisions, 2,447 of them in bcprov and 2 in Elytron's credential module, and 2,055 uses. Component links: 850 `dependsOn` and 501 `provides`, instead of 1,345 `dependsOn`; bcprov provides 499 assets and depends on 22. Assets and occurrences unchanged. Known gap: 50 of bcprov's occurrences stay uses, 21 of them its implementation's own helpers that implement no listed type (`CompositeMLKEMEngine`, `BcKeyStoreSpi`'s inner classes); the others are bcprov calling the JDK's JCA, which are uses.
+   3. Roots and callbacks: `main` only from a manifest `Main-Class` or `@QuarkusMain`; JAX-RS root resources as roots, sub-resource methods, `@PostConstruct` and observers as callbacks of instantiated classes, which the walk adds as their classes become instantiated.
+3. **Reachability walk and CBOM marking.**
    - The forward walk to a fixpoint over instantiated classes.
    - Each occurrence marked through its `CodeLocation`'s method, or as `unknown` when nothing was searched.
    - Metadata on the search.
@@ -71,11 +77,11 @@ This continues [reachability-design.md](reachability-design.md), steps 2 and 3. 
    - Reached and not-reached counts in the summary.
 
    Measure: the share of Keycloak's occurrences reached, and a manual check of a sample of each outcome. Target: under a minute, in the same heap.
-3. **Endpoint sets and services.**
+4. **Endpoint sets and services.**
    - For each occurrence, the set of entry points reaching it, propagated as bitsets over the resolved graph.
    - Endpoints written as CycloneDX `services` that `dependsOn` the assets they reach.
-4. **Review the open encoding questions** against real output: property names, services per method or per resource class, whether paths belong in the CBOM, and the `unknown` state.
-5. **Facts cache.** The graph facts (edges, instantiations, matched annotations, services) are cached per JAR content too, as detection's results are since step 2.4.
+5. **Review the open encoding questions** against real output: property names, services per method or per resource class, whether paths belong in the CBOM, and the `unknown` state.
+6. **Facts cache.** The graph facts (edges, instantiations, matched annotations, services) are cached per JAR content too, as detection's results are since step 2.4.
 
 What this unlocks in the backlog:
 - *Dispatch precision*: the instantiated-class set can narrow `I.m` to the implementations that can actually run.
@@ -121,6 +127,7 @@ Pull from this list between steps, or when a coverage comparison points at an it
 | Fixture gaps (about 8) | Tracked by `FixtureConformanceTest` | backlog |
 | IVs as assets | 4 Keycloak occurrences; low priority | coverage gaps |
 | Shaded code attribution | Open question: the shading component or the original library | backlog |
+| Shipped command-line tools | Keycloak's distribution ships `kcadm` and `kcreg` (`KcAdmMain`, `KcRegMain`), which its users run. They're applications of their own, left out of the default entry points since 2026-11-27; a user can supply them with `--entry-points`. Tracking them means telling a distribution's tools apart from shaded and build-time `main`s, e.g. from its launch scripts (`bin/kcadm.sh`) or the SBOM's file components, and reporting their reachability apart from the server's | step 2 review |
 | Dependencies per occurrence | `dependsOn` is the union over an asset's occurrences, e.g. one generic `secret-key` depending on 192 algorithms. Recording it per occurrence makes it precise, and suits reachability | [foundation.md](foundation.md#phase-1-api-decided-2026-11-26) |
 
 ## Performance and operations
