@@ -151,7 +151,10 @@
             <version>${cli-assured.version}</version>
             <scope>test</scope>
         </dependency>
-        <!-- compiling sonar-cryptography's fixtures in FixtureConformanceTest; the version its tests use -->
+        <!-- compiling sonar-cryptography's fixtures in FixtureConformanceTest; the version its tests use.
+             Upgrading needs an adjustment: from 1.86 on, ML-KEM and ML-DSA moved out of
+             org.bouncycastle.pqc.crypto.mlkem and .mldsa, so the fixtures using them no longer compile,
+             and the specs naming those classes need the new ones (docs/roadmap.md, step 3b) -->
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>

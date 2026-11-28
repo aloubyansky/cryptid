@@ -22,7 +22,8 @@ updates:
       # test-only, at the versions sonar-cryptography 1.7.0 was built against
       - dependency-name: "org.sonarsource.*:*"
       # test-only, at the version sonar-cryptography's fixture tests use; FixtureConformanceTest's
-      # baseline depends on it
+      # baseline depends on it. An upgrade past 1.85 needs an adjustment: ML-KEM and ML-DSA moved
+      # packages in 1.86 (docs/roadmap.md, step 3b)
       - dependency-name: "org.bouncycastle:*"
 
   - package-ecosystem: github-actions

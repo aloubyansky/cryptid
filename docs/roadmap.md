@@ -91,6 +91,63 @@ What this unlocks in the backlog:
 - *Dispatch precision*: the instantiated-class set can narrow `I.m` to the implementations that can actually run.
 - *Provided and used algorithms*: `provides` against `dependsOn`, now with reachability as evidence. It needs a role on `AssetOccurrence`, which phase 1 left room for but didn't add.
 
+### 3b. Research: finding crypto assets with less hand-maintained data
+
+cryptid is still exploring (decided 2026-11-28). Research comes before spec completeness: the specs may lag behind library releases while approaches are tried. The aim is the most accurate result for the least spec maintenance, so each approach is tried until its limits are known, and the combination to keep is chosen from the findings. Findings are recorded under each approach as they come in.
+
+**Principle: specs hold only what code can't tell.** Hand-maintained specs are for facts that can't be worked out from the analyzed code, such as which argument carries the algorithm, or `returnsReceiver`. Whatever an analyzed JAR states about itself should come from the JAR. That matches the version in the SBOM and doesn't drift. The JAR is read, never run.
+
+Why it matters: Bouncy Castle 1.86 moved ML-KEM and ML-DSA out of `org.bouncycastle.pqc.crypto.mlkem` and `.mldsa`, to `crypto.params`, `crypto.kems` and `crypto.signers`. The 46 spec entries naming the old classes match nothing in 1.86 or 1.87, which includes Keycloak 26.8.2's version. Trying the test dependency at 1.87 (2026-11-28) broke four of sonar-cryptography's ML-KEM and ML-DSA fixtures, as an earlier move broke Kyber and BIKE. The test dependency stays at 1.85, which the fixtures are written for; the research reads the other versions from the local repository.
+
+The idea came from comparing with bc-java's `generateCbom` (`gradle/cbom.gradle`, 2026-11-28). It inventories what bcprov provides by loading the built JAR and reading its providers' service tables and its lightweight API. Each point taken from it is in the [backlog](design-review.md#backlog), with what was deliberately not taken. Most applications using crypto have Bouncy Castle among their dependencies, so its JARs in the SBOM come first.
+
+Independent of steps 3.4 to 3.6.
+
+#### Approaches to try
+
+Each approach is measured for:
+- what it finds and misses against the references below;
+- how much hand-maintained data it needs;
+- how it holds up across bcprov 1.71 to 1.87;
+- what it costs per JAR, and whether its results can be cached by JAR content;
+- how it handles shaded copies and bc-fips.
+
+The approaches:
+
+1. **API specs (the baseline).** Today's 515 hand-maintained methods. Measure how many of the Bouncy Castle entries match each bcprov version, to see how fast they drift.
+2. **Self-description in bytecode.** Facts a library states in constants, read with the existing `Analyzer`:
+   - provider registrations: `addAlgorithm` and `put` names, aliases and OIDs, given as constant strings and concatenations of static finals. `AES$Mappings` alone makes 202 such calls in 1.86;
+   - OID constants: `*ObjectIdentifiers` static fields, built in `<clinit>` by `ASN1ObjectIdentifier` and `branch`, which needs a model of those two;
+   - algorithm names: `getAlgorithmName` returning a constant (`AESEngine`: `ldc "AES"`);
+   - parameter sets: static fields of parameter-set types with constant constructor arguments, such as `MLKEMParameters("ML-KEM-512", 2)`.
+
+   Limits to find: what isn't constant, and which libraries besides Bouncy Castle state enough of themselves.
+3. **Detection on stable types.** Specs only on types that rarely change, such as the JCA engine classes and Bouncy Castle's core interfaces (`Digest`, `BlockCipher`, `Signer`, `EncapsulatedSecretGenerator`, ...). Which concrete class is involved, and what it is, comes from approach 2. A generic construction is recognized from its constructor's parameter types (`HMac(Digest)`). Limits to find: how often object flow knows the concrete class at the call, and constructions with no common interface (J-PAKE, SRP-6a, OWL, HPKE, BLS12-381).
+4. **Moved-class matching.** A spec's class found in another version by its simple name, interfaces and constructor shapes. A cheap bridge for approach 1 while the others mature; it would have covered the 1.86 move.
+5. **Provider resolution.** `getInstance(name[, provider])` linked to the registration that serves it, in Bouncy Castle's providers and in the JDK's (`jrt:/`). This checks names without an aliases table, links a use to the provision that serves it, and gives `provides` without detected occurrences. Today 21 bcprov helpers implement no listed type (`CompositeMLKEMEngine`); measure against them.
+6. **Vocabulary scan.** Algorithm names, OIDs and URIs found as constants anywhere in the bytecode, matched against a vocabulary harvested by approach 2 rather than written by hand. Low precision by design, so it isn't for the CBOM. It sets a recall ceiling: what it finds and the others don't is a candidate miss to review.
+
+#### References to measure against
+
+- sonar-cryptography's fixtures, knowing they lag behind Bouncy Castle;
+- bc-java's `generateCbom` output, as ground truth for what a bcprov version provides;
+- the Keycloak 26.8.2 CBOM, with each difference reviewed;
+- the bcprov version matrix, 1.71 to 1.87 in the local repository.
+
+#### Smaller items from the same comparison
+
+Not research; they fit around it.
+
+- **Security levels.** `nistQuantumSecurityLevel` and `classicalSecurityLevel`, keyed by the asset's content:
+  - post-quantum parameter sets by their category;
+  - hybrids by their ML-KEM or ML-DSA component;
+  - quantum-vulnerable schemes as 0;
+  - classical strength where the curve or a constant key size fixes it;
+  - nothing for unknowns.
+
+  The CBOM refuses values outside the 1.6 schema's ranges. Released bcprov (1.87) has no security categories, since `PQCParameters` exists only in the bc-java checkout. Until then this is a table: a case of what code can't tell yet.
+- **Reproducible metadata.** `SOURCE_DATE_EPOCH` for the timestamp and a name-based `serialNumber`, so that `ReproducibilityIT` can compare whole files.
+
 ### 4. Library and CLI split
 
 This is reachability step 4. With the API of step 2.2 in place, it moves packages into modules without changing the API. It also moves writing the CBOM into the library, in a shape the Quarkus extension can use, and takes `public` off what isn't API.
@@ -158,4 +215,5 @@ Collected from the design docs, so that none of them gets lost:
 - **The rule-based reference tests** after the sonar-cryptography step: keep them as test-only, or retire them with a frozen baseline.
 - **Name of the Quarkus extension**: `quarkus-cbom` or `quarkus-cryptid`.
 - **Shared data**: check how much of `mapper` the CycloneDX registry covers. This decides how far the alignment can go.
+- **Which approaches to combine** for finding crypto assets, from the findings of step 3b.
 - **Certificate-handling APIs** as PKIX evidence, without calling them certificates: set aside, and not ruled out.
